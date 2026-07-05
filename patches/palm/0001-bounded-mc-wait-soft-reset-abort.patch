@@ -1,0 +1,39 @@
+From: steinmarder bounded-MC-wait reset track
+Subject: [PATCH 1/4] drm/radeon: evergreen: abort soft reset when MC stays busy
+
+evergreen_gpu_soft_reset calls evergreen_mc_wait_for_idle, logs a
+warning on the -1 return, then forges ahead with the GRBM_SOFT_RESET
+and SRBM_SOFT_RESET writes.  Writing those reset bits while the
+MC bus is mid-transaction is the actual PCI-bus-wedge trigger
+observed on CHIP_PALM (Wrestler GPU, Brazos APU, Evergreen /
+TeraScale-2 VLIW5).
+
+Bail cleanly via evergreen_mc_resume when the bounded
+mc_wait_for_idle times out.  The function is void; the caller
+(evergreen_asic_reset) observes that GRBM_STATUS still shows
+the hung state and routes to the pci-config reset fallback,
+which the bounded-MC-wait safe variant gates further.
+
+Assisted-by: Claude Opus 4.7
+---
+ drivers/gpu/drm/radeon/evergreen.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+--- a/drivers/gpu/drm/radeon/evergreen.c
++++ b/drivers/gpu/drm/radeon/evergreen.c
+@@ -3923,9 +3923,16 @@ static void evergreen_gpu_soft_reset(struct radeon_device *rdev, u32 reset_mask)
+
+ 	evergreen_mc_stop(rdev, &save);
+ 	if (evergreen_mc_wait_for_idle(rdev)) {
+-		dev_warn(rdev->dev, "Wait for MC idle timedout !\n");
++		/* MC engine is mid-transaction; writing GRBM_SOFT_RESET now
++		 * leaves the MC inconsistent on CHIP_PALM-class silicon
++		 * (Wrestler GPU / Evergreen-TeraScale-2 VLIW5).  Bail cleanly.
++		 */
++		dev_warn(rdev->dev,
++			"aborting soft reset: MC stayed busy after 100ms\n");
++		evergreen_mc_resume(rdev, &save);
++		return;
+ 	}
+
+ 	grbm_reset = SOFT_RESET_CP | SOFT_RESET_CB | SOFT_RESET_DB;

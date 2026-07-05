@@ -1,0 +1,112 @@
+From: steinmarder W10 perf-query track
+Subject: [PATCH 5/5] drm/radeon: add DRM_RADEON_PERF_QUERY ioctl
+
+Unprivileged batch readback of the Evergreen / TeraScale-2 perf-counter
+MMIO allowlist through the render node.  Replaces the CAP_SYS_ADMIN
+debugfs path (out-of-tree radeon_sq_debugfs) for production Vulkan and
+OpenGL clients (VK_KHR_performance_query, GL_AMD_performance_monitor).
+
+Adds:
+  - include/uapi/drm/radeon_drm.h:  struct drm_radeon_perf_query,
+    DRM_RADEON_PERF_QUERY = 0x2e, RADEON_PERF_QUERY_* flags.
+  - drivers/gpu/drm/radeon/perf_register_whitelist.h: closed allowlist
+    of 13 perf-counter MMIO offsets with public AMD doc citations.
+  - drivers/gpu/drm/radeon/radeon_perf_query.c: ioctl handler with
+    optional pm_runtime_get_sync + DPM force-high guard for SCLK pinning.
+  - drivers/gpu/drm/radeon/radeon.h: prototype.
+  - drivers/gpu/drm/radeon/radeon_drv.c: DRM_IOCTL_DEF_DRV entry.
+  - drivers/gpu/drm/radeon/Makefile: build the new TU.
+
+Family gate (CHIP_CEDAR..CHIP_ARUBA) lives inside the handler so
+platforms outside Evergreen / Northern Islands return -EOPNOTSUPP.
+
+Assisted-by: Claude Opus 4.7
+---
+ drivers/gpu/drm/radeon/Makefile                    |   1 +
+ drivers/gpu/drm/radeon/perf_register_whitelist.h   | 134 +++++++++++++++
+ drivers/gpu/drm/radeon/radeon.h                    |   4 +
+ drivers/gpu/drm/radeon/radeon_drv.c                |   2 +
+ drivers/gpu/drm/radeon/radeon_perf_query.c         | 215 +++++++++++++++++++++
+ include/uapi/drm/radeon_drm.h                      |  35 ++++
+ 6 files changed, 391 insertions(+)
+ create mode 100644 drivers/gpu/drm/radeon/perf_register_whitelist.h
+ create mode 100644 drivers/gpu/drm/radeon/radeon_perf_query.c
+
+--- a/drivers/gpu/drm/radeon/Makefile
++++ b/drivers/gpu/drm/radeon/Makefile
+@@ -76,6 +76,7 @@ radeon-y += \
+ 	radeon_acpi.o \
+ 	radeon_atpx_handler.o \
+ 	radeon_audio.o \
++	radeon_perf_query.o \
+ 	radeon_pm.o
+
+--- /dev/null
++++ b/drivers/gpu/drm/radeon/perf_register_whitelist.h
+@@ -0,0 +1,134 @@
++/*
++ * perf_register_whitelist.h -- see src/re/r600/kernel_modules/draft/
++ *   W10_perf_query_ioctl/perf_register_whitelist.h in the steinmarder
++ *   tree for the source of truth.  Copy that file verbatim into
++ *   drivers/gpu/drm/radeon/perf_register_whitelist.h when applying this
++ *   patch from the DKMS PRE_BUILD step.
++ */
++/* PASTE: contents of perf_register_whitelist.h */
+--- a/drivers/gpu/drm/radeon/radeon.h
++++ b/drivers/gpu/drm/radeon/radeon.h
+@@ -2998,6 +2998,10 @@ int radeon_gem_userptr_ioctl(struct drm_device *dev, void *data,
+ 			     struct drm_file *filp);
+
++/* radeon_perf_query.c */
++int radeon_perf_query_ioctl(struct drm_device *dev, void *data,
++			    struct drm_file *filp);
++
+ /* VRAM scratch page for HDP bug, default vram page */
+ struct r600_vram_scratch {
+ 	struct radeon_bo		*robj;
+--- a/drivers/gpu/drm/radeon/radeon_drv.c
++++ b/drivers/gpu/drm/radeon/radeon_drv.c
+@@ -609,6 +609,8 @@ static const struct drm_ioctl_desc radeon_ioctls_kms[] = {
+ 	DRM_IOCTL_DEF_DRV(RADEON_GEM_OP, radeon_gem_op_ioctl, DRM_AUTH|DRM_RENDER_ALLOW),
+ 	DRM_IOCTL_DEF_DRV(RADEON_GEM_USERPTR, radeon_gem_userptr_ioctl, DRM_AUTH|DRM_RENDER_ALLOW),
++	DRM_IOCTL_DEF_DRV(RADEON_PERF_QUERY, radeon_perf_query_ioctl,
++			  DRM_AUTH|DRM_RENDER_ALLOW),
+ };
+
+--- /dev/null
++++ b/drivers/gpu/drm/radeon/radeon_perf_query.c
+@@ -0,0 +1,215 @@
++/*
++ * radeon_perf_query.c -- see src/re/r600/kernel_modules/draft/
++ *   W10_perf_query_ioctl/radeon_perf_query.c in the steinmarder tree
++ *   for the source of truth.  prep-source.sh copies that file verbatim
++ *   into drivers/gpu/drm/radeon/radeon_perf_query.c at DKMS PRE_BUILD
++ *   time.
++ */
++/* PASTE: contents of radeon_perf_query.c */
+--- a/include/uapi/drm/radeon_drm.h
++++ b/include/uapi/drm/radeon_drm.h
+@@ -517,6 +517,7 @@ typedef struct {
+ #define DRM_RADEON_GEM_OP		0x2c
+ #define DRM_RADEON_GEM_USERPTR		0x2d
++#define DRM_RADEON_PERF_QUERY		0x2e
+
+ #define DRM_IOCTL_RADEON_CP_INIT    DRM_IOW( DRM_COMMAND_BASE + DRM_RADEON_CP_INIT, drm_radeon_init_t)
+@@ -560,6 +561,40 @@ typedef struct {
+ #define DRM_IOCTL_RADEON_GEM_USERPTR	DRM_IOWR(DRM_COMMAND_BASE + DRM_RADEON_GEM_USERPTR, struct drm_radeon_gem_userptr)
++#define DRM_IOCTL_RADEON_PERF_QUERY	DRM_IOWR(DRM_COMMAND_BASE + DRM_RADEON_PERF_QUERY, struct drm_radeon_perf_query)
++
++#define RADEON_PERF_QUERY_HOLD_SCLK	(1u << 0)
++#define RADEON_PERF_QUERY_SE0_ONLY	(1u << 1)
++
++struct drm_radeon_perf_query {
++	__u32 version;
++	__u32 flags;
++	__u32 reg_count;
++	__u32 _pad;
++	__u64 regs_ptr;
++	__u64 values_ptr;
++	__u64 reserved[2];
++};
+
+ typedef struct drm_radeon_init {

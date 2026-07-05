@@ -1,0 +1,73 @@
+# RS480/RS482/RS485 candidate debugfs register list
+# Format: offset_hex<TAB>name<TAB>access<TAB>source<TAB>notes
+# Access `mmio` uses BAR0 byte offsets with RREG32().  Access `mc` uses the
+# RS400/RS480 MC indirect index with RREG32_MC().
+# These rows are not safe-regs. They are bounded candidates for one-at-a-time
+# live read validation through block-scoped candidate files. The legacy
+# radeon_rs480_candidate_regs file remains a compatibility alias for the
+# current config-aperture cohort.
+# Source codes:
+#   RM = public register manual text
+#   SP = public xorg radeon_reg.h symbol
+#   MS = Mesa r300 register header or emit path
+#   KS = Linux radeon/rs400 kernel source
+#   PB = retained RS482 PM4 decode result
+#
+# Config aperture candidates (promoted to SAFE_REGS after a clean candidate-node
+# read; retained here as the observation cohort that confirmed them readable)
+0x0114	CONFIG_MEMSIZE_EMBEDDED	mmio	RM,SP	Embedded memory-size register; read-only in the public register text. Promoted to SAFE_REGS.
+0x010c	CONFIG_REG_1_BASE	mmio	RM,SP	Configuration register-space base; read-only in the public register text. Promoted to SAFE_REGS.
+0x0110	CONFIG_REG_APER_SIZE	mmio	RM,SP	Configuration register aperture size; read-only in the public register text. Promoted to SAFE_REGS.
+#
+# MC/GART candidate complement
+# Keep AGP_BASE and MC_AGP_LOCATION in safe-regs.  This cohort covers only the
+# remaining mixed MMIO/MC rows needed to validate the rs400_gart_info split.
+0x0164	AGP_BASE_2	mmio	SP,KS	Upper AGP aperture shadow; cohort=gart_mc.
+0x002b	GART_FEATURE_ID	mc	KS	MC indirect GART feature selector; cohort=gart_mc.
+0x002c	GART_BASE	mc	KS	MC indirect GART base selector; cohort=gart_mc.
+#
+# VAP frontend candidates
+0x2080	R300_VAP_CNTL	mmio	SP,KS	VAP control word; keep the read-only control surface separate from VAP upload ports; cohort=vap.
+0x2140	R300_VAP_CNTL_STATUS	mmio	SP,KS	VAP status word; use this instead of any VAP_PORT_* upload aperture for bounded live validation; cohort=vap.
+#
+# GA candidates
+0x4274	R300_GA_ENHANCE	mmio	SP,KS,MS	GA deadlock and fast-sync control word emitted by the Linux r300 path; cohort=ga.
+0x4288	R300_GA_POLY_MODE	mmio	SP,KS,MS	GA polygon-mode control word; bounded GA state validation before any draw-time aperture broadening; cohort=ga.
+0x425c	R500_GA_IDLE	mmio	SP,KS	R500-family GA idle status word present in the canonical register corpus; seed the R500 baseline in the shared GA cohort; cohort=ga.
+#
+# SC candidates
+0x43a4	R300_SC_HYPERZ	mmio	RM,SP,PB	HyperZ control word; retained RS482 zpass bundle read back 0x0000001c; cohort=sc.
+0x43e0	SC_SCISSOR0	mmio	RM,SP	SC scissor state word; keep validation on the read-safe scissor register, not on packetized draw traffic; cohort=sc.
+#
+# GB candidates
+0x4028	R300_GB_Z_PEQ_CONFIG	mmio	RM,SP,PB	Z tile-size selector; retained RS482 zpass bundle read back 0x00000000; cohort=gb.
+#
+# RB3D candidates
+0x4e4c	R300_RB3D_DSTCACHE_CTLSTAT	mmio	RM,SP,KS	RB3D destination-cache control/status word; keep cache-state validation separate from ZB state; cohort=rb3d.
+#
+# ZB candidates
+# Keep HiZ address/pitch rows out of the first cohort. Mesa still models RS482
+# with hiz_ram = 0, and the retained RS482 zpass bundle did not emit ZB_HIZ_*.
+0x4f14	R300_ZB_ZTOP	mmio	RM,SP,PB	Z-top state; retained RS482 zpass bundle read back 0x00000001; cohort=zb.
+0x4f18	R300_ZB_ZCACHE_CTLSTAT	mmio	RM,SP	Z-cache control and status word; keep candidate-only until workload reads are retained; cohort=zb.
+0x4f1c	R300_ZB_BW_CNTL	mmio	RM,SP,PB	Depth compression / HyperZ bandwidth control; retained RS482 zpass bundle read back 0x00000000; cohort=zb.
+0x4f30	R300_ZB_ZMASK_OFFSET	mmio	MS	ZMASK base offset; include in the bounded Z cohort before any direct MMIO lane; cohort=zb.
+0x4f34	R300_ZB_ZMASK_PITCH	mmio	MS	ZMASK pitch / tile-stride word; paired with ZMASK offset for workload-vs-idle reads; cohort=zb.
+0x4f58	R300_ZB_ZPASS_DATA	mmio	RM,SP,PB	Occlusion-query write data register; retained RS482 zpass bundle read back 0x00000000; cohort=zb.
+0x4f5c	R300_ZB_ZPASS_ADDR	mmio	RM,SP,PB	Occlusion-query write address register; retained RS482 zpass bundle read back 0x00000000; cohort=zb.
+#
+# MC benign candidates surfaced through a separate debugfs node.
+0x0144	RADEON_MEM_TIMING_CNTL	mmio	SP,KS	Direct RREG32 driver-read candidate from r100 memory-controller paths; cohort=mc_benign.
+0x0150	RADEON_MEM_STR_CNTL	mmio	SP,KS	Direct RREG32 driver-read candidate from r100 memory-controller paths; cohort=mc_benign.
+#
+# Attended blind-read candidates (display/system tier-2; blind userspace resource2
+# mmap read completed wedge-free at rest, boot_id stable; bundle
+# cachyos_vostro1000_rs482_attended_frontier_combined_read_sweep_20260615T065527Z).
+# blind_read_validated in the steinmarder registry; routed through the attended
+# candidate-reader design for a driver-mediated read before any safe-regs promotion.
+0x0158	RADEON_MEM_SDRAM_MODE_REG	mmio	SP,PB	SDRAM mode/timing state; blind-read 0x50000000; cohort=attended.
+0x0264	RADEON_CUR_HORZ_VERT_POSN	mmio	SP,PB	Hardware-cursor H/V position; blind-read 0x027d018f; cohort=attended.
+0x0288	RADEON_FP2_GEN_CNTL	mmio	SP,PB	Flat-panel-2 general control (distinct from the 0x0208 alias); blind-read 0x01000008; cohort=attended.
+0x02a4	RADEON_TMDS_TRANSMITTER_CNTL	mmio	SP,PB	TMDS transmitter control; panel link powered; blind-read 0x00000082; cohort=attended.
+0x02a8	RADEON_TMDS_PLL_CNTL	mmio	SP,PB	TMDS PLL control; panel link powered; blind-read 0x000bffdd; cohort=attended.
+0x0b08	RADEON_SURFACE0_UPPER_BOUND	mmio	SP,PB	Surface0 upper bound; framebuffer surface registers; blind-read 0x0000001f; cohort=attended.

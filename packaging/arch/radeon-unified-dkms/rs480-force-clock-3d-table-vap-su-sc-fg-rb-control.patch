@@ -1,0 +1,41 @@
+rs480: extend the 3D force-clock table with VAP/SU/SC/FG/RB3D control registers
+
+Adds thirteen more 3D-engine control and config registers to
+rs480_force_clock_3d_list so the force-clock-then-read node covers further VAP
+vertex control (VF_CNTL, VPORT_XSCALE/YSCALE/ZSCALE, VTX_STATE_CNTL,
+PSC_SGN_NORM_CNTL), SU polygon-offset and depth (POLY_OFFSET_FRONT_SCALE,
+POLY_OFFSET_BACK_SCALE, DEPTH_SCALE), SC screen-door, FG fog factor, and RB3D
+source-pixel discard thresholds.
+
+The node mechanism is unchanged; it forces the whole 3D clock set before each
+read, so the per-row domain tag is informational.  Rows are appended after the
+0034 entries, occupying indices 29..41; existing indices stay stable.  All
+thirteen are control or config registers, not instruction or parameter memory,
+and the forbidden PVS-upload window and the write-wedge register VAP_CLIP_CNTL
+are excluded.  Disarmed by default.
+
+Assisted-by: Claude (Opus 4.8)
+---
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -1969,6 +1969,20 @@
+ 	{ 0x4e08, "R300_RB3D_ABLEND",            "RB" },
+ 	{ 0x4e0c, "RB3D_COLOR_CHANNEL_MASK",     "RB" },
+ 	{ 0x4f08, "R300_ZB_STENCILREFMASK",      "RB" },
++	/* Further VAP/SU/SC/FG/RB3D control and config (whole 3D clock set forced). */
++	{ 0x2084, "R300_VAP_VF_CNTL",            "VAP" },
++	{ 0x2098, "R300_VAP_VPORT_XSCALE",       "VAP" },
++	{ 0x20a0, "R300_VAP_VPORT_YSCALE",       "VAP" },
++	{ 0x20a8, "R300_VAP_VPORT_ZSCALE",       "VAP" },
++	{ 0x2180, "R300_VAP_VTX_STATE_CNTL",     "VAP" },
++	{ 0x21dc, "R300_VAP_PSC_SGN_NORM_CNTL",  "VAP" },
++	{ 0x42a4, "R300_SU_POLY_OFFSET_FRONT_SCALE", "SU" },
++	{ 0x42ac, "R300_SU_POLY_OFFSET_BACK_SCALE",  "SU" },
++	{ 0x42c0, "R300_SU_DEPTH_SCALE",         "SU" },
++	{ 0x43e8, "R300_SC_SCREENDOOR",          "SC" },
++	{ 0x4bc4, "R300_FG_FOG_FACTOR",          "RB" },
++	{ 0x4ea0, "RB3D_DISCARD_SRC_PIXEL_LTE_THRESHOLD", "RB" },
++	{ 0x4ea4, "RB3D_DISCARD_SRC_PIXEL_GTE_THRESHOLD", "RB" },
+ };
+ 
+ static int rs480_force_clock_3d_read_show(struct seq_file *m, void *unused)

@@ -1,0 +1,17 @@
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -482,6 +482,14 @@
+ 	{ 0x010c, "CONFIG_REG_1_BASE" },
+ 	{ 0x0110, "CONFIG_REG_APER_SIZE" },
+ 	{ 0x0114, "CONFIG_MEMSIZE_EMBEDDED" },
++	/* RS400 secondary display-output path, observed northbridge-safe on the
++	 * real RS480 IGP through the attended frontier probe (the three reads
++	 * returned values with the heartbeat advancing and no wedge).  FP2_2 and
++	 * TMDS2 carry live secondary-output state; reading them has no documented
++	 * write side-effect. */
++	{ 0x0388, "RS400_FP2_2_GEN_CNTL" },
++	{ 0x0394, "RS400_TMDS2_CNTL" },
++	{ 0x03a4, "RS400_TMDS2_TRANSMITTER_CNTL" },
+ };
+ 
+ static int rs480_safe_regs_show(struct seq_file *m, void *unused)

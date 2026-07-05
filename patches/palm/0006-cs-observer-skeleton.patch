@@ -1,0 +1,126 @@
+DOCUMENTATION ARTIFACT -- NOT A STANDALONE APPLIABLE PATCH
+
+This file documents the equivalent in-tree edits that the
+prep-source.sh USE_W11=1 stanza performs at DKMS PRE_BUILD time via
+sed + awk against the embedded pre-patched radeon source tarball.
+The new-file diffs below carry PASTE: placeholders rather than the
+literal source bytes for two reasons:
+
+  1. The canonical TU source-of-truth lives at
+     mesa-rekit/staged/radeon-palm-gate-dkms/usr/src/
+     radeon-palm-gate-1.0/w11-sources/radeon_palm_cs_observer.{c,h};
+     duplicating those into a unified-diff patch would
+     immediately rot.
+  2. The actual DKMS build does NOT apply patches/0006*.patch via
+     `patch -p1` -- prep-source.sh's USE_W11=1 stanza copies the
+     w11-sources/ files into RADEON_DIR directly and sed/awk-edits
+     the Makefile + radeon_drv.c.  This file's role is review +
+     future-upstream-submission documentation, not build input.
+
+If a downstream consumer ever needs to apply this as a real
+unified-diff patch (e.g. for upstream submission), substitute each
+PASTE: placeholder with the verbatim contents of the corresponding
+w11-sources/ file at that revision.
+
+------------------------------------------------------------------
+
+From: steinmarder W11 cs-observer track
+Subject: [PATCH 6/6] drm/radeon: add radeon-palm-gate CS observer skeleton
+
+Adds a read-only, disabled-by-default Command-Stream observer TU
+co-located with the radeon module.  Skeleton scope only: module
+init/exit, debugfs root creation, module-param decls, and
+no-op-when-disabled emit stubs.  Subsequent W11 patches add the
+per-event payload + comm filter + JSONL emission + 4 hook
+callsites in radeon_cs.c / evergreen_cs.c.
+
+Per the observer design (steinmarder
+src/re/r600/findings/active/2026-05-21-radeon-palm-cs-observer-design.md):
+purely diagnostic; no packet-stream mutation, no MMIO writes, no
+behaviour change when palm_cs_observer=0 (the default).  Closes the
+C-side observability gap that Phase V (steinmarder #327, commit
+e1f01a75) discovered: standard kprobes for deqp-vk on 6.18 xanmod
+silently bypass radeon_cs_ioctl etc.; the in-radeon-module observer
+side-steps that blind spot.
+
+Adds:
+  - drivers/gpu/drm/radeon/radeon_palm_cs_observer.c
+  - drivers/gpu/drm/radeon/radeon_palm_cs_observer.h
+  - drivers/gpu/drm/radeon/Makefile: build the new TU
+  - drivers/gpu/drm/radeon/radeon_drv.c: init + cleanup wire-up
+
+The new TU and header land via the DKMS prep-source.sh USE_W11=1
+stanza (copies from w11-sources/) for the same reasons W10 followed
+that pattern: the embedded prepatched radeon tarball is the canonical
+source-of-truth, and this unified-diff documents the equivalent
+in-tree edits for review / future upstream submission.
+
+Assisted-by: Claude (Opus 4.7)
+---
+ drivers/gpu/drm/radeon/Makefile                    |  1 +
+ drivers/gpu/drm/radeon/radeon_drv.c                |  6 ++
+ drivers/gpu/drm/radeon/radeon_palm_cs_observer.c   | 174 +++++++++++++++++++++
+ drivers/gpu/drm/radeon/radeon_palm_cs_observer.h   |  66 ++++++++
+ 4 files changed, 247 insertions(+)
+ create mode 100644 drivers/gpu/drm/radeon/radeon_palm_cs_observer.c
+ create mode 100644 drivers/gpu/drm/radeon/radeon_palm_cs_observer.h
+
+--- a/drivers/gpu/drm/radeon/Makefile
++++ b/drivers/gpu/drm/radeon/Makefile
+@@ -77,6 +77,7 @@ radeon-y += \
+ 	radeon_atpx_handler.o \
+ 	radeon_audio.o \
+ 	radeon_perf_query.o \
++	radeon_palm_cs_observer.o \
+ 	radeon_pm.o
+
+--- a/drivers/gpu/drm/radeon/radeon_drv.c
++++ b/drivers/gpu/drm/radeon/radeon_drv.c
+@@ -46,6 +46,7 @@
+ #include "radeon_drv.h"
+ #include "radeon.h"
+ #include "radeon_kms.h"
++#include "radeon_palm_cs_observer.h"
+ #include "radeon_ttm.h"
+
+ /*
+@@ -660,11 +661,15 @@ static int __init radeon_init(void)
+ 	if (r)
+ 		goto error_unregister;
+
++	r = radeon_palm_cs_observer_init();
++	(void)r;  /* observer is non-fatal: failure leaves it inert */
++
+ 	return 0;
+
+ error_unregister:
+ 	platform_driver_unregister(&radeon_platform_driver);
+ 	return r;
+ }
+
+ static void __exit radeon_exit(void)
+ {
++	radeon_palm_cs_observer_cleanup();
+ 	platform_driver_unregister(&radeon_platform_driver);
+
+--- /dev/null
++++ b/drivers/gpu/drm/radeon/radeon_palm_cs_observer.h
+@@ -0,0 +1,66 @@
++/* PASTE: see steinmarder
++ * mesa-rekit/staged/radeon-palm-gate-dkms/
++ * usr/src/radeon-palm-gate-1.0/w11-sources/radeon_palm_cs_observer.h
++ * for the source of truth.  Copy that file verbatim into
++ * drivers/gpu/drm/radeon/radeon_palm_cs_observer.h when applying
++ * this patch from the DKMS PRE_BUILD step.
++ */
+
+--- /dev/null
++++ b/drivers/gpu/drm/radeon/radeon_palm_cs_observer.c
+@@ -0,0 +1,174 @@
++/* PASTE: see steinmarder
++ * mesa-rekit/staged/radeon-palm-gate-dkms/
++ * usr/src/radeon-palm-gate-1.0/w11-sources/radeon_palm_cs_observer.c
++ * for the source of truth.  Copy that file verbatim into
++ * drivers/gpu/drm/radeon/radeon_palm_cs_observer.c when applying
++ * this patch from the DKMS PRE_BUILD step.
++ */

@@ -1,0 +1,54 @@
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -735,6 +735,42 @@
+ 
+ DEFINE_SHOW_ATTRIBUTE(rs480_candidate_mc_benign_regs);
+ 
++/* GART aperture status cohort (RS400/RS480 IGP).
++ *
++ * The four words that describe the live GART: GART_BASE (0x2c, the GPU address
++ * the page table maps from), GART_FEATURE_ID (0x2b, the feature/route flags),
++ * GART_CACHE_CNTRL (0x2e, the TLB invalidate control whose bit 0 the driver
++ * polls in rs400_gart_tlb_flush), and AGP_ADDRESS_SPACE_SIZE (0x38, whose
++ * bit 0 RS480_GART_EN enables the GART and whose size field encodes the aperture
++ * span -- 1024M on this part).  GART_BASE (0x2c) and GART_FEATURE_ID (0x2b) also
++ * appear in the gart_mc candidate cohort at the same offsets; the duplication is
++ * intentional so each cohort is a self-contained view -- this one the focused
++ * GART-aperture status, gart_mc the original broader candidate set.  All four
++ * are MC-aperture registers: the live
++ * driver reads them with RREG32_MC in rs400_gart_enable/disable, so access 1
++ * selects the controlled indirect read here (write MC_IND_INDEX, then read
++ * MC_IND_DATA), which is distinct from a bare MC_IND_DATA read that would return
++ * whatever the driver last indexed.  The indirect read is not locked against a
++ * concurrent driver MC-aperture access (the same write-index/read-data race the
++ * existing gart_mc cohort carries); it is read-only and low-probability, but a
++ * value caught mid-race should be re-read rather than trusted.
++ */
++static const struct rs480_candidate_reg rs480_candidate_gart_status_reg_list[] = {
++	{ 0x002c, "GART_BASE", 1 },
++	{ 0x002b, "GART_FEATURE_ID", 1 },
++	{ 0x002e, "GART_CACHE_CNTRL", 1 },
++	{ 0x0038, "AGP_ADDRESS_SPACE_SIZE", 1 },
++};
++
++static int rs480_candidate_gart_status_regs_show(struct seq_file *m, void *unused)
++{
++	return rs480_candidate_regs_emit(m, m->private,
++					 rs480_candidate_gart_status_reg_list,
++					 ARRAY_SIZE(rs480_candidate_gart_status_reg_list));
++}
++
++DEFINE_SHOW_ATTRIBUTE(rs480_candidate_gart_status_regs);
++
+ /* CP MicroEngine instruction-memory read-back dump.
+  *
+  * The loaded R300_cp.bin is the entire CP-ME instruction memory: a 256-microword
+@@ -1030,6 +1066,8 @@
+ 			    &rs480_candidate_firmware_read_regs_fops);
+ 	debugfs_create_file("radeon_rs480_candidate_mc_benign_regs", 0444, root, rdev,
+ 			    &rs480_candidate_mc_benign_regs_fops);
++	debugfs_create_file("radeon_rs480_candidate_gart_status_regs", 0444, root, rdev,
++			    &rs480_candidate_gart_status_regs_fops);
+ 	/* CP_ME_RAM read-back dump.  Created on RS400/RS480 when the candidate-regs
+ 	 * group is enabled, but inert until the operator sets
+ 	 * radeon_rs480_cp_me_ram_dump=1 (the seq start() gate), because the read

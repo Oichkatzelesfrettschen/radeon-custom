@@ -1,0 +1,52 @@
+Subject: [PATCH 0030] rs480: widen force-clock-then-read cohort (FP, CRTC2, OV0)
+
+Extend the 0029 force-clock table with the remaining DISP1 timing/panel config
+(FP stretch and sync, CRTC current-frame and base-addr, CRTC_MORE_CNTL,
+LVDS_PLL_CNTL), the remaining DISP2 timing (CRTC2 sync/total, DISPLAY2 base),
+and three overlay-scaler config registers under FORCE_OV0 (bit 31, unambiguous
+in SCLK_CNTL).  FP/CRTC2 entries share the validated DISP1/DISP2 domains; the
+OV0 entries are a hypothesis under test because the overlay block is powered
+only when an overlay is active.  Node body unchanged; entries are read per
+radeon_rs480_force_clock_index.
+
+Assisted-by: Claude (Opus 4.8)
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -1678,6 +1678,7 @@
+ #define RS480_SCLK_FORCE_VIP      (1u << 23)
+ #define RS480_SCLK_FORCE_DISP1    (1u << 18)
+ #define RS480_SCLK_FORCE_DISP2    (1u << 15)
++#define RS480_SCLK_FORCE_OV0      (1u << 31)
+ 
+ struct rs480_force_clock_reg {
+ 	u32 force_bit;
+@@ -1748,6 +1749,29 @@
+ 	{ RS480_SCLK_FORCE_DISP2, 0x03f8, "RADEON_CRTC2_GEN_CNTL",  "DISP2" },
+ 	{ RS480_SCLK_FORCE_DISP2, 0x0324, "RADEON_CRTC2_OFFSET",    "DISP2" },
+ 	{ RS480_SCLK_FORCE_DISP2, 0x032c, "RADEON_CRTC2_PITCH",     "DISP2" },
++	/* Remaining DISP1 timing/panel config (bit 18) and DISP2 timing (bit 15).
++	 * Same domains as the validated CRTC/CRTC2/LVDS rows above. */
++	{ RS480_SCLK_FORCE_DISP1, 0x020c, "RADEON_CRTC_V_SYNC_STRT_WID", "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x0214, "RADEON_CRTC_CRNT_FRAME",      "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x023c, "RADEON_DISPLAY_BASE_ADDR",    "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x027c, "RADEON_CRTC_MORE_CNTL",       "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x028c, "RADEON_FP_HORZ_STRETCH",      "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x0290, "RADEON_FP_VERT_STRETCH",      "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x02c4, "RADEON_FP_H_SYNC_STRT_WID",   "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x02c8, "RADEON_FP_V_SYNC_STRT_WID",   "DISP1" },
++	{ RS480_SCLK_FORCE_DISP1, 0x02d4, "RADEON_LVDS_PLL_CNTL",        "DISP1" },
++	{ RS480_SCLK_FORCE_DISP2, 0x0304, "RADEON_CRTC2_H_SYNC_STRT_WID","DISP2" },
++	{ RS480_SCLK_FORCE_DISP2, 0x0308, "RADEON_CRTC2_V_TOTAL_DISP",   "DISP2" },
++	{ RS480_SCLK_FORCE_DISP2, 0x030c, "RADEON_CRTC2_V_SYNC_STRT_WID","DISP2" },
++	{ RS480_SCLK_FORCE_DISP2, 0x033c, "RADEON_DISPLAY2_BASE_ADDR",   "DISP2" },
++	/* Overlay scaler config.  FORCE_OV0 (bit 31) is unambiguous in SCLK_CNTL.
++	 * The OV0 block is powered only when an overlay is active, so these reads
++	 * are a hypothesis under test: a stall with the pipe idle that resolves
++	 * under FORCE_OV0 confirms the bit gates the block; completion in both
++	 * states means the block stays clocked. */
++	{ RS480_SCLK_FORCE_OV0,   0x0420, "RADEON_OV0_SCALE_CNTL",       "OV0" },
++	{ RS480_SCLK_FORCE_OV0,   0x04dc, "RADEON_OV0_FLAG_CNTL",        "OV0" },
++	{ RS480_SCLK_FORCE_OV0,   0x04e0, "RADEON_OV0_COLOUR_CNTL",      "OV0" },
+ };
+ 
+ static int rs480_force_clock_read_show(struct seq_file *m, void *unused)

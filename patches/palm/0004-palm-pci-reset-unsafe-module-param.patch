@@ -1,0 +1,54 @@
+From: steinmarder bounded-MC-wait reset track
+Subject: [PATCH 4/4] drm/radeon: add radeon.palm_pci_reset_unsafe module parameter
+
+Add the integer module parameter palm_pci_reset_unsafe (default 0)
+referenced by the CHIP_PALM gate at the entry of
+evergreen_gpu_pci_config_reset_safe.
+
+The parameter is exposed read-write at runtime
+(/sys/module/radeon/parameters/palm_pci_reset_unsafe, mode 0644) so
+that forensic operators can toggle the gate without rebooting on a
+controlled host where a temporary network outage is acceptable.
+
+The canonical install location is
+/etc/modprobe.d/radeon-x130e.conf (see steinmarder
+src/re/r600/configs/modprobe.d/).  GRUB-cmdline radeon.* tokens
+should be migrated to modprobe.d after this patch lands.
+
+Assisted-by: Claude Opus 4.7
+---
+ drivers/gpu/drm/radeon/radeon.h     |  1 +
+ drivers/gpu/drm/radeon/radeon_drv.c |  9 +++++++++
+ 2 files changed, 10 insertions(+)
+
+--- a/drivers/gpu/drm/radeon/radeon.h
++++ b/drivers/gpu/drm/radeon/radeon.h
+@@ -112,6 +112,7 @@ extern int radeon_dpm;
+ extern int radeon_aspm;
+ extern int radeon_runtime_pm;
+ extern int radeon_hard_reset;
++extern int radeon_palm_pci_reset_unsafe;
+ extern int radeon_vm_size;
+ extern int radeon_vm_block_size;
+ extern int radeon_deep_color;
+--- a/drivers/gpu/drm/radeon/radeon_drv.c
++++ b/drivers/gpu/drm/radeon/radeon_drv.c
+@@ -142,6 +142,7 @@ int radeon_runtime_pm = -1;
+ int radeon_hard_reset;
++int radeon_palm_pci_reset_unsafe;
+ int radeon_vm_size = 8;
+ int radeon_vm_block_size = -1;
+ int radeon_deep_color = 0;
+@@ -217,6 +218,14 @@ MODULE_PARM_DESC(hard_reset, "PCI config reset (1 = force enable, 0 = disable (default))");
+ module_param_named(hard_reset, radeon_hard_reset, int, 0444);
+
++MODULE_PARM_DESC(palm_pci_reset_unsafe,
++	"Allow evergreen_gpu_pci_config_reset_safe to fire on CHIP_PALM (Wrestler GPU). "
++	"Default 0: refuse, because the reset propagates a transient PCIe-fabric stall "
++	"to adjacent integrated devices (NIC drops, X session loses output layout). "
++	"Set to 1 only for forensic experimentation on a controlled host."
++);
++module_param_named(palm_pci_reset_unsafe, radeon_palm_pci_reset_unsafe, int, 0644);
++
+ MODULE_PARM_DESC(vm_size, "VM address space size in gigabytes (default 4GB)");
+ module_param_named(vm_size, radeon_vm_size, int, 0444);

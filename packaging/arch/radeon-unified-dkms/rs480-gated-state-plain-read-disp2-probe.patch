@@ -1,0 +1,123 @@
+Subject: [PATCH 0031] rs480: gated-state plain-read DISP2 probe (HAZARD)
+
+Add radeon_rs480_gated_read, the inverse of the force-clock node: it CLEARS a
+domain SCLK_CNTL FORCE bit, PLAIN-reads, and restores, to answer whether a
+force_clock_validated register is safe to read when the clock is genuinely
+gated.  The table holds only inactive-DISP2 CRTC2 registers (the second pipe
+drives no display on the Vostro 1000, so clearing FORCE_DISP2 cannot blank the
+visible panel).  Disarmed by default (radeon_rs480_gated_read_index == -1).
+
+HAZARD: reset-less K8.  If the plain read stalls while the FORCE bit is clear,
+the restore never runs and both cores freeze (physical power cycle).  Attended
+use only.
+
+Assisted-by: Claude (Opus 4.8)
+--- a/radeon/radeon.h
++++ b/radeon/radeon.h
+@@ -122,6 +122,7 @@
+ extern int radeon_rs480_vertex_index;
+ extern int radeon_rs480_hazard_index;
+ extern int radeon_rs480_force_clock_index;
++extern int radeon_rs480_gated_read_index;
+ extern int radeon_rs480_hazard_readers_armed;
+ extern int radeon_vm_size;
+ extern int radeon_vm_block_size;
+--- a/radeon/radeon_drv.c
++++ b/radeon/radeon_drv.c
+@@ -150,6 +150,7 @@
+ int radeon_rs480_vertex_index = -1;
+ int radeon_rs480_hazard_index = -1;
+ int radeon_rs480_force_clock_index = -1;
++int radeon_rs480_gated_read_index = -1;
+ int radeon_rs480_hazard_readers_armed;
+ int radeon_vm_size = 8;
+ int radeon_vm_block_size = -1;
+@@ -311,6 +312,13 @@
+ 	"the register read, and SCLK_CNTL restored.  -1 (default) disarmed.");
+ module_param_named(rs480_force_clock_index, radeon_rs480_force_clock_index, int, 0644);
+ 
++MODULE_PARM_DESC(rs480_gated_read_index,
++	"RS480 gated-state plain-read probe (HAZARD): index into the inactive-DISP2 "
++	"CRTC2 table; clears FORCE_DISP2, plain-reads, restores, to test whether a "
++	"read stalls when the clock is gated.  A stall needs a physical power cycle.  "
++	"-1 (default) disarmed.");
++module_param_named(rs480_gated_read_index, radeon_rs480_gated_read_index, int, 0644);
++
+ MODULE_PARM_DESC(rs480_hazard_readers_armed,
+ 	"RS480 hazard-reader arm gate: 0 (default) makes the wedge-prone "
+ 	"radeon_rs480_candidate_vap_regs and radeon_rs480_candidate_firmware_read_regs "
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -1796,6 +1796,63 @@
+ }
+ DEFINE_SHOW_ATTRIBUTE(rs480_force_clock_read);
+ 
++/* Gated-state plain-read probe.  The force_clock_validated tier asserts a
++ * register is safe to read ONLY with its domain SCLK_CNTL FORCE bit set; the
++ * open question is whether a PLAIN read stalls when the clock is genuinely
++ * gated.  This node answers it by CLEARING the FORCE bit, plain-reading, then
++ * restoring -- the inverse of the force-clock node.
++ *
++ * HAZARD: reset-less K8.  If the plain read stalls while the FORCE bit is
++ * clear, the restore WREG32_PLL never runs and both cores freeze -- a physical
++ * power cycle.  The table holds only inactive-DISP2 CRTC2 registers (the second
++ * pipe drives no display on this board, so clearing FORCE_DISP2 cannot blank
++ * the visible panel), and the node is disarmed by default
++ * (radeon_rs480_gated_read_index == -1).  Caveat: with dynamic clock gating
++ * disabled (BIOS forces all clocks), clearing one FORCE bit may not gate the
++ * clock at all, in which case the read simply completes. */
++struct rs480_gated_read_reg {
++	u32 clear_bit;
++	u32 offset;
++	const char *name;
++	const char *domain;
++};
++
++static const struct rs480_gated_read_reg rs480_gated_read_list[] = {
++	{ RS480_SCLK_FORCE_DISP2, 0x03f8, "RADEON_CRTC2_GEN_CNTL",       "DISP2" },
++	{ RS480_SCLK_FORCE_DISP2, 0x0324, "RADEON_CRTC2_OFFSET",         "DISP2" },
++	{ RS480_SCLK_FORCE_DISP2, 0x032c, "RADEON_CRTC2_PITCH",          "DISP2" },
++	{ RS480_SCLK_FORCE_DISP2, 0x0304, "RADEON_CRTC2_H_SYNC_STRT_WID","DISP2" },
++	{ RS480_SCLK_FORCE_DISP2, 0x0308, "RADEON_CRTC2_V_TOTAL_DISP",   "DISP2" },
++};
++
++static int rs480_gated_read_show(struct seq_file *m, void *unused)
++{
++	struct radeon_device *rdev = m->private;
++	const struct rs480_gated_read_reg *e;
++	u32 sclk_orig, value;
++	int idx = radeon_rs480_gated_read_index;
++
++	if (idx < 0 || idx >= (int)ARRAY_SIZE(rs480_gated_read_list)) {
++		seq_printf(m, "disarmed (radeon_rs480_gated_read_index = %d): clears a "
++			   "DISP2 SCLK_CNTL FORCE bit and PLAIN-reads an inactive CRTC2 "
++			   "register to test gated-state read safety.  Set "
++			   "radeon_rs480_gated_read_index=0..%d for an attended probe; a "
++			   "stall needs a physical power cycle.\n",
++			   idx, (int)ARRAY_SIZE(rs480_gated_read_list) - 1);
++		return 0;
++	}
++	e = &rs480_gated_read_list[idx];
++	sclk_orig = RREG32_PLL(RS480_SCLK_CNTL_PLL_INDEX);
++	WREG32_PLL(RS480_SCLK_CNTL_PLL_INDEX, sclk_orig & ~e->clear_bit);
++	mdelay(1);
++	value = RREG32(e->offset);
++	WREG32_PLL(RS480_SCLK_CNTL_PLL_INDEX, sclk_orig);
++	seq_printf(m, "index %d: %s (0x%04x) domain=%s cleared_bit=0x%08x plain_read=0x%08x\n",
++		   idx, e->name, e->offset, e->domain, e->clear_bit, value);
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(rs480_gated_read);
++
+ static void rs480_safe_regs_debugfs_init(struct radeon_device *rdev)
+ {
+ #if defined(CONFIG_DEBUG_FS)
+@@ -1892,6 +1949,8 @@
+ 			    &rs480_frontier_probe_fops);
+ 	debugfs_create_file("radeon_rs480_force_clock_read", 0400, root, rdev,
+ 			    &rs480_force_clock_read_fops);
++	debugfs_create_file("radeon_rs480_gated_read", 0400, root, rdev,
++			    &rs480_gated_read_fops);
+ 	/* Attended vertex-engine probe.  Mode 0400: reading it performs one RREG32
+ 	 * of the vertex control register radeon_rs480_vertex_index selects, which
+ 	 * the operator must hold clocked via a concurrent HB-TCL draw loop. */

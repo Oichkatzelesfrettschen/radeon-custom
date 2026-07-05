@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export RADEON_DKMS_COMPILER_FAMILY=gcc
+exec "$script_dir/radeon-dkms-compiler-policy" exec "$@"

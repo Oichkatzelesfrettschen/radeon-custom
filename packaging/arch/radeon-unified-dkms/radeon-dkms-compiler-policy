@@ -1,0 +1,174 @@
+#!/bin/sh
+set -eu
+
+die() {
+    printf 'radeon-dkms-compiler-policy: %s\n' "$*" >&2
+    exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+validate_enum() {
+    value=$1
+    shift
+    for allowed in "$@"; do
+        if [ "$value" = "$allowed" ]; then
+            return 0
+        fi
+    done
+    die "invalid value: $value (allowed: $*)"
+}
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_dir/compiler-policy.conf"
+
+resolve_compiler_family() {
+    validate_enum "$RADEON_DKMS_COMPILER_FAMILY" auto clang gcc
+    if [ "$RADEON_DKMS_COMPILER_FAMILY" != "auto" ]; then
+        printf '%s\n' "$RADEON_DKMS_COMPILER_FAMILY"
+        return 0
+    fi
+    if grep -q 'clang' "$compile_h" 2>/dev/null; then
+        printf '%s\n' clang
+    else
+        printf '%s\n' gcc
+    fi
+}
+
+resolve_cache_mode() {
+    validate_enum "$RADEON_DKMS_CACHE_MODE" auto ccache off
+    case "$RADEON_DKMS_CACHE_MODE" in
+        auto)
+            if command -v ccache >/dev/null 2>&1; then
+                printf '%s\n' ccache
+            else
+                printf '%s\n' off
+            fi
+            ;;
+        ccache)
+            require_command ccache
+            printf '%s\n' ccache
+            ;;
+        off)
+            printf '%s\n' off
+            ;;
+    esac
+}
+
+resolve_distcc_mode() {
+    validate_enum "$RADEON_DKMS_DISTCC_MODE" auto plain off
+    case "$RADEON_DKMS_DISTCC_MODE" in
+        auto)
+            if [ -n "${RADEON_DKMS_DISTCC_HOSTS}" ]; then
+                require_command distcc
+                printf '%s\n' plain
+            else
+                printf '%s\n' off
+            fi
+            ;;
+        plain)
+            require_command distcc
+            [ -n "${RADEON_DKMS_DISTCC_HOSTS}" ] ||
+                die "RADEON_DKMS_DISTCC_MODE=plain requires RADEON_DKMS_DISTCC_HOSTS"
+            printf '%s\n' plain
+            ;;
+        off)
+            printf '%s\n' off
+            ;;
+    esac
+}
+
+resolve_compiler_bin() {
+    family=$1
+    case "$family" in
+        clang)
+            compiler_bin=$RADEON_DKMS_CLANG_BIN
+            ;;
+        gcc)
+            compiler_bin=$RADEON_DKMS_GCC_BIN
+            ;;
+        *)
+            die "unsupported compiler family: $family"
+            ;;
+    esac
+    require_command "$compiler_bin"
+    printf '%s\n' "$compiler_bin"
+}
+
+show_policy() {
+    compiler_family=$1
+    compiler_bin=$2
+    cache_mode=$3
+    distcc_mode=$4
+
+    printf 'kernelver=%s\n' "$kernelver_arg"
+    printf 'build_root=%s\n' "$build_root"
+    printf 'compile_h=%s\n' "$compile_h"
+    printf 'compiler_family=%s\n' "$compiler_family"
+    printf 'compiler_bin=%s\n' "$compiler_bin"
+    printf 'cache_mode=%s\n' "$cache_mode"
+    printf 'distcc_mode=%s\n' "$distcc_mode"
+    if [ "$distcc_mode" = plain ]; then
+        printf 'distcc_hosts=%s\n' "$RADEON_DKMS_DISTCC_HOSTS"
+    fi
+}
+
+exec_policy() {
+    compiler_bin=$1
+    cache_mode=$2
+    distcc_mode=$3
+    shift 3
+
+    if [ "$distcc_mode" = plain ]; then
+        export DISTCC_HOSTS="$RADEON_DKMS_DISTCC_HOSTS"
+    fi
+
+    if [ "$cache_mode" = ccache ] && [ "$distcc_mode" = plain ]; then
+        exec ccache distcc "$compiler_bin" "$@"
+    fi
+    if [ "$cache_mode" = ccache ]; then
+        exec ccache "$compiler_bin" "$@"
+    fi
+    if [ "$distcc_mode" = plain ]; then
+        exec distcc "$compiler_bin" "$@"
+    fi
+    exec "$compiler_bin" "$@"
+}
+
+command=${1:-}
+[ -n "$command" ] || die "usage: radeon-dkms-compiler-policy <show|exec> [kernelver] [compiler-args...]"
+
+case "$command" in
+    show)
+        kernelver_arg=${2:-${kernelver:-$(uname -r)}}
+        ;;
+    exec)
+        kernelver_arg=${kernelver:-$(uname -r)}
+        ;;
+    *)
+        die "unknown command: $command"
+        ;;
+esac
+
+build_root=${R300_RS480_KERNEL_BUILD_ROOT:-}
+if [ -z "$build_root" ]; then
+    build_root="/lib/modules/${kernelver_arg}/build"
+fi
+compile_h="${build_root}/include/generated/compile.h"
+
+compiler_family=$(resolve_compiler_family)
+cache_mode=$(resolve_cache_mode)
+distcc_mode=$(resolve_distcc_mode)
+compiler_bin=$(resolve_compiler_bin "$compiler_family")
+
+case "$command" in
+    show)
+        show_policy "$compiler_family" "$compiler_bin" "$cache_mode" "$distcc_mode"
+        ;;
+    exec)
+        shift
+        exec_policy "$compiler_bin" "$cache_mode" "$distcc_mode" "$@"
+        ;;
+esac

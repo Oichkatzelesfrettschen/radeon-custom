@@ -1,0 +1,57 @@
+rs480: require idle before CP_ME_RAM injection
+
+The CP_ME_RAM injection node must not rely on CP_CSQ_CNTL alone for the
+increment-1 no-execute guarantee.  CSQ_PRIDIS_INDDIS prevents new queue fetches,
+but it does not prove that a packet already running through the CP/GUI path has
+drained before the debugfs write patches a microword.
+
+Gate the write with the driver's existing idle primitives before saving and
+patching ME RAM: hold rdev->ring_lock, require the GFX ring to be ready, wait
+for the GFX fence stream to empty, and require r100_gui_wait_for_idle() to
+observe RBBM idle.  If the gate fails, retain the failure in the per-device
+debugfs result buffer and return the kernel error to userspace instead of
+touching CP_ME_RAM.
+
+Assisted-by: Codex
+---
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -1168,3 +1168,4 @@
+- * ever running it: save the original via the RADDR read pointer, stop the
+- * command queue with CP_CSQ_CNTL=CSQ_PRIDIS_INDDIS (the microcode stays loaded
+- * -- r100_cp_disable()/r100_cp_init() would reload R300_cp.bin and clobber the
++ * ever running it: require the GFX fence stream and GUI to be idle, save the
++ * original via the RADDR read pointer, stop the command queue with
++ * CP_CSQ_CNTL=CSQ_PRIDIS_INDDIS (the microcode stays loaded --
++ * r100_cp_disable()/r100_cp_init() would reload R300_cp.bin and clobber the
+@@ -1197,0 +1199,19 @@
++static int rs480_cp_me_ram_inject_wait_idle(struct radeon_device *rdev)
++{
++	int ret = 0;
++
++	mutex_lock(&rdev->ring_lock);
++	if (!rdev->ring[RADEON_RING_TYPE_GFX_INDEX].ready) {
++		ret = -ENODEV;
++		goto out;
++	}
++	ret = radeon_fence_wait_empty(rdev, RADEON_RING_TYPE_GFX_INDEX);
++	if (ret)
++		goto out;
++	if (r100_gui_wait_for_idle(rdev))
++		ret = -EBUSY;
++out:
++	mutex_unlock(&rdev->ring_lock);
++	return ret;
++}
++
+@@ -1276,0 +1297,10 @@
++	ret = rs480_cp_me_ram_inject_wait_idle(rdev);
++	if (ret) {
++		snprintf(ctx->result, sizeof(ctx->result),
++			 "addr=%04x idle_gate=failed ret=%d\n", addr, ret);
++		mutex_unlock(&ctx->lock);
++		dev_warn_ratelimited(rdev->dev,
++				     "rs480_cp_me_ram_inject: idle gate failed at addr=%04x ret=%d\n",
++				     addr, ret);
++		return ret;
++	}

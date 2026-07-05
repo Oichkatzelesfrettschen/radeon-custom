@@ -1,0 +1,180 @@
+Subject: [PATCH] rs480: gart-snoop + F3x40 AtomicRMW reporter, rebased and build-verified
+
+Build-verified rebase of the host-UMA GART snoop experiment (originally
+0023-rs480-gart-snoop-and-atomic-rmw-experiment.patch) against the DEPLOYED
+radeon-unified-0.3 source on cachyos-vostro1000, with the AtomicRMWEn register
+offset corrected to F3x40 (MCA NB Control, BKDG 32559 sec 4.6.4.1) per
+steinmarder PR #1882 -- the original cited F3x44, whose bit 11 is
+WdogTmrCntSel[2] (the watchdog count select), not AtomicRMWEn.
+
+What it does (default-disarmed, both params default 0):
+  - radeon_rs480_gart_snoop=1 makes rs400_gart_enable omit REQ_TYPE_SNOOP_DIS,
+    opening the global GART snoop window across a GART re-init.
+  - radeon_rs480_atomic_rmw_report=1 sets K8 F3x40 bit 11 (AtomicRMWEn) when the
+    status node is read; the live box already reads F3x40 = 0x00043bff
+    (AtomicRMWEn = 1), so this is a confirmation no-op.
+  - radeon_rs480_snoop_status debugfs node reports AGP_MODE_CNTL, the global
+    snoop state, and the K8 F3x40 MCA NB Control register.  This rebase WIRES the
+    node's debugfs init at the rs480_safe_regs_debugfs_init call site, which the
+    original patch deliberately left unwired.
+
+Build verification (2026-06-21, no install, no reboot, scratch copy):
+  - rebased against /usr/src/radeon-unified-0.3/radeon on cachyos-vostro1000
+    (deployed source: rs480_safe_regs only, older than the repo 0.3-55 snapshot);
+  - compiles clean: make LLVM=1 -C /lib/modules/7.0.11-1-cachyos/build modules,
+    exit 0, radeon.ko built;
+  - new srcversion 7EA7B713E721B1ACE66A3B8 differs from the loaded
+    60963059FAA8DA688BB8F6F, so a reboot would pick up a real change.
+
+Version-skew caveat: this diff applies to the DEPLOYED 0.3 source (safe_regs
+only).  The repo radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz snapshot is
+ahead (more rs480 nodes), so a repo-based package rebuild needs the same change
+re-rebased against that snapshot.  Reboot-gated, not modprobe-cycled
+(2026-06-16-rs480-radeon-hot-reload-reinit-wedge).
+
+---
+--- a/radeon.h	2026-06-16 19:46:05.000000000 -0700
++++ b/radeon.h	2026-06-20 21:27:20.800543269 -0700
+@@ -114,6 +114,8 @@
+ extern int radeon_hard_reset;
+ extern int radeon_palm_pci_reset_unsafe;
+ extern int radeon_rs480_safe_regs;
++extern int radeon_rs480_gart_snoop;
++extern int radeon_rs480_atomic_rmw_report;
+ extern int radeon_vm_size;
+ extern int radeon_vm_block_size;
+ extern int radeon_deep_color;
+--- a/radeon_drv.c	2026-06-16 19:46:05.000000000 -0700
++++ b/radeon_drv.c	2026-06-20 21:27:20.801613610 -0700
+@@ -142,6 +142,8 @@
+ int radeon_hard_reset;
+ int radeon_palm_pci_reset_unsafe;
+ int radeon_rs480_safe_regs = 1;
++int radeon_rs480_gart_snoop;
++int radeon_rs480_atomic_rmw_report;
+ int radeon_vm_size = 8;
+ int radeon_vm_block_size = -1;
+ int radeon_deep_color;
+@@ -233,6 +235,19 @@
+ );
+ module_param_named(rs480_safe_regs, radeon_rs480_safe_regs, int, 0444);
+ 
++MODULE_PARM_DESC(rs480_gart_snoop,
++	"RS480 host-UMA coherency experiment: when 1, rs400_gart_enable enables "
++	"global GART snooping by writing AGP_MODE_CNTL without REQ_TYPE_SNOOP_DIS. "
++	"0 (default) keeps snooping disabled.  Takes effect only across a GART "
++	"re-init; hazardous, attended use only.");
++module_param_named(rs480_gart_snoop, radeon_rs480_gart_snoop, int, 0644);
++
++MODULE_PARM_DESC(rs480_atomic_rmw_report,
++	"RS480 host-UMA atomic experiment: when 1, reading radeon_rs480_snoop_status "
++	"sets the K8 F3x40 MCA NB Control AtomicRMWEn bit so an atomic-RMW HT command "
++	"that errors is logged to MCA.  0 (default) reports the bit without setting it.");
++module_param_named(rs480_atomic_rmw_report, radeon_rs480_atomic_rmw_report, int, 0644);
++
+ 
+ MODULE_PARM_DESC(vm_size, "VM address space size in gigabytes (default 4GB)");
+ module_param_named(vm_size, radeon_vm_size, int, 0444);
+--- a/rs400.c	2026-06-16 19:46:05.000000000 -0700
++++ b/rs400.c	2026-06-20 21:27:20.802075621 -0700
+@@ -30,6 +30,7 @@
+ #include <linux/seq_file.h>
+ #include <linux/slab.h>
+ 
++#include <linux/pci.h>
+ #include <drm/drm_device.h>
+ #include <drm/drm_file.h>
+ 
+@@ -171,9 +172,16 @@
+ 	WREG32_MC(RS480_GART_FEATURE_ID,
+ 		  (RS480_TLB_ENABLE |
+ 		   RS480_GTW_LAC_EN | RS480_1LEVEL_GART));
+-	/* Disable snooping */
+-	WREG32_MC(RS480_AGP_MODE_CNTL,
+-		  (1 << RS480_REQ_TYPE_SNOOP_SHIFT) | RS480_REQ_TYPE_SNOOP_DIS);
++	/* Snooping is disabled by default.  The host-UMA coherency experiment
++	 * opens the global snoop window by omitting REQ_TYPE_SNOOP_DIS when
++	 * radeon_rs480_gart_snoop is set. */
++	if (radeon_rs480_gart_snoop) {
++		WREG32_MC(RS480_AGP_MODE_CNTL,
++			  (1 << RS480_REQ_TYPE_SNOOP_SHIFT));
++	} else {
++		WREG32_MC(RS480_AGP_MODE_CNTL,
++			  (1 << RS480_REQ_TYPE_SNOOP_SHIFT) | RS480_REQ_TYPE_SNOOP_DIS);
++	}
+ 	/* Disable AGP mode */
+ 	/* FIXME: according to doc we should set HIDE_MMCFG_BAR=0,
+ 	 * AGPMODE30=0 & AGP30ENHANCED=0 in NB_CNTL */
+@@ -491,8 +499,65 @@
+ }
+ 
+ DEFINE_SHOW_ATTRIBUTE(rs480_safe_regs);
++
++/* K8 NPT Family 0Fh northbridge Function 3 (device 0x18, function 3), MCA NB
++ * Control register at config offset 0x40, AtomicRMWEn bit 11 (BKDG 32559 sec
++ * 4.6.4.1).  The MCA NB Configuration register at 0x44 is a different register
++ * (bit 11 there is WdogTmrCntSel[2]); AtomicRMWEn lives in the Control register
++ * at 0x40.  The host does not support atomic RMW HT commands; AtomicRMWEn
++ * enables MCA reporting of such commands. */
++#define K8_F3_MCA_NB_CTL_OFFSET 0x40
++#define K8_F3_ATOMIC_RMW_EN     (1u << 11)
++
++static int rs480_snoop_status_show(struct seq_file *m, void *unused)
++{
++	struct radeon_device *rdev = m->private;
++	struct pci_dev *k8_f3;
++	u32 agp_mode_cntl, mca_ctl = 0;
++	bool snoop_dis;
++
++	agp_mode_cntl = RREG32_MC(RS480_AGP_MODE_CNTL);
++	snoop_dis = !!(agp_mode_cntl & RS480_REQ_TYPE_SNOOP_DIS);
++	seq_printf(m, "AGP_MODE_CNTL         = 0x%08x\n", agp_mode_cntl);
++	seq_printf(m, "global_snoop_disabled = %d\n", snoop_dis);
++	seq_printf(m, "gart_snoop_param      = %d\n", radeon_rs480_gart_snoop);
++
++	k8_f3 = pci_get_domain_bus_and_slot(0, 0, PCI_DEVFN(0x18, 3));
++	if (k8_f3) {
++		pci_read_config_dword(k8_f3, K8_F3_MCA_NB_CTL_OFFSET, &mca_ctl);
++		seq_printf(m, "k8_f3_mca_nb_ctl(0x40) = 0x%08x\n", mca_ctl);
++		seq_printf(m, "atomic_rmw_en(bit11)   = %d\n",
++			   !!(mca_ctl & K8_F3_ATOMIC_RMW_EN));
++		if (radeon_rs480_atomic_rmw_report &&
++		    !(mca_ctl & K8_F3_ATOMIC_RMW_EN)) {
++			pci_write_config_dword(k8_f3, K8_F3_MCA_NB_CTL_OFFSET,
++					       mca_ctl | K8_F3_ATOMIC_RMW_EN);
++			pci_read_config_dword(k8_f3, K8_F3_MCA_NB_CTL_OFFSET,
++					      &mca_ctl);
++			seq_printf(m, "atomic_rmw_en set; readback = 0x%08x\n",
++				   mca_ctl);
++		}
++		pci_dev_put(k8_f3);
++	} else {
++		seq_puts(m, "k8_f3_mca_nb_ctl(0x40) = unavailable (no 00:18.3)\n");
++	}
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(rs480_snoop_status);
+ #endif /* CONFIG_DEBUG_FS */
+ 
++static void rs480_snoop_status_debugfs_init(struct radeon_device *rdev)
++{
++#if defined(CONFIG_DEBUG_FS)
++	struct dentry *root = rdev_to_drm(rdev)->primary->debugfs_root;
++
++	if (rdev->family != CHIP_RS400 && rdev->family != CHIP_RS480)
++		return;
++	debugfs_create_file("radeon_rs480_snoop_status", 0400, root, rdev,
++			    &rs480_snoop_status_fops);
++#endif
++}
++
+ static void rs480_safe_regs_debugfs_init(struct radeon_device *rdev)
+ {
+ #if defined(CONFIG_DEBUG_FS)
+@@ -718,5 +783,6 @@
+ 		rdev->accel_working = false;
+ 	}
+ 	rs480_safe_regs_debugfs_init(rdev);
++	rs480_snoop_status_debugfs_init(rdev);
+ 	return 0;
+ }

@@ -1,0 +1,55 @@
+--- a/radeon/rs400.c	2026-06-06 00:20:09.501539211 -0700
++++ b/radeon/rs400.c	2026-06-06 00:20:09.502023181 -0700
+@@ -698,6 +698,43 @@
+ 
+ DEFINE_SHOW_ATTRIBUTE(rs480_candidate_firmware_read_regs);
+ 
++/* Driver-only-read benign memory-controller cohort, RS480-verifiable subset.
++ *
++ * Two MMIO words whose read is provably side-effect-free on RS400/RS480.
++ * MEM_TIMING_CNTL (EXT_MEM_CNTL, 0x0144) has direct driver precedent on this
++ * silicon: r100_bandwidth_update() reads it with a plain RREG32 in the
++ * RADEON_IS_IGP path and again in the CHIP_RS400/CHIP_RS480 cas-latency block.
++ * MEM_STR_CNTL (0x0150) rests on the direct-read property rather than RS480
++ * precedent: it is a non-indexed config register (the driver reads it in
++ * combios memory detection), and its aliased decode at the same offset,
++ * MC_STATUS, is a status register -- a single non-indexed RREG32 is
++ * side-effect-free under either decode.  Both are direct registers (access 0
++ * -> RREG32), distinct from the MC_IND_INDEX/MC_IND_DATA indirect aperture
++ * (0x01f8/0x01fc) whose standalone read returns whatever the driver last
++ * indexed.
++ *
++ * MC_READ_CNTL_AB (0x017c) is deliberately excluded: on RS480 it decodes as
++ * RADEON_PCI_GART_PAGE, which the live driver never touches, and the only
++ * MC_READ_CNTL_AB read in the tree is gated
++ * ASIC_IS_R300(rdev) && !(rdev->flags & RADEON_IS_IGP) in
++ * r100_bandwidth_update(), so an IGP never executes it.  Its RS480 read
++ * semantics are therefore uncharacterized; certifying it needs a spec
++ * statement on PCI_GART_PAGE read behavior or evidence of an RS480 driver read.
++ */
++static const struct rs480_candidate_reg rs480_candidate_mc_benign_reg_list[] = {
++	{ 0x0144, "RADEON_MEM_TIMING_CNTL", 0 },
++	{ 0x0150, "RADEON_MEM_STR_CNTL", 0 },
++};
++
++static int rs480_candidate_mc_benign_regs_show(struct seq_file *m, void *unused)
++{
++	return rs480_candidate_regs_emit(m, m->private,
++					 rs480_candidate_mc_benign_reg_list,
++					 ARRAY_SIZE(rs480_candidate_mc_benign_reg_list));
++}
++
++DEFINE_SHOW_ATTRIBUTE(rs480_candidate_mc_benign_regs);
++
+ /* CP MicroEngine instruction-memory read-back dump.
+  *
+  * The loaded R300_cp.bin is only the 256-microword ME_RAM overlay: the kernel
+@@ -988,6 +1025,8 @@
+ 			    &rs480_candidate_zb_regs_fops);
+ 	debugfs_create_file("radeon_rs480_candidate_firmware_read_regs", 0444, root, rdev,
+ 			    &rs480_candidate_firmware_read_regs_fops);
++	debugfs_create_file("radeon_rs480_candidate_mc_benign_regs", 0444, root, rdev,
++			    &rs480_candidate_mc_benign_regs_fops);
+ 	/* CP_ME_RAM read-back dump.  Created on RS400/RS480 when the candidate-regs
+ 	 * group is enabled, but inert until the operator sets
+ 	 * radeon_rs480_cp_me_ram_dump=1 (the seq start() gate), because the read

@@ -1,0 +1,66 @@
+--- a/radeon/rs400.c	2026-06-06 09:30:21.170279951 -0700
++++ b/radeon/rs400.c	2026-06-06 09:30:21.170844362 -0700
+@@ -767,6 +767,54 @@
+ 
+ DEFINE_SHOW_ATTRIBUTE(rs480_candidate_gart_status_regs);
+ 
++/* UMA frame-buffer status (RS400/RS480 IGP).
++ *
++ * The IGP has no dedicated VRAM: the "VRAM" is a stolen-system-memory region the
++ * BIOS reserves and advertises through NB_TOM (0x15c, base/top in 64KiB units).
++ * r100_vram_init_sizes derives real_vram_size = ((top - base + 1) << 16) from it
++ * and that is the authoritative GPU-usable VRAM.  visible_vram_size is the
++ * CPU-mapped window and is clamped to the BAR0 aperture (128M here); it is NOT
++ * the total -- real_vram_size and mc_vram_size are not BAR-capped, so the driver
++ * can place non-CPU-mapped BOs in the part of the UMA region beyond the window.
++ *
++ * The driver only READS this layout; it cannot enlarge it.  Writing a larger
++ * CONFIG_MEMSIZE than NB_TOM advertises would point the engine at system memory
++ * the BIOS did not reserve (OS-owned RAM) -- memory corruption, not more VRAM.
++ * The only safe path to a larger UMA is the BIOS frame-buffer-size option, which
++ * sets NB_TOM; the driver then reports the new size here automatically.  This
++ * node is read-only status, deliberately not a size setter.
++ */
++static int rs480_uma_status_show(struct seq_file *m, void *unused)
++{
++	struct radeon_device *rdev = m->private;
++	u32 tom = RREG32(RADEON_NB_TOM);
++	u32 base = tom & 0xffff;
++	u32 top = tom >> 16;
++	u64 nb_tom_size = ((u64)(top - base + 1)) << 16;
++
++	seq_printf(m, "NB_TOM            (0x015c) = 0x%08x  base 0x%04x top 0x%04x -> %llu MiB\n",
++		   tom, base, top, (unsigned long long)(nb_tom_size >> 20));
++	seq_printf(m, "CONFIG_MEMSIZE    (0x00f8) = 0x%08x\n",
++		   RREG32(RADEON_CONFIG_MEMSIZE));
++	seq_printf(m, "MC_FB_LOCATION    (0x0148) = 0x%08x\n",
++		   RREG32(RADEON_MC_FB_LOCATION));
++	seq_printf(m, "MC_MISC_UMA_CNTL  (MC 0x5f) = 0x%08x\n", RREG32_MC(0x5F));
++	seq_printf(m, "real_vram_size    = %llu MiB (NB_TOM-derived, GPU-usable total)\n",
++		   (unsigned long long)(rdev->mc.real_vram_size >> 20));
++	seq_printf(m, "mc_vram_size      = %llu MiB\n",
++		   (unsigned long long)(rdev->mc.mc_vram_size >> 20));
++	seq_printf(m, "visible_vram_size = %llu MiB (CPU window, BAR0-capped)\n",
++		   (unsigned long long)(rdev->mc.visible_vram_size >> 20));
++	seq_printf(m, "aper_size (BAR0)  = %llu MiB @ 0x%llx\n",
++		   (unsigned long long)((u64)rdev->mc.aper_size >> 20),
++		   (unsigned long long)rdev->mc.aper_base);
++	seq_printf(m, "igp_sideport      = %s\n",
++		   rdev->mc.igp_sideport_enabled ? "enabled" : "absent");
++	return 0;
++}
++
++DEFINE_SHOW_ATTRIBUTE(rs480_uma_status);
++
+ /* CP MicroEngine instruction-memory read-back dump.
+  *
+  * The loaded R300_cp.bin is only the 256-microword ME_RAM overlay: the kernel
+@@ -1061,6 +1109,8 @@
+ 			    &rs480_candidate_mc_benign_regs_fops);
+ 	debugfs_create_file("radeon_rs480_candidate_gart_status_regs", 0444, root, rdev,
+ 			    &rs480_candidate_gart_status_regs_fops);
++	debugfs_create_file("radeon_rs480_uma_status", 0444, root, rdev,
++			    &rs480_uma_status_fops);
+ 	/* CP_ME_RAM read-back dump.  Created on RS400/RS480 when the candidate-regs
+ 	 * group is enabled, but inert until the operator sets
+ 	 * radeon_rs480_cp_me_ram_dump=1 (the seq start() gate), because the read

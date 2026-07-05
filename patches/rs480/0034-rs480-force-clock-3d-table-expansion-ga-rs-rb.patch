@@ -1,0 +1,44 @@
+rs480: expand the 3D force-clock table with GA/SU/RS/RB/FG/ZB control registers
+
+Adds fifteen more 3D-engine control registers to rs480_force_clock_3d_list so the
+0033 force-clock-then-read node covers geometry-setup (GB_SELECT, GB_AA_CONFIG,
+GB_PIPE_SELECT, GA_LINE_STIPPLE_CONFIG, GA_FIFO_CNTL, GA_ROUND_MODE,
+GA_FOG_SCALE, SU_POLY_OFFSET_ENABLE), raster (RS_COUNT), blend (RB3D_CBLEND,
+RB3D_ABLEND, RB3D_COLOR_CHANNEL_MASK), fog and alpha (FG_FOG_BLEND,
+FG_ALPHA_FUNC), and stencil (ZB_STENCILREFMASK).
+
+The node mechanism is unchanged: it forces the whole 3D clock set in both PLL
+registers before the read, so the per-row domain tag is informational.  The new
+rows are appended after the VAP entries so the existing indices 0..13 are stable;
+the expansion occupies indices 14..28.  All fifteen are control or status
+registers, not instruction or parameter memory.  Disarmed by default.
+
+Assisted-by: Claude (Opus 4.8)
+---
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -1951,6 +1951,24 @@
+ 	 * write wedged the northbridge, so it is the highest-risk read. */
+ 	{ 0x2140, "R300_VAP_CNTL_STATUS",    "VAP" },
+ 	{ 0x2080, "R300_VAP_CNTL",           "VAP" },
++	/* Expanded GA/SU geometry-setup, raster, blend, fog, and stencil control
++	 * (the whole 3D clock set is forced regardless of which block owns the
++	 * register, so the domain tag is informational). */
++	{ 0x401c, "R300_GB_SELECT",              "GA" },
++	{ 0x4020, "R300_GB_AA_CONFIG",           "GA" },
++	{ 0x402c, "R300_GB_PIPE_SELECT",         "GA" },
++	{ 0x4238, "R300_GA_LINE_STIPPLE_CONFIG", "GA" },
++	{ 0x4270, "R500_GA_FIFO_CNTL",           "GA" },
++	{ 0x428c, "R300_GA_ROUND_MODE",          "GA" },
++	{ 0x4294, "R300_GA_FOG_SCALE",           "GA" },
++	{ 0x42b4, "R300_SU_POLY_OFFSET_ENABLE",  "SU" },
++	{ 0x4300, "R300_RS_COUNT",               "RS" },
++	{ 0x4bc0, "R300_FG_FOG_BLEND",           "RB" },
++	{ 0x4bd4, "R300_FG_ALPHA_FUNC",          "RB" },
++	{ 0x4e04, "R300_RB3D_CBLEND",            "RB" },
++	{ 0x4e08, "R300_RB3D_ABLEND",            "RB" },
++	{ 0x4e0c, "RB3D_COLOR_CHANNEL_MASK",     "RB" },
++	{ 0x4f08, "R300_ZB_STENCILREFMASK",      "RB" },
+ };
+ 
+ static int rs480_force_clock_3d_read_show(struct seq_file *m, void *unused)

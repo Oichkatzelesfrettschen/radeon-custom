@@ -1,0 +1,91 @@
+--- a/radeon/radeon.h
++++ b/radeon/radeon.h
+@@ -2486,6 +2486,12 @@
+ 	return &rdev->ddev;
+ }
+ 
++/* RS400/RS480 RE debugfs registration, deferred to the drm_driver.debugfs_init
++ * hook so the nodes land under dri/N/ once minor->debugfs_root is valid. */
++struct drm_minor;
++void radeon_rs480_re_debugfs_register(struct drm_minor *minor);
++void radeon_debugfs_rs480_mc_flush_init(struct radeon_device *rdev);
++
+ /*
+  * Cast helper
+  */
+--- a/radeon/radeon_device.c
++++ b/radeon/radeon_device.c
+@@ -1295,7 +1295,7 @@
+ }
+ DEFINE_SIMPLE_ATTRIBUTE(rs480_mc_flush_fops, NULL, radeon_debugfs_rs480_mc_flush_set, "%llu\n");
+ 
+-static void radeon_debugfs_rs480_mc_flush_init(struct radeon_device *rdev)
++void radeon_debugfs_rs480_mc_flush_init(struct radeon_device *rdev)
+ {
+ #if defined(CONFIG_DEBUG_FS)
+ 	debugfs_create_file("radeon_rs480_mc_flush", 0200,
+@@ -1530,9 +1530,6 @@
+ 		else
+ 			DRM_INFO("radeon: acceleration disabled, skipping benchmarks\n");
+ 	}
+-	if ((rdev->family == CHIP_RS480 || rdev->family == CHIP_RS400) && rdev->accel_working)
+-		radeon_debugfs_rs480_mc_flush_init(rdev);
+-
+ 	return 0;
+ 
+ failed:
+--- a/radeon/radeon_drv.c
++++ b/radeon/radeon_drv.c
+@@ -655,6 +655,7 @@
+ static const struct drm_driver kms_driver = {
+ 	.driver_features =
+ 	    DRIVER_GEM | DRIVER_RENDER | DRIVER_MODESET,
++	.debugfs_init = radeon_rs480_re_debugfs_register,
+ 	.open = radeon_driver_open_kms,
+ 	.postclose = radeon_driver_postclose_kms,
+ 	.unload = radeon_driver_unload_kms,
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -909,6 +909,34 @@
+ };
+ #endif /* CONFIG_DEBUG_FS */
+ 
++/* drm_driver.debugfs_init hook.  drm_debugfs_register() assigns
++ * minor->debugfs_root before calling this, and only for the primary minor (it
++ * skips dev->render), so the rs480 RE nodes land under /sys/kernel/debug/dri/N/
++ * here.  Calling these inits from rs400_init() instead would run them before
++ * drm_dev_register() populates primary->debugfs_root on 6.7+ DRM, dropping every
++ * node at the debugfs top level (confirmed identical on 6.18 and 7.0).
++ * Defensive guards reject malformed minor inputs before dereferencing the DRM
++ * device, and debugfs_create_file() is itself non-fatal, so a failure here
++ * never blocks radeon from loading.  mc_flush keeps its caller-side family/accel
++ * gate. */
++void radeon_rs480_re_debugfs_register(struct drm_minor *minor)
++{
++	struct radeon_device *rdev;
++
++	if (!minor || minor->type != DRM_MINOR_PRIMARY || !minor->dev ||
++	    !minor->debugfs_root)
++		return;
++	rdev = minor->dev->dev_private;
++	if (!rdev)
++		return;
++
++	rs480_safe_regs_debugfs_init(rdev);
++	rs480_candidate_regs_debugfs_init(rdev);
++	if ((rdev->family == CHIP_RS480 || rdev->family == CHIP_RS400) &&
++	    rdev->accel_working)
++		radeon_debugfs_rs480_mc_flush_init(rdev);
++}
++
+ static void rs480_safe_regs_debugfs_init(struct radeon_device *rdev)
+ {
+ #if defined(CONFIG_DEBUG_FS)
+@@ -1184,7 +1212,5 @@
+ 		radeon_irq_kms_fini(rdev);
+ 		rdev->accel_working = false;
+ 	}
+-	rs480_safe_regs_debugfs_init(rdev);
+-	rs480_candidate_regs_debugfs_init(rdev);
+ 	return 0;
+ }

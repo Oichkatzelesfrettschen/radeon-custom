@@ -1,0 +1,89 @@
+From: steinmarder bounded-MC-wait reset track
+Subject: [PATCH 3/4] drm/radeon: add debugfs radeon_force_pci_reset_safe trigger
+
+Add a debugfs file at /sys/kernel/debug/radeon_force_pci_reset_safe
+that lets userspace invoke evergreen_gpu_pci_config_reset_safe on
+demand for forensic experimentation on a wedged GPU.
+
+The file is created at the debugfs root rather than under
+/sys/kernel/debug/dri/N/ because the registration runs from
+radeon_driver_load_kms, before drm_dev_register has populated
+dev->primary->debugfs_root.  Other radeon debugfs files
+(radeon_gem_info, radeon_fence_info, etc.) use the same pattern.
+
+A write of "1" triggers the safe variant.  The return code from
+the underlying evergreen_gpu_pci_config_reset_safe propagates to
+userspace: -EPERM on CHIP_PALM without
+radeon.palm_pci_reset_unsafe=1, -EBUSY when the bounded MC-wait
+times out, 0 on a successful reset.
+
+Assisted-by: Claude Opus 4.7
+---
+ drivers/gpu/drm/radeon/radeon_kms.c | 51 +++++++++++++++++++++++++++++
+ 1 file changed, 51 insertions(+)
+
+--- a/drivers/gpu/drm/radeon/radeon_kms.c
++++ b/drivers/gpu/drm/radeon/radeon_kms.c
+@@ -45,6 +45,46 @@
+ #include "radeon_drv.h"
+ #include "radeon_kms.h"
+
++#include <linux/debugfs.h>
++#include <linux/uaccess.h>
++
++/* Debugfs trigger that lets userspace invoke
++ * evergreen_gpu_pci_config_reset_safe on demand for forensic
++ * experimentation on a wedged GPU.  The reset is gated by the
++ * CHIP_PALM refuse-by-default policy implemented inside
++ * evergreen_gpu_pci_config_reset_safe; on Palm silicon a write
++ * here returns -EPERM unless radeon.palm_pci_reset_unsafe=1 is
++ * set.
++ */
++static ssize_t
++radeon_force_pci_reset_safe_write(struct file *file,
++				  const char __user *buf,
++				  size_t count, loff_t *ppos)
++{
++	struct radeon_device *rdev = file_inode(file)->i_private;
++	char input[8];
++	int rc;
++
++	if (count == 0 || count > sizeof(input) - 1)
++		return -EINVAL;
++	if (copy_from_user(input, buf, count))
++		return -EFAULT;
++	input[count] = 0;
++	if (input[0] != '1')
++		return -EINVAL;
++
++	if (rdev->family < CHIP_CEDAR)
++		return -ENOTSUPP;
++
++	rc = evergreen_gpu_pci_config_reset_safe(rdev);
++	return rc ? rc : (ssize_t)count;
++}
++
++static const struct file_operations radeon_force_pci_reset_safe_fops = {
++	.owner = THIS_MODULE,
++	.write = radeon_force_pci_reset_safe_write,
++};
++
+ /**
+  * radeon_driver_load_kms - Main load function for KMS.
+  *
+@@ -175,6 +215,17 @@ int radeon_driver_load_kms(struct drm_device *dev, unsigned long flags)
+ 		goto out;
+ 	}
+
++	/* Register the debugfs trigger for the bounded-MC-wait safe variant
++	 * of evergreen_gpu_pci_config_reset.  The file is created at debugfs
++	 * root because dev->primary->debugfs_root is not yet populated this
++	 * early in radeon_driver_load_kms (drm_dev_register has not run).
++	 */
++	debugfs_create_file("radeon_force_pci_reset_safe", 0200,
++			    NULL, rdev,
++			    &radeon_force_pci_reset_safe_fops);
++
+ 	/* Again modeset_init should fail only on fatal error
+ 	 * otherwise it should provide enough functionalities
+ 	 * for shadowfb to run

@@ -1,0 +1,196 @@
+rs480: 3D-engine force-clock-then-read node for VAP/GA/TX/US/RB control registers
+
+The display/overlay/panel/host-port/TV force-clock node forces one domain bit in
+SCLK_CNTL (PLL 0x0d).  That cannot reach the 3D engine: the R300 vertex,
+clip-barycentric and geometry-assembly force bits TCL (bit 13), CBA (bit 14) and
+GA (bit 15) live in the separate R300_SCLK_CNTL2 register (PLL 0x1e), and the 3D
+blocks feed each other (VAP -> GA -> SU -> RB), so forcing one block while its
+upstream gates is unsafe.
+
+This adds a 3D force-clock node that forces the WHOLE 3D clock set in both PLL
+registers before the read -- VAP/TX/US/SU/RB in SCLK_CNTL and TCL/CBA/GA in
+SCLK_CNTL2 -- reads one 3D control register, then restores both.  The force set
+is grounded in radeon_reg.h and radeon_clocks.c r300_set_clock_gating.  The SCLK
+status node also gains a SCLK_CNTL2 read so the GA/TCL/CBA gating state can be
+observed (driver-mediated, no 3D MMIO) before any 3D read.
+
+The table holds only 3D control and status registers (no instruction or
+parameter memory); GA_IDLE and GB_Z_PEQ_CONFIG, already driver-read, anchor the
+sweep, and the VAP entries are ordered last because VAP is the block whose write
+wedged the reset-less K8.  Disarmed by default
+(radeon_rs480_force_clock_3d_index == -1); arming and reading is an attended,
+operator-gated, accepted-wedge step.
+
+Assisted-by: Claude (Opus 4.8)
+---
+diff -ruN radeon.orig/radeon_drv.c radeon/radeon_drv.c
+--- a/radeon/radeon_drv.c	2026-06-13 17:52:46.606514794 -0700
++++ b/radeon/radeon_drv.c	2026-06-13 17:53:17.845582932 -0700
+@@ -150,6 +150,7 @@
+ int radeon_rs480_vertex_index = -1;
+ int radeon_rs480_hazard_index = -1;
+ int radeon_rs480_force_clock_index = -1;
++int radeon_rs480_force_clock_3d_index = -1;
+ int radeon_rs480_gated_read_index = -1;
+ int radeon_rs480_hazard_readers_armed;
+ int radeon_vm_size = 8;
+@@ -312,6 +313,15 @@
+ 	"the register read, and SCLK_CNTL restored.  -1 (default) disarmed.");
+ module_param_named(rs480_force_clock_index, radeon_rs480_force_clock_index, int, 0644);
+ 
++MODULE_PARM_DESC(rs480_force_clock_3d_index,
++	"RS480 3D-engine force-clock-then-read (HAZARD): index into the 3D "
++	"control-register table.  Forces the whole 3D clock set -- VAP/TX/US/SU/RB "
++	"in SCLK_CNTL (PLL 0x0d) and TCL/CBA/GA in SCLK_CNTL2 (PLL 0x1e) -- reads "
++	"the register, then restores both PLL registers.  The 3D engine is the "
++	"block class whose VAP write wedged the reset-less K8; a stalled read needs "
++	"a physical power cycle.  -1 (default) disarmed.");
++module_param_named(rs480_force_clock_3d_index, radeon_rs480_force_clock_3d_index, int, 0644);
++
+ MODULE_PARM_DESC(rs480_gated_read_index,
+ 	"RS480 gated-state plain-read probe (HAZARD): index into the inactive-DISP2 "
+ 	"CRTC2 table; clears FORCE_DISP2, plain-reads, restores, to test whether a "
+diff -ruN radeon.orig/radeon.h radeon/radeon.h
+--- a/radeon/radeon.h	2026-06-13 17:52:46.606491394 -0700
++++ b/radeon/radeon.h	2026-06-13 17:52:55.646627120 -0700
+@@ -122,6 +122,7 @@
+ extern int radeon_rs480_vertex_index;
+ extern int radeon_rs480_hazard_index;
+ extern int radeon_rs480_force_clock_index;
++extern int radeon_rs480_force_clock_3d_index;
+ extern int radeon_rs480_gated_read_index;
+ extern int radeon_rs480_hazard_readers_armed;
+ extern int radeon_vm_size;
+diff -ruN radeon.orig/rs400.c radeon/rs400.c
+--- a/radeon/rs400.c	2026-06-13 17:52:46.606527634 -0700
++++ b/radeon/rs400.c	2026-06-13 17:54:52.846433478 -0700
+@@ -956,13 +956,27 @@
+ 	struct radeon_device *rdev = m->private;
+ 	/* PLL index 0x0d == R_00000D_SCLK_CNTL (r300d.h / r100d.h). */
+ 	u32 sclk = RREG32_PLL(0x0000000D);
++	/* PLL index 0x1e == R300_SCLK_CNTL2.  It holds the R300 3D-engine force
++	 * bits TCL (bit 13), CBA (bit 14) and GA (bit 15) that the first PLL
++	 * register does not carry.  This read resolves whether those domains gate
++	 * at rest before any 3D MMIO read is attempted; the read itself is
++	 * driver-mediated (r100_pll_rreg) and does not touch the 3D MMIO aperture. */
++	u32 sclk2 = RREG32_PLL(0x0000001E);
+ 
+ 	seq_printf(m, "SCLK_CNTL (PLL 0x0d) = 0x%08x\n", sclk);
+ 	seq_printf(m, "  FORCE_CP   (bit 16) = %u\n", (sclk >> 16) & 0x1);
+ 	seq_printf(m, "  FORCE_IDCT (bit 22) = %u\n", (sclk >> 22) & 0x1);
+ 	seq_printf(m, "  FORCE_VIP  (bit 23) = %u\n", (sclk >> 23) & 0x1);
++	seq_printf(m, "  FORCE_VAP  (bit 21) = %u\n", (sclk >> 21) & 0x1);
++	seq_printf(m, "  FORCE_TX   (bit 27) = %u\n", (sclk >> 27) & 0x1);
++	seq_printf(m, "  FORCE_US   (bit 28) = %u\n", (sclk >> 28) & 0x1);
++	seq_printf(m, "  FORCE_SU   (bit 30) = %u\n", (sclk >> 30) & 0x1);
+ 	seq_printf(m, "  FORCEON region (bits 15-31) = 0x%05x\n",
+ 		   (sclk >> 15) & 0x1ffff);
++	seq_printf(m, "SCLK_CNTL2 (PLL 0x1e) = 0x%08x\n", sclk2);
++	seq_printf(m, "  FORCE_TCL  (bit 13) = %u\n", (sclk2 >> 13) & 0x1);
++	seq_printf(m, "  FORCE_CBA  (bit 14) = %u\n", (sclk2 >> 14) & 0x1);
++	seq_printf(m, "  FORCE_GA   (bit 15) = %u\n", (sclk2 >> 15) & 0x1);
+ 	seq_printf(m, "  note: a near-all-ones read is ambiguous (force-on vs"
+ 		      " unimplemented-reads-one); a set FORCE_IDCT/FORCE_VIP here"
+ 		      " does NOT de-risk the gated CAP/IDCT MMIO read.\n");
+@@ -1884,6 +1898,92 @@
+ }
+ DEFINE_SHOW_ATTRIBUTE(rs480_force_clock_read);
+ 
++/* 3D-engine force-clock-then-read.  The display force-clock node forces ONE
++ * domain bit in SCLK_CNTL (PLL 0x0d); that does not reach the 3D engine,
++ * because the R300 vertex/geometry/clip force bits TCL/CBA/GA live in the
++ * separate R300_SCLK_CNTL2 (PLL 0x1e) register, and the 3D blocks feed each
++ * other (VAP -> GA -> SU -> RB).  This node forces the WHOLE 3D clock set in
++ * both PLL registers before the read, so no 3D block is gated when its
++ * control register is sampled, then restores both registers.
++ *
++ * Force set, grounded in radeon_reg.h and radeon_clocks.c r300_set_clock_gating:
++ *   SCLK_CNTL  (0x0d): VAP (bit 21), TX (bit 27), US (bit 28), SU (bit 30),
++ *                      RB (bit 28, shared with US).
++ *   SCLK_CNTL2 (0x1e): TCL (bit 13), CBA (bit 14), GA (bit 15).
++ *
++ * HAZARD: this is the 3D execution engine, the block class whose VAP write to
++ * VAP_CLIP_CNTL wedged the reset-less K8.  Forcing the clock before a READ is
++ * the mechanism the display cohort proved safe, but a stalled 3D read leaves
++ * the restore WREG32_PLL unrun and freezes both cores -- a physical power
++ * cycle.  The table holds only 3D CONTROL and STATUS registers (no instruction
++ * or parameter memory), the VAP entries are ordered last, and the node is
++ * disarmed by default (radeon_rs480_force_clock_3d_index == -1). */
++#define RS480_SCLK_CNTL2_PLL_INDEX 0x0000001Eu
++#define RS480_SCLK_3D_FORCE_ALL    ((1u << 21) | (1u << 27) | (1u << 28) | \
++				    (1u << 30))
++#define RS480_SCLK2_3D_FORCE_ALL   ((1u << 13) | (1u << 14) | (1u << 15))
++
++struct rs480_force_clock_3d_reg {
++	u32 offset;
++	const char *name;
++	const char *domain;
++};
++
++static const struct rs480_force_clock_3d_reg rs480_force_clock_3d_list[] = {
++	/* GA/GB geometry-assembly control (GA domain).  GA_IDLE and GB_Z_PEQ_CONFIG
++	 * are already driver-read (candidate_reader_validated), so they anchor the
++	 * sweep: a clean read here confirms the node forces the 3D clock correctly. */
++	{ 0x425c, "R500_GA_IDLE",            "GA" },
++	{ 0x4274, "R300_GA_ENHANCE",         "GA" },
++	{ 0x4278, "R300_GA_COLOR_CONTROL",   "GA" },
++	{ 0x4234, "R300_GA_LINE_CNTL",       "GA" },
++	{ 0x4008, "R300_GB_ENABLE",          "GA" },
++	{ 0x4018, "R300_GB_TILE_CONFIG",     "GA" },
++	{ 0x4028, "R300_GB_Z_PEQ_CONFIG",    "GA" },
++	/* RB3D color/Z backend control (RB domain). */
++	{ 0x4e00, "R300_RB3D_CCTL",          "RB" },
++	{ 0x4f00, "R300_ZB_CNTL",            "RB" },
++	{ 0x4f10, "R300_ZB_FORMAT",          "RB" },
++	{ 0x4f1c, "R300_ZB_BW_CNTL",         "RB" },
++	/* US fragment-shader config (US domain). */
++	{ 0x4600, "R300_US_CONFIG",          "US" },
++	/* VAP vertex control (VAP domain) -- ordered last: VAP is the block whose
++	 * write wedged the northbridge, so it is the highest-risk read. */
++	{ 0x2140, "R300_VAP_CNTL_STATUS",    "VAP" },
++	{ 0x2080, "R300_VAP_CNTL",           "VAP" },
++};
++
++static int rs480_force_clock_3d_read_show(struct seq_file *m, void *unused)
++{
++	struct radeon_device *rdev = m->private;
++	const struct rs480_force_clock_3d_reg *e;
++	u32 sclk_orig, sclk2_orig, value;
++	int idx = radeon_rs480_force_clock_3d_index;
++
++	if (idx < 0 || idx >= (int)ARRAY_SIZE(rs480_force_clock_3d_list)) {
++		seq_printf(m, "disarmed (radeon_rs480_force_clock_3d_index = %d): "
++			   "forces the whole 3D clock set and reads one 3D control "
++			   "register; arm 0..%d for an attended probe.  HAZARD: a "
++			   "stalled 3D read needs a physical power cycle.\n",
++			   idx, (int)ARRAY_SIZE(rs480_force_clock_3d_list) - 1);
++		return 0;
++	}
++	e = &rs480_force_clock_3d_list[idx];
++	sclk_orig  = RREG32_PLL(RS480_SCLK_CNTL_PLL_INDEX);
++	sclk2_orig = RREG32_PLL(RS480_SCLK_CNTL2_PLL_INDEX);
++	WREG32_PLL(RS480_SCLK_CNTL_PLL_INDEX,  sclk_orig  | RS480_SCLK_3D_FORCE_ALL);
++	WREG32_PLL(RS480_SCLK_CNTL2_PLL_INDEX, sclk2_orig | RS480_SCLK2_3D_FORCE_ALL);
++	/* Let the forced 3D clock domains settle before the MMIO read. */
++	udelay(10);
++	value = RREG32(e->offset);
++	WREG32_PLL(RS480_SCLK_CNTL2_PLL_INDEX, sclk2_orig);
++	WREG32_PLL(RS480_SCLK_CNTL_PLL_INDEX,  sclk_orig);
++	seq_printf(m, "index %d: %s (0x%04x) domain=%s sclk2_was=0x%08x = 0x%08x\n",
++		   idx, e->name, e->offset, e->domain, sclk2_orig, value);
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(rs480_force_clock_3d_read);
++
+ /* Gated-state plain-read probe.  The force_clock_validated tier asserts a
+  * register is safe to read ONLY with its domain SCLK_CNTL FORCE bit set; the
+  * open question is whether a PLAIN read stalls when the clock is genuinely
+@@ -2037,6 +2137,8 @@
+ 			    &rs480_frontier_probe_fops);
+ 	debugfs_create_file("radeon_rs480_force_clock_read", 0400, root, rdev,
+ 			    &rs480_force_clock_read_fops);
++	debugfs_create_file("radeon_rs480_force_clock_3d_read", 0400, root, rdev,
++			    &rs480_force_clock_3d_read_fops);
+ 	debugfs_create_file("radeon_rs480_gated_read", 0400, root, rdev,
+ 			    &rs480_gated_read_fops);
+ 	/* Attended vertex-engine probe.  Mode 0400: reading it performs one RREG32

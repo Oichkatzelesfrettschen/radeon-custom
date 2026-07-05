@@ -1,0 +1,66 @@
+--- a/radeon/radeon.h
++++ b/radeon/radeon.h
+@@ -122,6 +122,7 @@
+ extern int radeon_rs480_vertex_index;
+ extern int radeon_rs480_hazard_index;
+ extern int radeon_rs480_force_clock_index;
++extern int radeon_rs480_hazard_readers_armed;
+ extern int radeon_vm_size;
+ extern int radeon_vm_block_size;
+ extern int radeon_deep_color;
+--- a/radeon/radeon_drv.c
++++ b/radeon/radeon_drv.c
+@@ -150,6 +150,7 @@
+ int radeon_rs480_vertex_index = -1;
+ int radeon_rs480_hazard_index = -1;
+ int radeon_rs480_force_clock_index = -1;
++int radeon_rs480_hazard_readers_armed;
+ int radeon_vm_size = 8;
+ int radeon_vm_block_size = -1;
+ int radeon_deep_color;
+@@ -310,6 +311,15 @@
+ 	"the register read, and SCLK_CNTL restored.  -1 (default) disarmed.");
+ module_param_named(rs480_force_clock_index, radeon_rs480_force_clock_index, int, 0644);
+ 
++MODULE_PARM_DESC(rs480_hazard_readers_armed,
++	"RS480 hazard-reader arm gate: 0 (default) makes the wedge-prone "
++	"radeon_rs480_candidate_vap_regs and radeon_rs480_candidate_firmware_read_regs "
++	"nodes refuse the MMIO read.  VAP/PVS clock-gates at rest and a read can "
++	"stall the reset-less K8 northbridge; the firmware_read cohort includes "
++	"HOST_PATH_CNTL (0x0130), which gates the HyperTransport host path.  Set 1 "
++	"to arm an attended read.");
++module_param_named(rs480_hazard_readers_armed, radeon_rs480_hazard_readers_armed, int, 0644);
++
+ 
+ MODULE_PARM_DESC(vm_size, "VM address space size in gigabytes (default 4GB)");
+ module_param_named(vm_size, radeon_vm_size, int, 0444);
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -687,6 +687,13 @@
+ 
+ static int rs480_candidate_vap_regs_show(struct seq_file *m, void *unused)
+ {
++	if (radeon_rs480_hazard_readers_armed != 1) {
++		seq_puts(m, "disarmed (rs480_hazard_readers_armed != 1): "
++			    "VAP/PVS clock-gates at rest and an MMIO read can stall the "
++			    "reset-less K8 northbridge.  Set rs480_hazard_readers_armed=1 "
++			    "to arm an attended read.\n");
++		return 0;
++	}
+ 	return rs480_candidate_regs_emit(m, m->private,
+ 					 rs480_candidate_vap_reg_list,
+ 					 ARRAY_SIZE(rs480_candidate_vap_reg_list));
+@@ -760,6 +767,13 @@
+ 
+ static int rs480_candidate_firmware_read_regs_show(struct seq_file *m, void *unused)
+ {
++	if (radeon_rs480_hazard_readers_armed != 1) {
++		seq_puts(m, "disarmed (rs480_hazard_readers_armed != 1): this cohort "
++			    "includes HOST_PATH_CNTL (0x0130), which gates the HyperTransport "
++			    "host path and is classified unsafe_forbidden.  Set "
++			    "rs480_hazard_readers_armed=1 to arm an attended read.\n");
++		return 0;
++	}
+ 	return rs480_candidate_regs_emit(m, m->private,
+ 					 rs480_candidate_firmware_read_reg_list,
+ 					 ARRAY_SIZE(rs480_candidate_firmware_read_reg_list));

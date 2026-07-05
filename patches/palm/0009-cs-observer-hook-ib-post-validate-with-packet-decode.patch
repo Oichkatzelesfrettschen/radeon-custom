@@ -1,0 +1,64 @@
+From: steinmarder W11 cs-observer track
+Subject: [PATCH 9/N] drm/radeon: wire ib_post_validate observer hook with
+ absorbed packet_decode walk
+
+Final observer hook (absorbs the originally-planned per-PKT3
+packet_decode hook into a single post-validator IB walk).  Inserts
+calls to radeon_palm_cs_observer_emit_ib_post_validate(&parser)
+immediately before EVERY radeon_cs_parser_fini call in
+radeon_cs_ioctl -- success path and error paths alike.  By that
+point the chip-specific validator has run to completion regardless
+of outcome, so the IB bytes the observer walks are exactly what
+would have been (or would not have been) submitted to GPU.
+
+The hook body walks parser->chunks[] for the IB chunk and:
+
+  1. Decodes PM4 packet headers per R6xx/R7xx 3D Accel Guide.
+  2. For each PKT3 packet whose opcode matches the
+     SHADER_DESCRIPTOR_OPCODES allowlist (SET_CONFIG_REG,
+     SET_CONTEXT_REG, SET_BOOL_CONST, SET_LOOP_CONST,
+     SET_RESOURCE, SET_SAMPLER per Evergreen-Family ISA Ch.7),
+     emits one packet_decode JSONL row with reg_addr_or_slot +
+     payload_dwords (first 64).
+  3. Computes crc32_le over the full IB and emits one
+     ib_post_validate summary row with ib_length_dw +
+     ib_crc32_le + total_packets + filtered_packets.
+
+The summary row's ib_crc32_le can be compared against the
+ib_chunk_pre_parse row's crc32_le (same chunk) by userspace to
+detect kernel validator mutation -- the A1 != C discriminator in
+the byte-path comparison decision table.
+
+The merged single-callsite design avoids needing a second sed/awk
+landmark inside evergreen_cs.c whose exact source layout varies
+between r600_cs.c, evergreen_cs.c, ni.c, and si.c (each chip
+family has its own cs_parse implementation).  The single landmark
+in radeon_cs.c (radeon_cs_parser_fini) is chip-family-agnostic.
+
+The prep-source.sh wiring inserts this hook once before every
+radeon_cs_parser_fini callsite via one regex substitution.  That
+produces one ib_post_validate event per error-path early return and
+one per success-path out: fall-through.  No duplicate is emitted on
+success because the success path reaches out: exactly once.
+
+Assisted-by: Claude (Opus 4.7)
+---
+ drivers/gpu/drm/radeon/radeon_cs.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/drivers/gpu/drm/radeon/radeon_cs.c
++++ b/drivers/gpu/drm/radeon/radeon_cs.c
+@@ -380,6 +380,7 @@
+ 	r = radeon_cs_parser_relocs(&parser);
+ 	if (r) {
+ 		if (r != -ERESTARTSYS) DRM_ERROR("Failed to parse relocations !\n");
++		radeon_palm_cs_observer_emit_ib_post_validate(&parser);
+ 		radeon_cs_parser_fini(&parser, r, false);
+ 		mutex_unlock(&rdev->cs_mutex);
+ 		return r;
+@@ -402,6 +403,7 @@
+ out:
++	radeon_palm_cs_observer_emit_ib_post_validate(&parser);
+ 	radeon_cs_parser_fini(&parser, r, true);
+ 	mutex_unlock(&rdev->cs_mutex);
+ 	up_read(&rdev->exclusive_lock);

@@ -1,0 +1,39 @@
+From: steinmarder W11 cs-observer track
+Subject: [PATCH 8/N] drm/radeon: wire ib_chunk_pre_parse observer hook
+
+Wires the ib_chunk_pre_parse observer hook.  Inserts a call to
+radeon_palm_cs_observer_emit_ib_chunk_pre_parse(&parser) immediately
+before radeon_cs_parser_relocs in radeon_cs_ioctl.  At this hook
+point radeon_cs_parser_init has completed, so every chunk in
+parser->chunks[] has been copy_from_user'd into kernel memory and
+is safe to dereference without an additional copy.
+
+Stub body in radeon_palm_cs_observer.c emits one
+ib_chunk_pre_parse JSONL row PER CHUNK.  For each chunk:
+
+  - chunk_index, chunk_id, length_dw, crc32_le of full chunk
+  - first up-to-64 dwords as hex strings
+
+Sized at 1536 bytes on the kernel stack (well under the 16 KiB
+ceiling); no allocation on the emit path.  crc32_le is the
+linux/crc32.h kernel helper, cheap O(n) over chunk bytes, suitable
+for collision-resistant fingerprinting at byte-comparison scale.
+Userspace can recompute SHA-256 of the same bytes from the JSONL
+output for cryptographic-strength claims (the byte-path verdict decoder consumes this output).
+
+Assisted-by: Claude (Opus 4.7)
+---
+ drivers/gpu/drm/radeon/radeon_cs.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/gpu/drm/radeon/radeon_cs.c
++++ b/drivers/gpu/drm/radeon/radeon_cs.c
+@@ -340,6 +340,8 @@
+ 		return r;
+ 	}
+
++	radeon_palm_cs_observer_emit_ib_chunk_pre_parse(&parser);
++
+ 	r = radeon_cs_parser_relocs(&parser);
+ 	if (r) {
+ 		if (r != -ERESTARTSYS)

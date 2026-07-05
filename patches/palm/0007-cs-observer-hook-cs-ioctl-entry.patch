@@ -1,0 +1,59 @@
+From: steinmarder W11 cs-observer track
+Subject: [PATCH 7/7] drm/radeon: wire cs_ioctl_entry observer hook
+
+Wires the cs_ioctl_entry observer hook.  Inserts a call to
+radeon_palm_cs_observer_emit_cs_ioctl_entry(data) at the prologue
+of radeon_cs_ioctl, right after the body-open brace.  At this hook
+point the DRM dispatcher has already copy_from_user'd the fixed-size
+drm_radeon_cs args, so `data` is a kernel-side struct; the
+chunks-array it points at remains in user memory and is handled by
+the ib_chunk_pre_parse hook.
+
+Adds the corresponding `#include "radeon_palm_cs_observer.h"` to
+radeon_cs.c (only consumer of the hook from this TU).
+
+Stub body in radeon_palm_cs_observer.c emits one cs_ioctl_entry
+JSONL row per CS submission when the observer is enabled + the
+calling task matches palm_cs_observer_comm + the per-pid event
+cap is not exceeded.  Schema (one JSON object per line):
+
+    {
+        "event": "cs_ioctl_entry",
+        "ts_nsec": <ktime_get_ns>,
+        "pid": <current->pid>,
+        "tgid": <current->tgid>,
+        "comm": "<current->comm>",
+        "cs_id": <user-supplied>,
+        "num_chunks": <user-supplied>,
+        "gart_limit_bytes": <user-supplied>,
+        "vram_limit_bytes": <user-supplied>
+    }
+
+Body shorts-circuit on should_emit() returning false: disabled,
+comm-mismatched, or pid-cap-exceeded.  Stack-allocated 256-byte
+formatting buffer keeps the emit path allocation-free in the
+critical section.
+
+Assisted-by: Claude (Opus 4.7)
+---
+ drivers/gpu/drm/radeon/radeon_cs.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/gpu/drm/radeon/radeon_cs.c
++++ b/drivers/gpu/drm/radeon/radeon_cs.c
+@@ -33,6 +33,7 @@
+ #include "radeon_reg.h"
+ #include "radeon.h"
++#include "radeon_palm_cs_observer.h"
+ #include "radeon_trace.h"
+
+ #define RADEON_CS_MAX_PRIORITY      32u
+@@ -300,6 +301,8 @@
+ int radeon_cs_ioctl(struct drm_device *dev, void *data,
+                     struct drm_file *filp)
+ {
++	radeon_palm_cs_observer_emit_cs_ioctl_entry(data);
++
+ 	struct radeon_device *rdev = dev->dev_private;
+ 	struct radeon_cs_parser parser;
+ 	int r;

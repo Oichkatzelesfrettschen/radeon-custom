@@ -1,0 +1,51 @@
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -521,6 +521,9 @@
+ 	{ 0x1da4, "SE_VPORT_YOFFSET" },
+ 	{ 0x1da8, "SE_VPORT_ZSCALE" },
+ 	{ 0x1dac, "SE_VPORT_ZOFFSET" },
++	{ 0x02f0, "GRPH_BUFFER_CNTL" },
++	{ 0x03f0, "GRPH2_BUFFER_CNTL" },
++	{ 0x0e38, "RS400_DMIF_MEM_CNTL1" },
+ };
+ 
+ static int rs480_safe_regs_show(struct seq_file *m, void *unused)
+@@ -781,6 +785,29 @@
+ 
+ DEFINE_SHOW_ATTRIBUTE(rs480_candidate_firmware_read_regs);
+ 
++static const struct rs480_candidate_reg rs480_candidate_vip_straggler_reg_list[] = {
++	{ 0x0900, "RADEON_VID_BUFFER_CONTROL", 0 },
++	{ 0x0910, "RADEON_FCP_CNTL", 0 },
++	{ 0x0800, "RADEON_TV_MASTER_CNTL", 0 },
++};
++
++static int rs480_candidate_vip_straggler_regs_show(struct seq_file *m, void *unused)
++{
++	if (radeon_rs480_hazard_readers_armed != 1) {
++		seq_puts(m, "disarmed (rs480_hazard_readers_armed != 1): VIP control "
++			    "(VID_BUFFER_CONTROL 0x0900, FCP_CNTL 0x0910) and TV_MASTER_CNTL 0x0800 "
++			    "are untested VIP/TV-domain reads.  FORCE_VIP and FORCE_TV_SCLK are "
++			    "BIOS-set, but the domains may still stall.  Set "
++			    "rs480_hazard_readers_armed=1 to arm an attended read.\n");
++		return 0;
++	}
++	return rs480_candidate_regs_emit(m, m->private,
++					 rs480_candidate_vip_straggler_reg_list,
++					 ARRAY_SIZE(rs480_candidate_vip_straggler_reg_list));
++}
++
++DEFINE_SHOW_ATTRIBUTE(rs480_candidate_vip_straggler_regs);
++
+ /* Driver-only-read benign memory-controller cohort, RS480-verifiable subset.
+  *
+  * Two MMIO words whose read is provably side-effect-free on RS400/RS480.
+@@ -1780,6 +1807,8 @@
+ 			    &rs480_candidate_zb_regs_fops);
+ 	debugfs_create_file("radeon_rs480_candidate_firmware_read_regs", 0444, root, rdev,
+ 			    &rs480_candidate_firmware_read_regs_fops);
++	debugfs_create_file("radeon_rs480_candidate_vip_straggler_regs", 0444, root, rdev,
++			    &rs480_candidate_vip_straggler_regs_fops);
+ 	debugfs_create_file("radeon_rs480_candidate_mc_benign_regs", 0444, root, rdev,
+ 			    &rs480_candidate_mc_benign_regs_fops);
+ 	debugfs_create_file("radeon_rs480_candidate_gart_status_regs", 0444, root, rdev,

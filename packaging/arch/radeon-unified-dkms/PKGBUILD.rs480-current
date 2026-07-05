@@ -1,0 +1,61 @@
+# Maintainer: Terascale Functionalists
+# Why: linux-cachyos-lts-headers does not ship radeon driver source.
+#      This package expands a pre-patched radeon source tarball into
+#      /usr/src/radeon-rs480-safe-regs-${pkgver}/radeon/ so the dkms
+#      alpm hooks rebuild the module automatically on kernel upgrades.
+#
+#      The patch adds /sys/kernel/debug/radeon_rs480_safe_regs -- a
+#      read-only debugfs seq_file reader for the RS400/RS480 safe-register
+#      list (51 BAR0 MMIO registers confirmed read-safe on 1002:5974).
+#
+#      Target: cachyos-vostro1000 (Dell Vostro 1000, RS482 IGP, 1002:5974)
+#      Tested: 6.18.32-1-cachyos-lts and 7.0.9-1-cachyos
+
+pkgname=radeon-rs480-safe-regs-dkms
+pkgver=0.2
+pkgrel=9
+pkgdesc='Radeon RS400/RS480 safe-register debugfs reader DKMS module'
+arch=('x86_64')
+url='https://github.com/Oichkatzelesfrettschen/steinmarder'
+license=('GPL-2.0-only')
+depends=('dkms')
+provides=("radeon-rs480-safe-regs=${pkgver}-${pkgrel}")
+conflicts=('radeon-rs480-safe-regs-dkms-git')
+# The pre-patched radeon source tarball is expanded by package() into the
+# DKMS source directory.  Keep makepkg from unpacking it into srcdir first.
+noextract=('radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz')
+source=(
+  'dkms.conf'
+  'pre-build.sh'
+  'radeon-dkms-ccache-gcc'
+  'radeon-dkms-ccache-clang'
+  "SAFE_REGS.tsv::file://${startdir}/../../../patches/rs480/SAFE_REGS.tsv"
+  "radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz::file://${startdir}/../../../sources/radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz"
+  "0001-rs480-safe-regs-debugfs.patch::file://${startdir}/../../../patches/rs480/0001-rs480-safe-regs-debugfs.patch"
+)
+sha256sums=(
+  'd9aa641dd1096b758387852b0e1d24b84aa0cbb6dfde3aafd51f59d2c160af65'
+  'fe709b98275d6238aec74dd2c1bebb6b7a9d6f31d8a88f41885e5eda49fa707a'
+  '5f00a982b9fd212d6a75f51154735f86d3600bc5fd38a074789125256e9e6631'
+  '56abe9164529b84b68ace1777fcc5107d71e87a2ac2794ad21fa07c4e4fbcf1a'
+  'ec8c00ff367aeec92f0f63572eb12379ecb63340323ad260c502f334a84677f1'
+  '7a1e1b6343e0f4a5e5e24bc0e45544c4d7cc79979aca0a15569ab5467df6ce29'
+  'd05330bbc56da3085cdc8e789547286bd312ad80cec076d7d4e7e5d9f31b22a4'
+)
+
+package() {
+  local _dkmsdir="${pkgdir}/usr/src/radeon-rs480-safe-regs-${pkgver}"
+
+  install -d "${_dkmsdir}/patches"
+  install -Dm644 "${srcdir}/dkms.conf"    "${_dkmsdir}/dkms.conf"
+  install -Dm755 "${srcdir}/pre-build.sh" "${_dkmsdir}/pre-build.sh"
+  install -Dm755 "${srcdir}/radeon-dkms-ccache-gcc" "${_dkmsdir}/radeon-dkms-ccache-gcc"
+  install -Dm755 "${srcdir}/radeon-dkms-ccache-clang" "${_dkmsdir}/radeon-dkms-ccache-clang"
+  install -Dm644 "${srcdir}/SAFE_REGS.tsv" "${_dkmsdir}/SAFE_REGS.tsv"
+  install -d "${_dkmsdir}/radeon"
+  tar -xJf "${srcdir}/radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz" \
+    -C "${_dkmsdir}/radeon"
+  install -Dm644 \
+    "${srcdir}/0001-rs480-safe-regs-debugfs.patch" \
+    "${_dkmsdir}/patches/0001-radeon-rs480-safe-regs-debugfs.patch"
+}

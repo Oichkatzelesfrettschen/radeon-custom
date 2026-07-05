@@ -1,0 +1,60 @@
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -830,6 +830,48 @@
+ 
+ DEFINE_SHOW_ATTRIBUTE(rs480_uma_status);
+ 
++/* SCLK_CNTL (engine-clock control) read-only status.
++ *
++ * SCLK_CNTL lives in the PLL index space (R_00000D_SCLK_CNTL, r300d.h), not
++ * the BAR0 MMIO window the other nodes read, so it is reached through
++ * RREG32_PLL (rdev->pll_rreg == r100_pll_rreg on RS400/RS480) under the
++ * driver's own clock lock -- the index/data dance the kernel already uses in
++ * r300_clock_startup.  That is a low-hazard read on the always-clocked
++ * clock-control aperture, not the northbridge MMIO hard-lock class of the
++ * gated CAP/IDCT frontier.
++ *
++ * This is STATUS, not a de-risker.  On the RS480 IGP this register reads
++ * near-all-ones: every FORCE bit and every DYN_STOP_LAT bit set, only
++ * SCLK_SRC_SEL distinguishable, and it is the only such value among the PLL
++ * indices.  That cannot separate "the BIOS forced every block on" from "the
++ * force/latency fields are unimplemented on this IGP and read as one", so a
++ * set FORCE_IDCT (bit 22) / FORCE_VIP (bit 23) reported here does NOT prove
++ * the IDCT/VIP blocks are clocked.  Do not treat it as permission to
++ * MMIO-read the gated CAP/IDCT frontier registers; that read stays
++ * operator-gated and accepted-wedge.  The node never writes SCLK_CNTL and
++ * there is deliberately no FORCE-on knob -- a PLL write is a separate,
++ * separately-armed experiment.
++ */
++static int rs480_sclk_cntl_show(struct seq_file *m, void *unused)
++{
++	struct radeon_device *rdev = m->private;
++	/* PLL index 0x0d == R_00000D_SCLK_CNTL (r300d.h / r100d.h). */
++	u32 sclk = RREG32_PLL(0x0000000D);
++
++	seq_printf(m, "SCLK_CNTL (PLL 0x0d) = 0x%08x\n", sclk);
++	seq_printf(m, "  FORCE_CP   (bit 16) = %u\n", (sclk >> 16) & 0x1);
++	seq_printf(m, "  FORCE_IDCT (bit 22) = %u\n", (sclk >> 22) & 0x1);
++	seq_printf(m, "  FORCE_VIP  (bit 23) = %u\n", (sclk >> 23) & 0x1);
++	seq_printf(m, "  FORCEON region (bits 15-31) = 0x%05x\n",
++		   (sclk >> 15) & 0x1ffff);
++	seq_printf(m, "  note: a near-all-ones read is ambiguous (force-on vs"
++		      " unimplemented-reads-one); a set FORCE_IDCT/FORCE_VIP here"
++		      " does NOT de-risk the gated CAP/IDCT MMIO read.\n");
++	return 0;
++}
++
++DEFINE_SHOW_ATTRIBUTE(rs480_sclk_cntl);
++
+ /* CP MicroEngine instruction-memory read-back dump.
+  *
+  * The loaded R300_cp.bin is the entire CP-ME instruction memory: a 256-microword
+@@ -1338,6 +1380,8 @@
+ 			    &rs480_candidate_gart_status_regs_fops);
+ 	debugfs_create_file("radeon_rs480_uma_status", 0444, root, rdev,
+ 			    &rs480_uma_status_fops);
++	debugfs_create_file("radeon_rs480_sclk_cntl", 0444, root, rdev,
++			    &rs480_sclk_cntl_fops);
+ 	/* CP_ME_RAM read-back dump.  Created on RS400/RS480 when the candidate-regs
+ 	 * group is enabled, but inert until the operator sets
+ 	 * radeon_rs480_cp_me_ram_dump=1 (the seq start() gate), because the read
