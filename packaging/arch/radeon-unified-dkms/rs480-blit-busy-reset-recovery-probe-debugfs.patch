@@ -1,0 +1,129 @@
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -38,6 +38,7 @@
+ #include "radeon.h"
+ #include "radeon_asic.h"
+ #include "rs400d.h"
++#include "radeon_object.h"
+ 
+ #include "rs480_reg_safe.h"
+ 
+@@ -1922,6 +1923,77 @@
+  * display-quiesced. */
+ #define RS480_RESET_HANG_PROBE_SOFT_RESET_TOKEN 0x53525354u	/* "SRST" */
+ 
++/* In-busy stage (Mode H): busy the 2D engine with a real BITBLT, then run the
++ * soft-reset while it drains.  GUI_ACTIVE (RBBM_STATUS bit 31) is the OR of the
++ * engine-busy bits; the 2D engine (E2/RB2D, bits 17/18) is driven by
++ * PACKET3_BITBLT_MULTI through r100_copy_blit -- the live r300/rs400 copy hook --
++ * without touching the gated VAP aperture (0x2200-0x2504) a geometry draw would.
++ * So it raises GUI_ACTIVE for the reset's RBBM_STATUS read without driving the
++ * wedge-prone geometry path.
++ *
++ * The reset still asserts SOFT_RESET_VAP|GA|CP, not E2, so this proves the
++ * documented soft-reset write survives while the engine is globally GUI_ACTIVE
++ * (E2 busy); it is not a 2D-block-specific reset.  rs480_soft_reset samples
++ * RBBM_STATUS at the instant of the reset write, so res.at_reset (E2_BUSY,
++ * GUI_ACTIVE) records whether the reset actually landed on a busy engine or the
++ * blit drained first through r100_mc_stop and the run degenerated to the idle
++ * case.  The blit fence can never signal once the CP is reset, so
++ * radeon_fence_driver_force_completion retires it before the ref is dropped. */
++#define RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN 0x48414E47u	/* "HANG" */
++
++static int rs480_blit_busy_reset(struct radeon_device *rdev, struct seq_file *m)
++{
++	struct rs480_soft_reset_result res;
++	struct radeon_bo *bo = NULL;
++	struct radeon_fence *fence;
++	u64 gpu_addr;
++	unsigned long sz = 2 * 1024 * 1024;
++	unsigned pages = (sz / 2) / RADEON_GPU_PAGE_SIZE;
++	int r;
++
++	r = radeon_bo_create(rdev, sz, PAGE_SIZE, true, RADEON_GEM_DOMAIN_GTT,
++			     0, NULL, NULL, &bo);
++	if (r) {
++		seq_printf(m, "blit-reset: scratch bo create failed (%d)\n", r);
++		return 0;
++	}
++	r = radeon_bo_reserve(bo, false);
++	if (r)
++		goto unref;
++	r = radeon_bo_pin(bo, RADEON_GEM_DOMAIN_GTT, &gpu_addr);
++	radeon_bo_unreserve(bo);
++	if (r) {
++		seq_printf(m, "blit-reset: scratch bo pin failed (%d)\n", r);
++		goto unref;
++	}
++
++	fence = r100_copy_blit(rdev, gpu_addr, gpu_addr + (sz / 2), pages, NULL);
++	if (IS_ERR(fence)) {
++		seq_printf(m, "blit-reset: BITBLT emit failed (%ld)\n", PTR_ERR(fence));
++		goto unpin;
++	}
++
++	rs480_soft_reset(rdev, &res);
++	radeon_fence_driver_force_completion(rdev, RADEON_RING_TYPE_GFX_INDEX);
++	radeon_fence_unref(&fence);
++
++	seq_printf(m,
++		   "reset-hang probe blit-reset: at-reset RBBM_STATUS=0x%08x (E2_BUSY=%u GUI_ACTIVE=%u) post=0x%08x ib_test=%s(%d) %s\n"
++		   "2D BITBLT busied E2; RBBM_SOFT_RESET(VAP|GA|CP) asserted while the engine was %s; CP rebuilt and re-tested. "
++		   "Proves the soft-reset write survives on a globally-active engine, not 2D-block-specific recovery\n",
++		   res.at_reset, G_000E40_E2_BUSY(res.at_reset), G_000E40_GUI_ACTIVE(res.at_reset),
++		   res.post, res.ib_test ? "FAIL" : "PASS", res.ib_test,
++		   (G_000E40_GA_BUSY(res.post) || G_000E40_VAP_BUSY(res.post)) ? "ENGINE-BUSY(reset suspect)" : "ENGINE-IDLE(reset clean)",
++		   G_000E40_GUI_ACTIVE(res.at_reset) ? "busy" : "idle(blit drained before the reset write, race lost)");
++unpin:
++	radeon_bo_reserve(bo, false);
++	radeon_bo_unpin(bo);
++	radeon_bo_unreserve(bo);
++unref:
++	radeon_bo_unref(&bo);
++	return 0;
++}
++
+ static int rs480_reset_hang_probe_show(struct seq_file *m, void *unused)
+ {
+ 	struct radeon_device *rdev = m->private;
+@@ -1929,11 +2001,13 @@
+ 	struct rs480_soft_reset_result res;
+ 	u32 pre;
+ 
+-	if (radeon_rs480_reset_hang_probe !=
+-	    RS480_RESET_HANG_PROBE_SOFT_RESET_TOKEN) {
++	if (radeon_rs480_reset_hang_probe != RS480_RESET_HANG_PROBE_SOFT_RESET_TOKEN &&
++	    radeon_rs480_reset_hang_probe != RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN) {
+ 		seq_printf(m,
+-			   "reset-hang probe disarmed: set rs480_reset_hang_probe=0x%08x for the idle soft-reset stage\n",
+-			   RS480_RESET_HANG_PROBE_SOFT_RESET_TOKEN);
++			   "reset-hang probe disarmed: set rs480_reset_hang_probe=0x%08x for the idle "
++			   "soft-reset stage, or 0x%08x for the 2D-blit in-busy stage\n",
++			   RS480_RESET_HANG_PROBE_SOFT_RESET_TOKEN,
++			   RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN);
+ 		return 0;
+ 	}
+ 
+@@ -1944,6 +2018,9 @@
+ 		return 0;
+ 	}
+ 
++	if (radeon_rs480_reset_hang_probe == RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN)
++		return rs480_blit_busy_reset(rdev, m);
++
+ 	pre = RREG32(R_000E40_RBBM_STATUS);
+ 	if (G_000E40_GUI_ACTIVE(pre)) {
+ 		seq_printf(m,
+--- a/radeon/radeon_drv.c
++++ b/radeon/radeon_drv.c
+@@ -323,7 +323,9 @@
+ MODULE_PARM_DESC(rs480_reset_hang_probe,
+ 	"Arm the RBBM soft-reset recovery probe debugfs node "
+ 	"radeon_rs480_reset_hang_probe. Default 0 (OFF); arm with 0x53525354 "
+-	"('SRST') for the idle soft-reset stage. Reading the armed node force-clocks "
++	"('SRST') for the idle soft-reset stage, or 0x48414E47 ('HANG') for the "
++	"2D-blit in-busy stage that busies the E2 engine via r100_copy_blit and resets "
++	"while it drains. Reading the armed node force-clocks "
+ 	"VAP/GA/E2 and runs the documented RBBM_SOFT_RESET sequence (the half of "
+ 	"r300_asic_reset that radeon_gpu_reset skips on an idle engine), rebuilds the "
+ 	"CP with r100_cp_init, and re-tests it with r100_ib_test. It proves whether the "
