@@ -149,7 +149,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=55
+pkgrel=56
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/steinmarder'
