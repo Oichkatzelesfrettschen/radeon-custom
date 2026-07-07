@@ -299,7 +299,7 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             '2992a24f8e6e06242a604783fb45fc6bc4c3a84c38c63e58209d1a7b441364af'
             'd64e7f8f9a1722a54dfc98d74b7dba38b1f6b3e90c2c6f70d6d7c27e9e875921'
             'f0fb0e953af5e53a01a5c674fc71d0d488b5b8aa53cb117d732aef7249de4510'
-            '2a3db3e3ca2f90ae44c22541ce42660356b3af8b21e1ca1998631a24c002f0c0')
+            '65ff70de18dc87e090ddea63d279aafbe13653d607d2372e02c62c8f3ddf4a5e')
 
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
