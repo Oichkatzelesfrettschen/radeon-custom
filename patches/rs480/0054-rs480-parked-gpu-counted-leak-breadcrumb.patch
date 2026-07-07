@@ -1,0 +1,35 @@
+--- a/radeon/radeon_gem.c
++++ b/radeon/radeon_gem.c
+@@ -44,6 +44,17 @@
+ int radeon_gem_prime_pin(struct drm_gem_object *obj);
+ void radeon_gem_prime_unpin(struct drm_gem_object *obj);
+ 
++#include <linux/delay.h>
++
++/* Counted parked-GPU teardown breadcrumb. The DRM file-close handle walk frees
++ * every client BO through radeon_gem_object_free, each leaked under gpu_parked
++ * (0053). dev_err_once hides the walk after the first object, so the death
++ * window between the first leak and radeon_driver_postclose_kms is invisible.
++ * A per-object counter, paced so netconsole keeps every line, makes the last
++ * object index on the wire the pin for the remaining teardown killer.
++ */
++static atomic_t rs480_parked_gem_leak = ATOMIC_INIT(0);
++
+ static vm_fault_t radeon_gem_fault(struct vm_fault *vmf)
+ {
+ 	struct ttm_buffer_object *bo = vmf->vma->vm_private_data;
+@@ -94,8 +105,13 @@
+ 		 * reclaims everything, and the host stays alive.
+ 		 */
+ 		if (robj->rdev->gpu_parked) {
+-			dev_err_once(robj->rdev->dev, "parked: leaking GEM objects, teardown deferred to reboot\n");
++			int leak_n = atomic_inc_return(&rs480_parked_gem_leak);
++
++			dev_err(robj->rdev->dev, "parked: GEM leak #%d begin (mn_unregister then return, no ttm_bo_fini)\n", leak_n);
++			msleep(1);
+ 			radeon_mn_unregister(robj);
++			dev_err(robj->rdev->dev, "parked: GEM leak #%d mn_unregister returned; deferring teardown to reboot\n", leak_n);
++			msleep(1);
+ 			return;
+ 		}
+ 		radeon_mn_unregister(robj);
