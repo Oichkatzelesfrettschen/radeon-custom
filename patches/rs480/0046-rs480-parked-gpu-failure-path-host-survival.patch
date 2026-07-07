@@ -1,0 +1,82 @@
+--- a/radeon/radeon_device.c
++++ b/radeon/radeon_device.c
+@@ -1883,6 +1883,7 @@
+ 	uint32_t *ring_data[RADEON_NUM_RINGS];
+ 
+ 	bool saved = false;
++	bool gpu_parked;
+ 
+ 	int i, r;
+ 
+@@ -1938,11 +1939,34 @@
+ 	}
+ 
+ 	r = radeon_asic_reset(rdev);
++
++	/* Park the GPU when the ASIC reset fails on an RS400/RS480 IGP.
++	 *
++	 * A failed reset leaves the GA register-bus client wedged, and every
++	 * register in the 0x4000+ 3D pipe space remains a non-posted-read
++	 * black hole: the HyperTransport read never completes and the CPU
++	 * hard-locks silently. RB3D_BUSY=0 does not make RB3D registers
++	 * readable; the readback grant is GA-routed. The resume-side stream
++	 * (power management, AtomBIOS encoder tables, HPD, forced modeset)
++	 * executes BIOS bytecode and display bring-up with unaudited register
++	 * access, so none of it may run against a wedged frontend. Parking
++	 * keeps the host alive: fences force-complete so userspace waiters
++	 * unblock, acceleration turns off so no new CS reaches the dead
++	 * frontend, and the stage breadcrumbs let netconsole pin any residual
++	 * hazard to an exact instruction window.
++	 */
++	gpu_parked = (r != 0) &&
++		(rdev->family == CHIP_RS480 || rdev->family == CHIP_RS400);
++	if (gpu_parked)
++		dev_err(rdev->dev, "RS480 reset failed: parking GPU, skipping resume-side access\n");
++
+ 	if (!r) {
+ 		dev_info(rdev->dev, "GPU reset succeeded, trying to resume\n");
+ 		radeon_resume(rdev);
+ 	}
+ 
++	if (gpu_parked)
++		dev_err(rdev->dev, "parked: restoring BIOS scratch (posted writes)\n");
+ 	radeon_restore_bios_scratch_regs(rdev);
+ 
+ 	for (i = 0; i < RADEON_NUM_RINGS; ++i) {
+@@ -1950,11 +1974,25 @@
+ 			radeon_ring_restore(rdev, &rdev->ring[i],
+ 					    ring_sizes[i], ring_data[i]);
+ 		} else {
++			if (gpu_parked)
++				dev_err(rdev->dev, "parked: force-completing fences on ring %d\n", i);
+ 			radeon_fence_driver_force_completion(rdev, i);
+ 			kfree(ring_data[i]);
+ 		}
+ 	}
+ 
++	if (gpu_parked) {
++		dev_err(rdev->dev, "parked: acceleration off, skipping pm/atom/hpd/modeset resume\n");
++		rdev->accel_working = false;
++		rdev->in_reset = true;
++		rdev->needs_reset = false;
++		downgrade_write(&rdev->exclusive_lock);
++		dev_info(rdev->dev, "GPU reset failed, GPU parked, host kept alive\n");
++		rdev->in_reset = false;
++		up_read(&rdev->exclusive_lock);
++		return r;
++	}
++
+ 	if ((rdev->pm.pm_method == PM_METHOD_DPM) && rdev->pm.dpm_enabled) {
+ 		/* do dpm late init */
+ 		r = radeon_pm_late_init(rdev);
+--- a/radeon/r300.c
++++ b/radeon/r300.c
+@@ -498,6 +498,8 @@
+ 	} else
+ 		dev_info(rdev->dev, "GPU reset succeed\n");
+ 	r100_mc_resume(rdev, &save);
++	if (ret)
++		dev_err(rdev->dev, "mc_resume complete on failed reset (MC/display domains responsive)\n");
+ 	return ret;
+ }
+ 
