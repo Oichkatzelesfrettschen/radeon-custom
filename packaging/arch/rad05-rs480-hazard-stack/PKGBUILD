@@ -1,0 +1,40 @@
+# rad05-rs480-hazard-stack -- meta-package for the RS480 RAD-05 hazardous-fire
+# safety set on cachyos-vostro1000.
+#
+# This is the package a RAD-05 hazard workflow requires. It hard-depends on the
+# whole safety substrate so the SB600 watchdog can never be forgotten when a
+# destructive reset campaign is set up. radeon-unified-dkms itself stays a normal
+# diagnostic package (depends: dkms only) so ordinary build/install is never held
+# hostage to the watchdog set; the hard chain lives HERE.
+#
+# Package presence still does not prove machine safety. Every hazardous run must
+# pass the installed runtime preflight (rad05-preflight), which checks the facts a
+# pacman dependency cannot: module loaded, /dev/watchdog present, fired latch
+# cleared, netconsole live, lockup_timeout, feeder calibration, and that the
+# loaded radeon module matches the installed package.
+#
+# The calibration-pending watchdog feeder is deliberately NOT a hard dependency:
+# it resets the box during feed at ~20-29 s, so promoting it into the safety chain
+# would inject false resets. It joins as a hard dep only once its standalone
+# calibration passes.
+
+pkgname=rad05-rs480-hazard-stack
+pkgver=0.1
+pkgrel=1
+pkgdesc='RAD-05 RS480 hazardous-fire safety stack: radeon-under-test + SB600 watchdog + runtime preflight'
+arch=('any')
+url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
+license=('GPL-2.0-only')
+# Hard chain: the driver under test and the SB600 watchdog substrate with the
+# fired-latch fix. sp5100-tco-ioapic-dkms>=0.4-4 guarantees the warm-boot latch
+# clear that makes an autonomous hazard loop usable.
+depends=('radeon-unified-dkms' 'sp5100-tco-ioapic-dkms>=0.4-4')
+optdepends=('rs480-wd-feeder: compiled dead-man watchdog feeder -- HOLD until standalone calibration passes (currently resets during feed ~20-29 s); not part of the hard chain'
+            'socat: workstation-side netconsole listener for off-box capture')
+install=rad05-rs480-hazard-stack.install
+source=('rad05-preflight.sh')
+sha256sums=('SKIP')
+
+package() {
+    install -Dm755 "${srcdir}/rad05-preflight.sh" "${pkgdir}/usr/bin/rad05-preflight"
+}
