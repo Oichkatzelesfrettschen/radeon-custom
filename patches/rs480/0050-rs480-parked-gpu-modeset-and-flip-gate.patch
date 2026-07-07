@@ -1,0 +1,71 @@
+--- a/radeon/radeon_display.c
++++ b/radeon/radeon_display.c
+@@ -493,6 +493,12 @@
+ 	unsigned long flags;
+ 	int r;
+ 
++	/* Page flips program display fetch registers; a parked RS480 rejects
++	 * them for the same reason it rejects modesets.
++	 */
++	if (rdev->gpu_parked)
++		return -ENODEV;
++
+ 	work = kzalloc(sizeof *work, GFP_KERNEL);
+ 	if (work == NULL)
+ 		return -ENOMEM;
+@@ -632,6 +638,19 @@
+ 
+ 	dev = set->crtc->dev;
+ 
++	/* The DRM core restores the fbdev mode on last close, and any modeset
++	 * against a parked RS480 re-enables display memory requests into the
++	 * wedge-held MC client arbiter -- the host interface deadlocks and
++	 * the next CPU MMIO read hard-locks the machine. A parked GPU accepts
++	 * the modeset as a no-op success; the console stays dark until
++	 * reboot, and the host stays alive.
++	 */
++	rdev = dev->dev_private;
++	if (rdev->gpu_parked) {
++		dev_err_once(rdev->dev, "parked: rejecting modeset, display stays down\n");
++		return 0;
++	}
++
+ 	ret = pm_runtime_get_sync(dev->dev);
+ 	if (ret < 0) {
+ 		pm_runtime_put_autosuspend(dev->dev);
+--- a/radeon/radeon_kms.c
++++ b/radeon/radeon_kms.c
+@@ -26,6 +26,7 @@
+  *          Jerome Glisse
+  */
+ 
++#include <linux/delay.h>
+ #include <linux/pci.h>
+ #include <linux/pm_runtime.h>
+ #include <linux/slab.h>
+@@ -752,8 +753,11 @@
+ 	{
+ 		struct radeon_device *bc_rdev = dev->dev_private;
+ 
+-		if (bc_rdev && !bc_rdev->accel_working)
++		if (bc_rdev && !bc_rdev->accel_working) {
++			msleep(1);
+ 			dev_err(bc_rdev->dev, "postclose on parked GPU: begin teardown\n");
++			msleep(1);
++		}
+ 	}
+ 
+ 	struct radeon_device *rdev = dev->dev_private;
+@@ -794,8 +798,11 @@
+ 	{
+ 		struct radeon_device *bc_rdev = dev->dev_private;
+ 
+-		if (bc_rdev && !bc_rdev->accel_working)
++		if (bc_rdev && !bc_rdev->accel_working) {
++			msleep(1);
+ 			dev_err(bc_rdev->dev, "postclose on parked GPU: teardown complete\n");
++			msleep(1);
++		}
+ 	}
+ 
+ }
