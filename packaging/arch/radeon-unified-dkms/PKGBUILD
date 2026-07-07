@@ -217,6 +217,8 @@ source=(
   "rs480-gpu-reset-recover-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0040-rs480-gpu-reset-recover-probe-debugfs.patch"
   "rs480-rbbm-soft-reset-recovery-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0041-rs480-rbbm-soft-reset-recovery-probe-debugfs.patch"
   "rs480-blit-busy-reset-recovery-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0042-rs480-blit-busy-reset-recovery-probe-debugfs.patch"
+  "rs480-r300-asic-reset-force-clock-production-path.patch::file://${startdir}/../../../patches/rs480/0043-rs480-r300-asic-reset-force-clock-production-path.patch"
+  "rs480-wedged-3d-production-reset-recovery-probe.patch::file://${startdir}/../../../patches/rs480/0044-rs480-wedged-3d-production-reset-recovery-probe.patch"
 )
 sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'cc921d8f17005e3e77fb7a610c427d585b15c1dfd907525c6d7575dac168b5c3'
@@ -271,7 +273,9 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             '4db590fb082910b87b68692ae6a16d95b468744dabd6cd9ee22a1eaaf4e2e7d3'
             'f8b4114e670f24c399effddaed2b2768266f4ca41baaed48b3f9c211a1d3b011'
             'a99ef00f43ca49d01f06eb8041a675712d824c4a19f81c7191b5e9da5b417a49'
-            'cf950319e668bc60198ac907df65aba3ca1e7a05cc64dbe680ed8916db58ba5a')
+            'cf950319e668bc60198ac907df65aba3ca1e7a05cc64dbe680ed8916db58ba5a'
+            'cb3aaeab39c5655c6126574f57252609482b2efae025cec1dd2e248498d2d2b0'
+            'ceae3fed724cdac91c0666d358df7cc533c742513e45e3a0cfd788dbd04a4348')
 
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
@@ -416,4 +420,10 @@ package() {
   install -Dm644 \
     "${srcdir}/rs480-blit-busy-reset-recovery-probe-debugfs.patch" \
     "${_dkmsdir}/patches/0042-rs480-blit-busy-reset-recovery-probe-debugfs.patch"
+  install -Dm644 \
+    "${srcdir}/rs480-r300-asic-reset-force-clock-production-path.patch" \
+    "${_dkmsdir}/patches/0043-rs480-r300-asic-reset-force-clock-production-path.patch"
+  install -Dm644 \
+    "${srcdir}/rs480-wedged-3d-production-reset-recovery-probe.patch" \
+    "${_dkmsdir}/patches/0044-rs480-wedged-3d-production-reset-recovery-probe.patch"
 }
