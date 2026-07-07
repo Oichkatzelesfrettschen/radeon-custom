@@ -149,7 +149,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=58
+pkgrel=59
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/steinmarder'
@@ -279,7 +279,7 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'cb3aaeab39c5655c6126574f57252609482b2efae025cec1dd2e248498d2d2b0'
             '78aa710995bc2bd41840737d3e69badf11286d3803d847c11505fa3301bf58d6'
             '654f42b815258e8a2e5f0caab2b1bd6acd1573f9bc1e0df04fc5211b3087eaed'
-            '4c88493e4c04dcfeb36af43db6ab6176201653e56e33f33c48c49c1d756a462b')
+            '64bbe577a4f28332d6b099349d2500f511f47d5a395735cc413ecc753b8288fa')
 
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
