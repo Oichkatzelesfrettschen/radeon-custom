@@ -149,7 +149,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=56
+pkgrel=57
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/steinmarder'
@@ -219,6 +219,7 @@ source=(
   "rs480-blit-busy-reset-recovery-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0042-rs480-blit-busy-reset-recovery-probe-debugfs.patch"
   "rs480-r300-asic-reset-force-clock-production-path.patch::file://${startdir}/../../../patches/rs480/0043-rs480-r300-asic-reset-force-clock-production-path.patch"
   "rs480-wedged-3d-production-reset-recovery-probe.patch::file://${startdir}/../../../patches/rs480/0044-rs480-wedged-3d-production-reset-recovery-probe.patch"
+  "rs480-wedge-safe-crash-shim-gated-3d-readback.patch::file://${startdir}/../../../patches/rs480/0045-rs480-wedge-safe-crash-shim-gated-3d-readback.patch"
 )
 sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'cc921d8f17005e3e77fb7a610c427d585b15c1dfd907525c6d7575dac168b5c3'
@@ -275,7 +276,8 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'a99ef00f43ca49d01f06eb8041a675712d824c4a19f81c7191b5e9da5b417a49'
             'cf950319e668bc60198ac907df65aba3ca1e7a05cc64dbe680ed8916db58ba5a'
             'cb3aaeab39c5655c6126574f57252609482b2efae025cec1dd2e248498d2d2b0'
-            '78aa710995bc2bd41840737d3e69badf11286d3803d847c11505fa3301bf58d6')
+            '78aa710995bc2bd41840737d3e69badf11286d3803d847c11505fa3301bf58d6'
+            '654f42b815258e8a2e5f0caab2b1bd6acd1573f9bc1e0df04fc5211b3087eaed')
 
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
@@ -426,4 +428,7 @@ package() {
   install -Dm644 \
     "${srcdir}/rs480-wedged-3d-production-reset-recovery-probe.patch" \
     "${_dkmsdir}/patches/0044-rs480-wedged-3d-production-reset-recovery-probe.patch"
+  install -Dm644 \
+    "${srcdir}/rs480-wedge-safe-crash-shim-gated-3d-readback.patch" \
+    "${_dkmsdir}/patches/0045-rs480-wedge-safe-crash-shim-gated-3d-readback.patch"
 }
