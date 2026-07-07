@@ -1,0 +1,20 @@
+post_install() {
+    cat <<'EOF'
+==> rad05-rs480-hazard-stack installed.
+    The RS480 RAD-05 hazard safety substrate is present, but PRESENCE IS NOT SAFETY.
+    Before every hazardous reset fire, run:
+
+        rad05-preflight            (or: rad05-preflight --recovery)
+
+    It gates on the runtime facts a package cannot prove: sp5100_tco loaded,
+    /dev/watchdog present, fired-latch fix installed, netconsole-rad05 active,
+    lockup_timeout, watchdog-feeder calibration, and radeon srcversion match.
+
+    The watchdog feeder is calibration-pending (resets during feed ~20-29 s).
+    Fires run WITHOUT the watchdog and accept manual recovery until it passes.
+EOF
+}
+
+post_upgrade() {
+    post_install
+}
