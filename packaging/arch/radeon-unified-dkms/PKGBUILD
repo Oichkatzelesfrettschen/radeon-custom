@@ -162,11 +162,11 @@ license=('GPL-2.0-only')
 # Active watchdog feeding is RETIRED for RAD-05 fire timing (the SB600 reset is
 # not deferrable via WDIOC_SETTIMEOUT/WDIOC_KEEPALIVE/magic close), so no feeder
 # belongs in any chain. The SB600 watchdog substrate is a loud optdepend below;
-# the hard safety chain lives in the rad05-rs480-hazard-stack meta-package, gated
+# the hard safety chain lives in the rs480-reset-hazard-stack meta-package, gated
 # by a runtime preflight, not by package presence.
 depends=('dkms')
 optdepends=('sp5100-tco-ioapic-dkms>=0.4-4: SB600 hardware watchdog substrate -- REQUIRED on cachyos-vostro1000 for RAD-05 hazardous reset campaigns (enables /dev/watchdog via the IOAPIC-page fallback); package presence does not validate the watchdog feeder, hazardous runs must still pass the runtime preflight'
-            'rad05-rs480-hazard-stack: full RAD-05 hazard stack (radeon + SB600 watchdog + crash-capture) -- install this instead when running destructive reset experiments')
+            'rs480-reset-hazard-stack: full RS480 failed-reset hazard stack (radeon + SB600 watchdog + runtime preflight) -- install this instead when running destructive reset experiments')
 provides=("radeon-unified=${pkgver}-${pkgrel}" 'radeon-rs480-safe-regs=0.2-9' 'radeon-palm-gate=1.0')
 conflicts=('radeon-rs480-safe-regs-dkms' 'radeon-rs480-safe-regs-dkms-git' 'radeon-palm-gate-dkms')
 replaces=('radeon-rs480-safe-regs-dkms' 'radeon-palm-gate-dkms')

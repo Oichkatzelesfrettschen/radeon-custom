@@ -1,0 +1,63 @@
+# rs480-reset-hazard-stack -- meta-package for the RS480 failed-reset
+# hazardous-fire safety set on cachyos-vostro1000.
+#
+# Mechanism name (was rad05-rs480-hazard-stack; provides/replaces the old name so
+# an installed box upgrades cleanly). This is the package a RAD-05 hazard workflow
+# requires. It hard-depends on the whole safety substrate so the SB600 watchdog
+# can never be forgotten when a destructive reset campaign is set up.
+# radeon-unified-dkms itself stays a normal diagnostic package (depends: dkms
+# only) so ordinary build/install is never held hostage to the watchdog set; the
+# hard chain lives HERE.
+#
+# Package presence still does not prove machine safety. Every hazardous run must
+# pass the installed runtime preflight (rs480-reset-hazard-preflight), which
+# checks the facts a pacman dependency cannot: watchdog substrate visibility,
+# fired latch cleared, netconsole live, lockup_timeout, and that the loaded
+# radeon module matches the installed package.
+#
+# Active watchdog feeding is RETIRED for RAD-05 fire timing: the SB600 hardware
+# reset event is not deferrable through WDIOC_SETTIMEOUT, WDIOC_KEEPALIVE, or
+# magic close (the real reset fires in a fixed sub-second window regardless), so
+# the feeder cannot serve as a dead-man switch for multi-second wedge fires. It
+# is therefore not a dependency at all. The SB600 DKMS remains a hard dependency
+# as the watchdog substrate and the fired-latch fix; hazard fires use
+# boot-persistent netconsole and manual recovery.
+
+pkgname=rs480-reset-hazard-stack
+pkgver=0.2
+pkgrel=1
+pkgdesc='RS480 failed-reset hazardous-fire safety stack: radeon-under-test + SB600 watchdog + runtime preflight'
+arch=('any')
+url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
+license=('GPL-2.0-only')
+# Hard chain: the driver under test and the SB600 watchdog substrate with the
+# fired-latch fix. sp5100-tco-ioapic-dkms>=0.4-4 guarantees the warm-boot latch
+# clear that keeps a watchdog-fired reboot from immediately retriggering reset.
+depends=('radeon-unified-dkms' 'sp5100-tco-ioapic-dkms>=0.4-4')
+optdepends=('rs480-wd-feeder: compiled watchdog arming tool for SB600 research only -- RETIRED for RAD-05 fire timing (the reset is not deferrable via WDIOC_SETTIMEOUT/WDIOC_KEEPALIVE/magic close); not a dead-man feeder for wedge fires'
+            'socat: workstation-side netconsole listener for off-box capture')
+# Mechanism-name migration: supersede the old rad05-* package cleanly.
+provides=('rad05-rs480-hazard-stack')
+replaces=('rad05-rs480-hazard-stack')
+conflicts=('rad05-rs480-hazard-stack')
+install=rs480-reset-hazard-stack.install
+source=('rs480-reset-hazard-preflight.sh')
+sha256sums=('0cb45b3f2c23d975d8e7f4c9d385866717aafe6ba1427370404db69191cf76b3')
+
+package() {
+    # Canonical mechanism-named entry point.
+    install -Dm755 "${srcdir}/rs480-reset-hazard-preflight.sh" \
+        "${pkgdir}/usr/bin/rs480-reset-hazard-preflight"
+
+    # Backward-compatible wrapper: the old rad05-preflight name keeps working but
+    # warns toward the canonical name so existing runbooks do not silently break.
+    install -dm755 "${pkgdir}/usr/bin"
+    cat > "${pkgdir}/usr/bin/rad05-preflight" <<'EOF'
+#!/bin/sh
+# Deprecated alias for rs480-reset-hazard-preflight. Retained so existing
+# runbooks keep working; use the mechanism name in new scripts.
+echo "rad05-preflight: deprecated name; use rs480-reset-hazard-preflight" >&2
+exec rs480-reset-hazard-preflight "$@"
+EOF
+    chmod 755 "${pkgdir}/usr/bin/rad05-preflight"
+}
