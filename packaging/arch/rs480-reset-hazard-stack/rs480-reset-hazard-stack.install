@@ -1,10 +1,12 @@
 post_install() {
     cat <<'EOF'
-==> rad05-rs480-hazard-stack installed.
-    The RS480 RAD-05 hazard safety substrate is present, but PRESENCE IS NOT SAFETY.
+==> rs480-reset-hazard-stack installed.
+    The RS480 failed-reset hazard safety substrate is present, but PRESENCE IS NOT SAFETY.
     Before every hazardous reset fire, run:
 
-        rad05-preflight            (or: rad05-preflight --recovery)
+        rs480-reset-hazard-preflight   (or: rs480-reset-hazard-preflight --recovery)
+
+    (The old name rad05-preflight still works but warns; use the new name.)
 
     It gates on the runtime facts a package cannot prove: watchdog substrate
     visibility, fired-latch fix installed, netconsole-rad05 active, lockup_timeout,

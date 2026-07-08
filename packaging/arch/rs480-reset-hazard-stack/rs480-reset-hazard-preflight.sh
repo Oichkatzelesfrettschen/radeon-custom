@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rad05-preflight -- runtime safety gate for RS480 RAD-05 hazardous reset fires.
+# rs480-reset-hazard-preflight -- runtime safety gate for RS480 RAD-05 hazardous reset fires.
 #
 # Package presence cannot prove machine safety: the SB600 watchdog module may not
 # be loaded, /dev/watchdog may be absent, the fired latch may not have been
@@ -19,8 +19,8 @@
 # satisfied and hard-fails, by design.
 #
 # Usage:
-#   rad05-preflight            # full gate; nonzero exit blocks a fire
-#   rad05-preflight --recovery # allow lockup_timeout != 0 (recovery-test mode)
+#   rs480-reset-hazard-preflight            # full gate; nonzero exit blocks a fire
+#   rs480-reset-hazard-preflight --recovery # allow lockup_timeout != 0 (recovery-test mode)
 set -u
 
 recovery_mode=0
@@ -31,7 +31,7 @@ ok()   { printf '  PASS  %s\n' "$1"; pass=$((pass+1)); }
 bad()  { printf '  FAIL  %s\n' "$1"; fail=$((fail+1)); }
 note() { printf '  WARN  %s\n' "$1"; warn=$((warn+1)); }
 
-echo "rad05-preflight: RS480 hazardous-fire runtime gate"
+echo "rs480-reset-hazard-preflight: RS480 hazardous-fire runtime gate"
 
 # 1. SB600 watchdog module presence (substrate visibility; PASS/WARN per policy).
 #    Feeding is retired, so absence is not fatal to a no-watchdog fire -- it only
@@ -83,7 +83,7 @@ fi
 #    do not defer the SB600 reset on this board (fixed sub-second window). A fire
 #    profile that explicitly requires feeding cannot be satisfied and hard-fails;
 #    the default (no feeder required) reports the retired state and is sanctioned.
-if [ "${RAD05_WD_FEEDER_REQUIRED:-0}" = "1" ]; then
+if [ "${RS480_WD_FEEDER_REQUIRED:-${RAD05_WD_FEEDER_REQUIRED:-0}}" = "1" ]; then
     bad "WATCHDOG_FEEDER=RETIRED_FOR_RAD05_FIRE_TIMING but this run requires feeding -- unsatisfiable; use netconsole + manual recovery or validate a different recovery mechanism"
 else
     ok "WATCHDOG_FEEDER=RETIRED_FOR_RAD05_FIRE_TIMING (sanctioned: hazard fires use netconsole + manual recovery)"
@@ -98,7 +98,7 @@ else
     bad "radeon srcversion mismatch (running=$running installed=$installed) -- reboot to load the installed module"
 fi
 
-echo "rad05-preflight: $pass pass, $warn warn, $fail fail"
-[ "$fail" -eq 0 ] || { echo "rad05-preflight: BLOCKED -- resolve FAIL gates before firing"; exit 1; }
-echo "rad05-preflight: hard gates OK (review WARN lines before firing)"
+echo "rs480-reset-hazard-preflight: $pass pass, $warn warn, $fail fail"
+[ "$fail" -eq 0 ] || { echo "rs480-reset-hazard-preflight: BLOCKED -- resolve FAIL gates before firing"; exit 1; }
+echo "rs480-reset-hazard-preflight: hard gates OK (review WARN lines before firing)"
 exit 0
