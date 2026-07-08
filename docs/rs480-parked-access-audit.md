@@ -90,16 +90,25 @@ build (not makepkg, which only packages): `dkms build` applied 0001-0062 and
 built + signed radeon.ko clean, pkgrel 77. Runtime not exercised because a
 parked-module unload is not a campaign path (the box reboots). No fire.
 
-### 3. Userspace VRAM mmap SIGBUS gate (0060) -- armed but unproven, close last
+### 3. Userspace VRAM mmap SIGBUS gate (0060) -- COVERED by static dominance proof
 
 0060 zaps userspace GEM PTEs (`unmap_mapping_range`) and returns `VM_FAULT_SIGBUS`
 for VRAM-placed BOs in `radeon_gem_fault`. Fire 28 proved host survival but no
-thawed client re-faulted a zapped VRAM mapping, so the SIGBUS arm has never
-fired. This needs a STATIC proof that the gate is correctly placed (the guard
-precedes any `down_read`/hardware touch and covers exactly the VRAM placement) or
-a future non-fire unit-style probe -- not a WD3B fire. Until then it is armed,
-placement-audited, and unproven. Close last because it is the only row that is
-functionally present; the fix is proof, not code.
+thawed client re-faulted a zapped VRAM mapping, so the SIGBUS arm was never
+observed at runtime.
+
+Closed by a static dominance proof (docs/rs480-0060-sigbus-dominance-proof.md):
+in `radeon_gem_fault` the `gpu_parked && mem_type == TTM_PL_VRAM` gate returns
+SIGBUS before the first lock (`down_read(mclk_lock)`), the first sleeping BO
+reservation (`ttm_bo_vm_reserve`), the first TTM driver callback
+(`radeon_bo_fault_reserve_notify`), the aperture/PTE map
+(`ttm_bo_vm_fault_reserved`), and any register access; and the park-path
+`unmap_mapping_range(anon_inode->i_mapping, 0, 0, 1)` tears down every PTE in the
+device GEM address space (COW included), so every later touch refaults into that
+gate. GTT/system BOs correctly fall through (placement-scoped to VRAM). One
+stated residual: the unlocked placement read is stable because no BO migration
+runs post-park. Covered by static dominance; hardware-fire not required; runtime
+SIGBUS not observed in Fire 28 because no client refaulted VRAM. No code change.
 
 ## Enforcement going forward
 
