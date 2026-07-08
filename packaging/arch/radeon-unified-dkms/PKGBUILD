@@ -149,7 +149,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=75
+pkgrel=76
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/steinmarder'
@@ -247,10 +247,11 @@ source=(
   "rs480-parked-gpu-disable-kms-output-poll.patch::file://${startdir}/../../../patches/rs480/0058-rs480-parked-gpu-disable-kms-output-poll.patch"
   "rs480-parked-gpu-gate-fbdev-vram-aperture.patch::file://${startdir}/../../../patches/rs480/0059-rs480-parked-gpu-gate-fbdev-vram-aperture.patch"
   "rs480-parked-gpu-sigbus-vram-mmap.patch::file://${startdir}/../../../patches/rs480/0060-rs480-parked-gpu-sigbus-vram-mmap.patch"
+  "rs480-parked-gpu-debugfs-readers-hard-return.patch::file://${startdir}/../../../patches/rs480/0061-rs480-parked-gpu-debugfs-readers-hard-return.patch"
 )
 sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'cc921d8f17005e3e77fb7a610c427d585b15c1dfd907525c6d7575dac168b5c3'
-            '09b6bc6b5705e897fa34ec850950dad03719619be45fce63a6d7d416f62c4e73'
+            '12b30384ff30e63eb03be68854dc9c67ec3da144b2d4b433d466ac302d95ae0c'
             '1ce4bdbb37c2b1a1d5669878c9e76840c23c4611031e1dd701077e26492decb0'
             'e3969bc270721ee297ba631b7af8a2dff4653d406a34f1df6c3f49a50bba3a30'
             'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
@@ -319,7 +320,8 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             '0ff7f9ce2a5e954383c4238f116f8b66bcb8f69538ad6acefa83e0a6cb689ab3'
             '5468e2c2d97e5e80cb15b862a4c3038e3b8f2777e5218b97542219c9003df030'
             'b714bc1590d61b9d300d67dd36071b939c8a447020d4d7ef5ba1f5f25ba368e0'
-            '165f1cf6743a11851ca33261224a1ae1850bbac5986cbd8cafc02a741c6fd0df')
+            '165f1cf6743a11851ca33261224a1ae1850bbac5986cbd8cafc02a741c6fd0df'
+            '3339e5d4149722a59da9764397dd3aa9077099decd68195ede4d39cb21cee21a')
 
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
@@ -518,4 +520,7 @@ package() {
   install -Dm644 \
     "${srcdir}/rs480-parked-gpu-sigbus-vram-mmap.patch" \
     "${_dkmsdir}/patches/0060-rs480-parked-gpu-sigbus-vram-mmap.patch"
+  install -Dm644 \
+    "${srcdir}/rs480-parked-gpu-debugfs-readers-hard-return.patch" \
+    "${_dkmsdir}/patches/0061-rs480-parked-gpu-debugfs-readers-hard-return.patch"
 }
