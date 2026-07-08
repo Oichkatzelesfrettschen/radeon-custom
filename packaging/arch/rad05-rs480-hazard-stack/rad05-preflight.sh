@@ -31,10 +31,16 @@ else
 fi
 
 # 2. /dev/watchdog exists (the module actually claimed the 8-byte window).
+#    Hard gate only when the feeder is opted in (we intend to rely on the
+#    watchdog). For a no-watchdog manual-recovery fire, a missing node is a WARN:
+#    the watchdog substrate is degraded but the fire does not depend on it.
+feeder_opt="${RAD05_WD_FEEDER_OK:-0}"
 if [ -c /dev/watchdog ]; then
     ok "/dev/watchdog present"
+elif [ "$feeder_opt" = "1" ]; then
+    bad "/dev/watchdog missing but feeder opted in (IOAPIC-page fallback did not map the window)"
 else
-    bad "/dev/watchdog missing (IOAPIC-page fallback did not map the watchdog window)"
+    note "/dev/watchdog missing -- watchdog substrate degraded; fine for a no-watchdog manual-recovery fire, investigate before relying on autonomous reboot"
 fi
 
 # 3. Fired-latch fix version installed (>= 0.4-4 clears SP5100_WDT_FIRED on first touch).
