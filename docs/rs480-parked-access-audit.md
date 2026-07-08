@@ -43,24 +43,31 @@ These three edges are not gated by `gpu_parked`. They are classified here; the
 follow-up is one mechanical patch per gap, not a broad cleanup, in the order
 below. No fire is required to close any of them.
 
-### 1. RE debugfs register readers (patches 0001-0042) -- unguarded, close first
+### 1. RE debugfs register readers (patches 0001-0042) -- COVERED by 0061
 
 The RE readers (`0001` safe-regs, `0004` candidate-regs, `0005` firmware-read,
 `0010` mc-benign, `0011` gart-status, `0018` sclk-cntl-pll, `0019` pll-indirect +
 hazard-firstread, `0022` vertex-engine attended probe, `0039` cp-ib-scratch, and
-peers) register debugfs nodes that read GPU registers via `RREG32` / `RREG32_PLL`
-(102 sites) / `RREG32_MC` (49 sites). All predate `gpu_parked` (0046), so none is
-gated. Classification by operating window:
+peers) live in `rs400.c` and read GPU registers via `RREG32` / `RREG32_PLL` /
+`RREG32_MC`. All predate `gpu_parked` (0046), so none was gated.
 
-- Safe in normal operation, black hole post-park: the 3D-pipe / VAP-GA / MC-indirect
-  readers (`0004`, `0005`, `0011`, `0019`, `0022`) -- a read after park is a
-  non-completing HT read into the GA-routed bus.
-- Safe in both windows: host-domain scratch / posted-config readers where the
-  register is not clock/grant-gated.
+Closed by **0061-rs480-parked-gpu-debugfs-readers-hard-return.patch**: one named
+helper `rs480_debugfs_refuse_if_parked()` gates all 18 seq_file show readers
+(hard-return with an explanatory line); the CP-ME inject write node returns
+`-EIO`; and the two shared primitives carry the no-MMIO net
+(`rs480_candidate_regs_emit()` refuses before its read loop,
+`rs480_candidate_reg_read()` returns the hazard sentinel). No safe/unsafe split.
+The one pre-existing upstream `rs400_debugfs_gart_info_show()` is covered too.
 
-Fix: a `gpu_parked` hard-return in the RE debugfs read path so any node read after
-park returns `-ENODEV` instead of touching the bus. One patch, gating the shared
-reader entry (the `dri/N` root registered at 0009), not each node.
+Static verification (over the DKMS-order reconstructed tree): every debugfs
+reader entry point reads hardware only behind a parked guard. Three functions
+read hardware without an in-body guard and are classified out-of-scope, not
+regressions: `rs480_cp_me_ram_inject_one` (helper reachable only via the guarded
+inject write), `rs480_wedged_3d_reset` (the reset mechanism -- it must run on the
+first unparked fire; its debugfs callers are guarded), and `rs400_startup` (the
+upstream init/resume path, gated by the resume-side patches 0046/0048, not a
+debugfs edge). Compile + static verified through the package/DKMS build path
+(pkgrel 76, dkms applied 0001-0061 and radeon.ko built clean); no fire.
 
 ### 2. Module unload of a parked radeon -- uncovered teardown, close second
 
