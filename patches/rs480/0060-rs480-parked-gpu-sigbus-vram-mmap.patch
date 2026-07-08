@@ -1,0 +1,70 @@
+From: radeon-custom rs480 reset-recovery track
+Subject: [PATCH] drm/radeon: SIGBUS userspace VRAM mmap access on a parked RS480
+
+Fire 24b survived the quiet window (0058 replicated) and died silently
+in the post-harness window: no fbdev-gate breadcrumb, no radeon line at
+all. A killer that never enters a gated kernel path is a userspace one:
+X teardown touching its CPU-mapped VRAM buffer objects issues the
+non-posted HyperTransport read directly through the host aperture,
+which a parked RS480 holds parked -- the register black hole through
+memory space, invisible to every kernel print.
+
+Two page-table-only gates complete the aperture closure that 0059
+started on the kernel fbcon side:
+
+1. radeon_gem_fault returns VM_FAULT_SIGBUS for VRAM-placed buffer
+   objects under gpu_parked, before taking any lock. The faulting
+   client dies; its buffer objects already outlive teardown through
+   the parked GEM-leak path. GTT and system placements stay mapped --
+   their pages are plain system RAM.
+
+2. The parked failure path calls unmap_mapping_range on the GEM offset
+   mapping after the async quiesce, zapping every live userspace PTE
+   so the next touch re-faults into the SIGBUS gate instead of the
+   bus. Breadcrumbed for netconsole classification.
+
+--- a/radeon/radeon_gem.c
++++ b/radeon/radeon_gem.c
+@@ -61,6 +61,22 @@
+ 	struct radeon_device *rdev = radeon_get_rdev(bo->bdev);
+ 	vm_fault_t ret;
+ 
++	/* A userspace touch of a CPU-mapped VRAM page goes through the
++	 * host aperture, and a parked RS480 holds MC aperture requests
++	 * parked: the access becomes a non-posted HyperTransport read
++	 * that hard-locks the machine from userspace, with no kernel
++	 * print possible. Kill the faulting client with SIGBUS instead;
++	 * its buffer objects already outlive teardown via the parked
++	 * GEM-leak path. GTT and system placements stay mapped -- their
++	 * pages are plain system RAM.
++	 */
++	if (rdev->gpu_parked &&
++	    bo->resource && bo->resource->mem_type == TTM_PL_VRAM) {
++		dev_err_once(rdev->dev,
++			     "parked: SIGBUS on VRAM mmap fault (aperture unreadable)\n");
++		return VM_FAULT_SIGBUS;
++	}
++
+ 	down_read(&rdev->pm.mclk_lock);
+ 
+ 	ret = ttm_bo_vm_reserve(bo, vmf);
+--- a/radeon/radeon_device.c
++++ b/radeon/radeon_device.c
+@@ -2041,6 +2041,17 @@
+ 		dev_err(rdev->dev, "parked: disabling KMS output poll worker (sync)\n");
+ 		drm_kms_helper_poll_disable(rdev_to_drm(rdev));
+ 		msleep(1);
++		/* Userspace holds live CPU mappings of VRAM buffer objects
++		 * through the GEM offset space; any touch of those pages is
++		 * the aperture black hole described in radeon_gem_fault. Zap
++		 * every PTE in the GEM mapping so the next touch re-faults
++		 * into the gpu_parked SIGBUS gate instead of the bus. Pure
++		 * page-table surgery, no hardware access.
++		 */
++		dev_err(rdev->dev, "parked: zapping userspace GEM mappings (SIGBUS on re-fault)\n");
++		unmap_mapping_range(rdev_to_drm(rdev)->anon_inode->i_mapping,
++				    0, 0, 1);
++		msleep(1);
+ 		dev_err(rdev->dev, "parked: async agents quiesced, entering quiet epoch\n");
+ 		rdev->in_reset = true;
+ 		rdev->needs_reset = false;
