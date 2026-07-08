@@ -3,10 +3,20 @@
 #
 # Package presence cannot prove machine safety: the SB600 watchdog module may not
 # be loaded, /dev/watchdog may be absent, the fired latch may not have been
-# cleared, netconsole may be down, the feeder may be uncalibrated, or the loaded
-# radeon module may not match the installed package. This preflight checks the
-# runtime facts that actually matter before a destructive fire. It is advisory:
-# it reports PASS/FAIL/WARN per check and exits non-zero if any hard gate fails.
+# cleared, netconsole may be down, or the loaded radeon module may not match the
+# installed package. This preflight checks the runtime facts that actually matter
+# before a destructive fire. It is advisory: it reports PASS/FAIL/WARN per check
+# and exits non-zero if any hard gate fails.
+#
+# Watchdog policy on this Vostro: active watchdog feeding is RETIRED for RAD-05
+# fire timing. The SB600 hardware reset event is not deferrable through
+# WDIOC_SETTIMEOUT, WDIOC_KEEPALIVE, or magic close (calibration proved the real
+# reset fires in a fixed sub-second window regardless). Hazard fires use
+# boot-persistent netconsole and manual recovery. No watchdog is therefore a
+# SANCTIONED condition for RAD-05i/RAD-05j design and no-fuse fires; the watchdog
+# substrate is retained only for watchdog research and the fired-latch-safe boot.
+# A run that explicitly requires feeding (RAD05_WD_FEEDER_REQUIRED=1) cannot be
+# satisfied and hard-fails, by design.
 #
 # Usage:
 #   rad05-preflight            # full gate; nonzero exit blocks a fire
@@ -23,32 +33,32 @@ note() { printf '  WARN  %s\n' "$1"; warn=$((warn+1)); }
 
 echo "rad05-preflight: RS480 hazardous-fire runtime gate"
 
-# 1. SB600 watchdog module loads (IOAPIC-page fallback provides /dev/watchdog).
+# 1. SB600 watchdog module presence (substrate visibility; PASS/WARN per policy).
+#    Feeding is retired, so absence is not fatal to a no-watchdog fire -- it only
+#    means the watchdog substrate is not visible for research/fired-latch boots.
 if lsmod | grep -q '^sp5100_tco' || modprobe sp5100_tco 2>/dev/null; then
-    ok "sp5100_tco loaded"
+    ok "sp5100_tco present (watchdog substrate visible)"
 else
-    bad "sp5100_tco not loaded (SB600 watchdog substrate absent)"
+    note "sp5100_tco not loaded (watchdog substrate not visible; fine for a no-watchdog fire)"
 fi
 
-# 2. /dev/watchdog exists (the module actually claimed the 8-byte window).
-#    Hard gate only when the feeder is opted in (we intend to rely on the
-#    watchdog). For a no-watchdog manual-recovery fire, a missing node is a WARN:
-#    the watchdog substrate is degraded but the fire does not depend on it.
-feeder_opt="${RAD05_WD_FEEDER_OK:-0}"
+# 2. /dev/watchdog exists (general substrate visibility; PASS/WARN).
+#    Feeding is retired for fire timing, so a fire never relies on this node;
+#    present is PASS for research visibility, absent is WARN, never a hard gate.
 if [ -c /dev/watchdog ]; then
-    ok "/dev/watchdog present"
-elif [ "$feeder_opt" = "1" ]; then
-    bad "/dev/watchdog missing but feeder opted in (IOAPIC-page fallback did not map the window)"
+    ok "/dev/watchdog present (substrate visible)"
 else
-    note "/dev/watchdog missing -- watchdog substrate degraded; fine for a no-watchdog manual-recovery fire, investigate before relying on autonomous reboot"
+    note "/dev/watchdog missing (watchdog substrate not visible; fine for a no-watchdog fire)"
 fi
 
-# 3. Fired-latch fix version installed (>= 0.4-4 clears SP5100_WDT_FIRED on first touch).
+# 3. Fired-latch fix version (>= 0.4-4 clears SP5100_WDT_FIRED on first touch).
+#    Relevant to a fired-latch-safe boot; not on the critical path of a no-fuse
+#    fire (the watchdog is never armed), so present-but-old or absent is WARN.
 sp_ver=$(pacman -Q sp5100-tco-ioapic-dkms 2>/dev/null | awk '{print $2}')
 if [ -n "$sp_ver" ] && [ "$(printf '%s\n0.4-4\n' "$sp_ver" | sort -V | head -1)" = "0.4-4" ]; then
     ok "sp5100-tco-ioapic-dkms $sp_ver (fired-latch fix present)"
 else
-    bad "sp5100-tco-ioapic-dkms ${sp_ver:-absent} < 0.4-4 (fired latch may retrigger reset on warm boot)"
+    note "sp5100-tco-ioapic-dkms ${sp_ver:-absent} < 0.4-4 (fired-latch fix not confirmed; matters only if the watchdog is ever armed)"
 fi
 
 # 4. Persistent netconsole service active (off-box capture of the last pre-freeze line).
@@ -68,13 +78,15 @@ else
     bad "lockup_timeout=$lt but not in --recovery mode (radeon may drive its own reset)"
 fi
 
-# 6. Watchdog feeder calibration passed OR explicitly disabled for this run.
-#    The feeder is calibration-pending; it must be OFF unless a passing calibration
-#    marker exists. RAD05_WD_FEEDER_OK=1 in the environment is the explicit opt-in.
-if [ "${RAD05_WD_FEEDER_OK:-0}" = "1" ] && [ -f /var/lib/rad05/wd-feeder-calibrated ]; then
-    ok "watchdog feeder calibration marker present and opted in"
+# 6. Watchdog feeder state (RETIRED for RAD-05 fire timing).
+#    Active feeding is retired: WDIOC_SETTIMEOUT, WDIOC_KEEPALIVE, and magic close
+#    do not defer the SB600 reset on this board (fixed sub-second window). A fire
+#    profile that explicitly requires feeding cannot be satisfied and hard-fails;
+#    the default (no feeder required) reports the retired state and is sanctioned.
+if [ "${RAD05_WD_FEEDER_REQUIRED:-0}" = "1" ]; then
+    bad "WATCHDOG_FEEDER=RETIRED_FOR_RAD05_FIRE_TIMING but this run requires feeding -- unsatisfiable; use netconsole + manual recovery or validate a different recovery mechanism"
 else
-    note "watchdog feeder DISABLED (calibration-pending: box resets during feed ~20-29 s). Fire without watchdog; accept manual recovery."
+    ok "WATCHDOG_FEEDER=RETIRED_FOR_RAD05_FIRE_TIMING (sanctioned: hazard fires use netconsole + manual recovery)"
 fi
 
 # 7. Loaded radeon module matches the installed package (no stale module under test).

@@ -6,12 +6,14 @@ post_install() {
 
         rad05-preflight            (or: rad05-preflight --recovery)
 
-    It gates on the runtime facts a package cannot prove: sp5100_tco loaded,
-    /dev/watchdog present, fired-latch fix installed, netconsole-rad05 active,
-    lockup_timeout, watchdog-feeder calibration, and radeon srcversion match.
+    It gates on the runtime facts a package cannot prove: watchdog substrate
+    visibility, fired-latch fix installed, netconsole-rad05 active, lockup_timeout,
+    and radeon srcversion match.
 
-    The watchdog feeder is calibration-pending (resets during feed ~20-29 s).
-    Fires run WITHOUT the watchdog and accept manual recovery until it passes.
+    Active watchdog feeding is RETIRED for RAD-05 fire timing: the SB600 reset is
+    not deferrable via WDIOC_SETTIMEOUT, WDIOC_KEEPALIVE, or magic close. Hazard
+    fires run WITHOUT the watchdog and use boot-persistent netconsole plus manual
+    recovery. No watchdog is a sanctioned condition for RAD-05i/RAD-05j fires.
 EOF
 }
 
