@@ -66,19 +66,29 @@ regressions: `rs480_cp_me_ram_inject_one` (helper reachable only via the guarded
 inject write), `rs480_wedged_3d_reset` (the reset mechanism -- it must run on the
 first unparked fire; its debugfs callers are guarded), and `rs400_startup` (the
 upstream init/resume path, gated by the resume-side patches 0046/0048, not a
-debugfs edge). Compile + static verified through the package/DKMS build path
-(pkgrel 76, dkms applied 0001-0061 and radeon.ko built clean); no fire.
+debugfs edge). Compile verified through the real DKMS build (`dkms build`
+applied the full series and built radeon.ko clean -- `makepkg` only packages the
+source, the compile gate is `dkms build`); no fire.
 
-### 2. Module unload of a parked radeon -- uncovered teardown, close second
+### 2. Module unload of a parked radeon -- COVERED by 0062
 
-Pristine `radeon_drv.c` exposes `radeon_pci_shutdown` (line 394, wired at
-`.shutdown` line 648) and `radeon_module_exit` (line 666, `module_exit` line 674).
-Neither is gated on `gpu_parked`; an `rmmod radeon` of a parked GPU enters the
-normal teardown, which reads hardware. It never occurs in the campaign because
-the box reboots rather than unloading a parked module, but the invariant must
-still cover it. Fix: refuse or no-hardware-route the unload/shutdown path under
-`gpu_parked` (return early / skip the hardware teardown, leak like 0053). One
-patch.
+`radeon_pci_shutdown` and the module_exit/.remove path
+(`radeon_driver_unload_kms` -> `radeon_modeset_fini` / `radeon_device_fini`)
+predate `gpu_parked` and issue GPU MMIO on teardown. Neither callback can return
+an error, so the rule is no-hardware, not refuse.
+
+Closed by **0062-rs480-parked-gpu-module-unload-no-hardware.patch**:
+`radeon_driver_unload_kms` drops to the software free (`done_free`) under
+`gpu_parked` on `CHIP_RS400`/`CHIP_RS480`, skipping the hardware fini -- the same
+shape as the existing `rmmio == NULL` early-out and the leak-by-design park
+path; reboot reclaims the leaked structures. `radeon_pci_shutdown` guards its
+lone hardware call (a PPC64/Loongson-only `radeon_suspend_kms`; on x86 the block
+is compiled out, so the Vostro shutdown path is already hardware-free) behind the
+same predicate. Software state only (`rdev->gpu_parked`, `rdev->family`); no new
+reads; no live-GPU behaviour change. Compile verified through the real DKMS
+build (not makepkg, which only packages): `dkms build` applied 0001-0062 and
+built + signed radeon.ko clean, pkgrel 77. Runtime not exercised because a
+parked-module unload is not a campaign path (the box reboots). No fire.
 
 ### 3. Userspace VRAM mmap SIGBUS gate (0060) -- armed but unproven, close last
 
