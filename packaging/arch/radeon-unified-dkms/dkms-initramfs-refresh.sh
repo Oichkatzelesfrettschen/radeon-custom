@@ -14,6 +14,20 @@ set -eu
 
 log() { echo "radeon-unified: $*" >&2; }
 
+# Inside a libalpm transaction DKMS builds one kernel at a time with
+# --no-depmod, so at POST_INSTALL time the other kernels' modules.dep still
+# reference module files the transaction has already deleted; regenerating
+# every initramfs here fails with "file not found" on those kernels and
+# contends with the bootloader tool's global lock.  The PostTransaction
+# 90-mkinitcpio-install hook regenerates all images after every kernel's
+# modules and depmod complete, so defer to it.  /var/lib/pacman/db.lck exists
+# exactly for the duration of a pacman transaction; on non-pacman systems the
+# path never exists and the manual-dkms refresh below always runs.
+if [ -e /var/lib/pacman/db.lck ]; then
+	log "pacman transaction active; deferring initramfs refresh to the PostTransaction mkinitcpio hook"
+	exit 0
+fi
+
 if command -v limine-mkinitcpio >/dev/null 2>&1; then
 	log "initramfs refresh via limine-mkinitcpio (mkinitcpio + ESP deploy + hash)"
 	limine-mkinitcpio
