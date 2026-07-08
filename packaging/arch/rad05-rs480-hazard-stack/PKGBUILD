@@ -9,14 +9,17 @@
 #
 # Package presence still does not prove machine safety. Every hazardous run must
 # pass the installed runtime preflight (rad05-preflight), which checks the facts a
-# pacman dependency cannot: module loaded, /dev/watchdog present, fired latch
-# cleared, netconsole live, lockup_timeout, feeder calibration, and that the
-# loaded radeon module matches the installed package.
+# pacman dependency cannot: watchdog substrate visibility, fired latch cleared,
+# netconsole live, lockup_timeout, and that the loaded radeon module matches the
+# installed package.
 #
-# The calibration-pending watchdog feeder is deliberately NOT a hard dependency:
-# it resets the box during feed at ~20-29 s, so promoting it into the safety chain
-# would inject false resets. It joins as a hard dep only once its standalone
-# calibration passes.
+# Active watchdog feeding is RETIRED for RAD-05 fire timing: the SB600 hardware
+# reset event is not deferrable through WDIOC_SETTIMEOUT, WDIOC_KEEPALIVE, or
+# magic close (the real reset fires in a fixed sub-second window regardless), so
+# the feeder cannot serve as a dead-man switch for multi-second wedge fires. It
+# is therefore not a dependency at all. The SB600 DKMS remains a hard dependency
+# as the watchdog substrate and the fired-latch fix; hazard fires use
+# boot-persistent netconsole and manual recovery.
 
 pkgname=rad05-rs480-hazard-stack
 pkgver=0.1
@@ -29,7 +32,7 @@ license=('GPL-2.0-only')
 # fired-latch fix. sp5100-tco-ioapic-dkms>=0.4-4 guarantees the warm-boot latch
 # clear that makes an autonomous hazard loop usable.
 depends=('radeon-unified-dkms' 'sp5100-tco-ioapic-dkms>=0.4-4')
-optdepends=('rs480-wd-feeder: compiled dead-man watchdog feeder -- HOLD until standalone calibration passes (currently resets during feed ~20-29 s); not part of the hard chain'
+optdepends=('rs480-wd-feeder: compiled watchdog arming tool for SB600 research only -- RETIRED for RAD-05 fire timing (the reset is not deferrable via WDIOC_SETTIMEOUT/WDIOC_KEEPALIVE/magic close); not a dead-man feeder for wedge fires'
             'socat: workstation-side netconsole listener for off-box capture')
 install=rad05-rs480-hazard-stack.install
 source=('rad05-preflight.sh')
