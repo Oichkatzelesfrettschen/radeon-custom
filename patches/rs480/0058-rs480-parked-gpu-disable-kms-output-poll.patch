@@ -1,0 +1,137 @@
+From: radeon-custom rs480 reset-recovery track
+Subject: [PATCH] drm/radeon: gate connector detect and KMS output polling on a parked RS480
+
+A parked GPU (failed RS480 reset, gpu_parked set) keeps no readable
+display registers: under a GA-wedged 3D frontend, register reads routed
+through the wedged bus client hang the CPU on a non-posted
+HyperTransport read. The drm_kms_helper output-poll worker runs
+connector detection from a system workqueue on a ~10 s period, outside
+every radeon-local delayed work the park path drains, and its detect
+pass walks DDC and load-detect register paths. That worker is the first
+candidate for the asynchronous agent that kills the host inside the
+post-quiesce quiet window.
+
+Two narrow gates, no hardware access in either:
+
+1. Every radeon connector detect callback (lvds, vga, tv, dvi, dp)
+   early-returns the last known connector status under gpu_parked,
+   before pm_runtime and before any DDC or load-detect access. This
+   makes an in-flight poll pass complete without touching hardware.
+
+2. The parked failure path in radeon_gpu_reset calls
+   drm_kms_helper_poll_disable after draining the radeon-local works.
+   The helper only sync-cancels mode_config.output_poll_work; with the
+   detect callbacks already gated, the cancel cannot block on a
+   hardware-stalled worker. A breadcrumb line before the call rides
+   netconsole so a fire classifies whether the poll worker was the
+   killer.
+
+--- a/radeon/radeon_connectors.c
++++ b/radeon/radeon_connectors.c
+@@ -845,6 +845,15 @@
+ 	enum drm_connector_status ret = connector_status_disconnected;
+ 	int r;
+ 
++	/* A parked GPU keeps no readable display registers: connector
++	 * detection walks DDC and load-detect paths straight into the wedged
++	 * register bus, and the drm_kms_helper output-poll worker calls detect
++	 * from a system workqueue outside every radeon-local drained work.
++	 * Report the last known status without touching hardware.
++	 */
++	if (rdev->gpu_parked)
++		return connector->status;
++
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+ 		if (r < 0) {
+@@ -993,6 +1002,15 @@
+ 	enum drm_connector_status ret = connector_status_disconnected;
+ 	int r;
+ 
++	/* A parked GPU keeps no readable display registers: connector
++	 * detection walks DDC and load-detect paths straight into the wedged
++	 * register bus, and the drm_kms_helper output-poll worker calls detect
++	 * from a system workqueue outside every radeon-local drained work.
++	 * Report the last known status without touching hardware.
++	 */
++	if (rdev->gpu_parked)
++		return connector->status;
++
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+ 		if (r < 0) {
+@@ -1126,12 +1144,22 @@
+ static enum drm_connector_status
+ radeon_tv_detect(struct drm_connector *connector, bool force)
+ {
++	struct radeon_device *rdev = connector->dev->dev_private;
+ 	struct drm_encoder *encoder;
+ 	const struct drm_encoder_helper_funcs *encoder_funcs;
+ 	struct radeon_connector *radeon_connector = to_radeon_connector(connector);
+ 	enum drm_connector_status ret = connector_status_disconnected;
+ 	int r;
+ 
++	/* A parked GPU keeps no readable display registers: connector
++	 * detection walks DDC and load-detect paths straight into the wedged
++	 * register bus, and the drm_kms_helper output-poll worker calls detect
++	 * from a system workqueue outside every radeon-local drained work.
++	 * Report the last known status without touching hardware.
++	 */
++	if (rdev->gpu_parked)
++		return connector->status;
++
+ 	if (!radeon_connector->dac_load_detect)
+ 		return ret;
+ 
+@@ -1221,6 +1249,15 @@
+ 	enum drm_connector_status ret = connector_status_disconnected;
+ 	bool dret = false, broken_edid = false;
+ 
++	/* A parked GPU keeps no readable display registers: connector
++	 * detection walks DDC and load-detect paths straight into the wedged
++	 * register bus, and the drm_kms_helper output-poll worker calls detect
++	 * from a system workqueue outside every radeon-local drained work.
++	 * Report the last known status without touching hardware.
++	 */
++	if (rdev->gpu_parked)
++		return connector->status;
++
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+ 		if (r < 0) {
+@@ -1630,6 +1667,15 @@
+ 	struct drm_encoder *encoder = radeon_best_single_encoder(connector);
+ 	int r;
+ 
++	/* A parked GPU keeps no readable display registers: connector
++	 * detection walks DDC and load-detect paths straight into the wedged
++	 * register bus, and the drm_kms_helper output-poll worker calls detect
++	 * from a system workqueue outside every radeon-local drained work.
++	 * Report the last known status without touching hardware.
++	 */
++	if (rdev->gpu_parked)
++		return connector->status;
++
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+ 		if (r < 0) {
+--- a/radeon/radeon_device.c
++++ b/radeon/radeon_device.c
+@@ -2030,6 +2030,17 @@
+ 		dev_err(rdev->dev, "parked: draining hotplug work (sync)\n");
+ 		cancel_delayed_work_sync(&rdev->hotplug_work);
+ 		msleep(1);
++		/* The drm_kms_helper output-poll worker runs from a system
++		 * workqueue outside every radeon-local work drained above, and
++		 * its periodic connector-detect pass reads DDC and load-detect
++		 * registers. The radeon detect callbacks early-return under
++		 * gpu_parked, so a pass already in flight completes without
++		 * hardware; drm_kms_helper_poll_disable then sync-cancels
++		 * output_poll_work so no further pass is scheduled. No MMIO.
++		 */
++		dev_err(rdev->dev, "parked: disabling KMS output poll worker (sync)\n");
++		drm_kms_helper_poll_disable(rdev_to_drm(rdev));
++		msleep(1);
+ 		dev_err(rdev->dev, "parked: async agents quiesced, entering quiet epoch\n");
+ 		rdev->in_reset = true;
+ 		rdev->needs_reset = false;
