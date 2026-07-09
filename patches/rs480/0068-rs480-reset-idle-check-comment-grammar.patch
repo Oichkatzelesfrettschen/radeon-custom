@@ -1,0 +1,23 @@
+From: radeon-custom rs480 reset-recovery track
+Subject: [PATCH] drm/radeon: fix subject-verb agreement in the RS480 idle-check comment
+
+Comment-only. The compound subject "BASELINE -- and the discrete R3xx/R4xx path"
+took the singular "keeps"; reword to "On BASELINE ... the check keeps" so the
+verb agrees. No code change.
+
+--- a/radeon/r300.c
++++ b/radeon/r300.c
+@@ -593,9 +593,10 @@
+ 	/* restore PCI & busmastering */
+ 	pci_restore_state(rdev->pdev);
+ 	r100_enable_bm(rdev);
+-	/* Check if GPU is idle.  BASELINE -- and the discrete R3xx/R4xx path, which
+-	 * forces BASELINE -- keeps exactly the 0043 predicate (GA_BUSY || VAP_BUSY):
+-	 * no behaviour change on the non-experimental path.  An experimental co-mask
++	/* Check if GPU is idle.  On BASELINE -- and on the discrete R3xx/R4xx path,
++	 * which forces BASELINE -- the check keeps exactly the 0043 predicate
++	 * (GA_BUSY || VAP_BUSY): no behaviour change on the non-experimental path.
++	 * An experimental co-mask
+ 	 * (GA_RB/GA_RE/full_3d) resets more blocks (RB3D, RE, and PP for full_3d), and
+ 	 * the CP reset below runs on every path, so for a non-baseline mask also
+ 	 * require the master GUI_ACTIVE idle -- one bit that catches every reset block
