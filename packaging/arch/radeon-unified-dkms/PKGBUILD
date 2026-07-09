@@ -149,7 +149,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=77
+pkgrel=78
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/steinmarder'
@@ -249,10 +249,11 @@ source=(
   "rs480-parked-gpu-sigbus-vram-mmap.patch::file://${startdir}/../../../patches/rs480/0060-rs480-parked-gpu-sigbus-vram-mmap.patch"
   "rs480-parked-gpu-debugfs-readers-hard-return.patch::file://${startdir}/../../../patches/rs480/0061-rs480-parked-gpu-debugfs-readers-hard-return.patch"
   "rs480-parked-gpu-module-unload-no-hardware.patch::file://${startdir}/../../../patches/rs480/0062-rs480-parked-gpu-module-unload-no-hardware.patch"
+  "rs480-parameterized-soft-reset-mask-candidates.patch::file://${startdir}/../../../patches/rs480/0063-rs480-parameterized-soft-reset-mask-candidates.patch"
 )
 sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'cc921d8f17005e3e77fb7a610c427d585b15c1dfd907525c6d7575dac168b5c3'
-            '8c509836b82d6b2ca79ec89c0669e02a14e736abdb4ed8f0f5af144ce3533523'
+            '67005344349fcab788c9ab6747f553b27e52df84aeece8900cf5def636551617'
             '1ce4bdbb37c2b1a1d5669878c9e76840c23c4611031e1dd701077e26492decb0'
             'e3969bc270721ee297ba631b7af8a2dff4653d406a34f1df6c3f49a50bba3a30'
             'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
@@ -323,7 +324,8 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'b714bc1590d61b9d300d67dd36071b939c8a447020d4d7ef5ba1f5f25ba368e0'
             '165f1cf6743a11851ca33261224a1ae1850bbac5986cbd8cafc02a741c6fd0df'
             '3339e5d4149722a59da9764397dd3aa9077099decd68195ede4d39cb21cee21a'
-            'f1c51b8dfbb6cbe9282510b91e5ab15b7ee8937a584b9608617b614118e8db11')
+            'f1c51b8dfbb6cbe9282510b91e5ab15b7ee8937a584b9608617b614118e8db11'
+            '0ae780cf7e59b38e29fd96b80ebaf72fc3be5c5813ee99dccd48b4a293d8c0e4')
 
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
@@ -528,4 +530,7 @@ package() {
   install -Dm644 \
     "${srcdir}/rs480-parked-gpu-module-unload-no-hardware.patch" \
     "${_dkmsdir}/patches/0062-rs480-parked-gpu-module-unload-no-hardware.patch"
+  install -Dm644 \
+    "${srcdir}/rs480-parameterized-soft-reset-mask-candidates.patch" \
+    "${_dkmsdir}/patches/0063-rs480-parameterized-soft-reset-mask-candidates.patch"
 }
