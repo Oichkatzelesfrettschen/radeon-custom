@@ -6,6 +6,12 @@ repository is the single build source for the radeon kernel-side work that
 was previously scattered across the steinmarder trees; the userspace r300
 gallium and r3v Vulkan drivers live in `mesa-26-gororoba`.
 
+The canonical registry of which kernel modules the Vostro 1000 runs (radeon,
+snd-hda, sb600 watchdog, and the DKMS series this repo builds) is
+`mesa-26-gororoba/docs/hardware/vostro1000-kernel-modules.md`; treat it as the
+source of truth and update it when this repo changes the installed DKMS
+`pkgrel` or patch series.
+
 ## Why this exists
 
 The RS482 IGP shares the K8 northbridge, and a GPU command-stream fault
