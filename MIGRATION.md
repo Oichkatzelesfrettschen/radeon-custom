@@ -1,39 +1,70 @@
 # Provenance and migration record
 
-This repository consolidates the radeon DKMS work that was developed in place
-across the steinmarder reverse-engineering trees. The originals remain as the
-RE record; radeon-custom is the single build source going forward.
+This repository consolidates the Radeon DKMS work that was developed in the
+Steinmarder reverse-engineering trees. The originals remain part of the evidence
+and historical record; `radeon-custom` is the single active kernel build source.
 
 ## Sources consolidated
 
-| radeon-custom path | Origin |
+| `radeon-custom` path | Origin and disposition |
 | --- | --- |
-| `patches/`, `sources/`, `scripts/`, `packaging/`, `docs/` | `steinmarder/src/re/radeon/` (the `radeon-unified-dkms` v0.3 corpus) |
-| (folded into the unified series) | `steinmarder-r300/src/re/r300/PKGBUILDs/radeon-rs480-safe-regs-dkms/` -- rs480 safe-regs debugfs; the PKGBUILD here `replaces` it |
-| (folded into the unified series) | `steinmarder/mesa-rekit/staged/radeon-palm-gate-dkms/` -- Palm gate (`mc_wait_for_idle` timeout, `pci_config_reset_safe`, SMX_DC_CTL0); `replaces`d |
+| `patches/`, `sources/`, `scripts/`, `packaging/`, `docs/` | `steinmarder/src/re/radeon/` unified-DKMS corpus; migrated into the active source tree |
+| folded into the unified series | `steinmarder-r300:src/re/r300/PKGBUILDs/radeon-rs480-safe-regs-dkms/`; superseded package identity, retained as provenance |
+| folded into the unified series | historical `radeon-palm-gate-dkms` staging tree; superseded package identity, retained as provenance |
 
-Upstream reference tree (not vendored here; consult in place):
-`steinmarder-r600-terakan/docs/external_sources/linux_6_18_32_radeon_drm/`.
+The unified PKGBUILD provides/replaces the historical safe-regs and Palm package
+identities and conflicts with the old DKMS packages. They must not be treated as
+three independently maintained module sources.
 
-## Excluded from the copy
+Upstream reference trees are consulted in place and are not vendored wholesale
+here. The active patch and package mechanism is determined by this repository's
+manifest, not by a copied reference tree.
 
-Build artifacts (`packaging/*/pkg/`, `packaging/*/src/`, `*.pkg.tar*`) and the
-bulk `docs/external_sources/` corpus were not copied; only the canonical plan
-and readiness docs came over. Rebuild artifacts locally with `makepkg`.
+## Excluded from the migration
 
-## Key reset patches (the wedge fix)
+Build artifacts (`packaging/*/pkg/`, `packaging/*/src/`, `*.pkg.tar*`) and bulk
+external-source corpora were not copied. Rebuild artifacts locally and keep
+hardware result bundles in the evidence repository.
 
-- `patches/rs480/0003-rs480-crash-shim-recovery.patch` -- gpu_reset shim.
-- `patches/rs480/0041`/`0042-rs480-rbbm-soft-reset-recovery-probe.patch` -- RBBM soft-reset probe.
+## Reset and containment series
 
-These are the recoverable-reset mechanism for the `radeon_fence_default_wait`
-hang class documented in
-`mesa-26-gororoba/docs/hardware/vostro1000-kernel-modules.md`.
+The RS480 series contains several distinct mechanism classes:
+
+- early instrumentation and crash-shim work, including 0003;
+- 0040-0045 reset probes and the force-clock/soft-reset production path;
+- 0046-0062 failed-reset parking and host-containment hardening;
+- 0063-0068 bounded reset-mask candidates and review hardening.
+
+Patch presence is not a recovery verdict. The reconciled retained result is:
+
+- host-survival containment is achieved for the Fire 28 acceptance property;
+- GPU recovery is not achieved—the GA-rooted wedge remains and the GPU is
+  parked;
+- display recovery is not achieved and requires reboot;
+- the 0060 SIGBUS gate is installed but was not shown firing;
+- non-baseline 0063-0068 reset masks are installed but have not been fired.
+
+Keep `radeon.lockup_timeout=0` until a retained attended run demonstrates actual
+GPU recovery. The current evidence verdict is owned by
+`steinmarder-r300:src/re/r300/findings/rs480-reset-recovery-patch-status-table.md`.
+
+## Source-authority rules
+
+- This repository is authoritative for patch contents, ordering, packaging,
+  dependencies, and safe defaults.
+- `steinmarder-r300` is authoritative for what executed on RS482 silicon and the
+  verdict assigned to that run.
+- `mesa-26-gororoba` is authoritative for r300g/r3v userspace behavior.
+- `implemented`, `compile-verified`, `installed`, and `hardware-pass` are
+  separate statuses and must not be collapsed.
+- PALM/Wrestler and RS480/RS482 claims remain generation-scoped even when the
+  mechanisms share one DKMS package.
 
 ## Follow-ups
 
-- Verify the PKGBUILD builds against the running cachyos 7.0.x kernel and the
-  prepatched `radeon-rs480-cachyos-6.18-7.0` source tarball.
-- Dedupe any overlap between the unified series and the folded staging
-  packages (safe-regs patch 0001 already is the former `radeon-rs480-safe-regs`).
-- Prove RS482 reset recovery before enabling a non-zero `lockup_timeout`.
+- Keep the generated source tarball and both CachyOS build gates reproducible.
+- Retain one manifest and one owner for every patch/package identity.
+- Run each non-baseline reset-mask candidate only under a separately authorized,
+  attended hardware campaign with off-box capture and the current preflight.
+- Promote a reset claim only after the acceptance property—host, GPU, display,
+  or isolation gate—is named and evidenced explicitly.
