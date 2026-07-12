@@ -67,7 +67,7 @@ input:
    each is the identity swizzle 0xF688F688 (select X,Y,Z,W, full write
    mask, both halves), so the PSC maps one fetched dword to one
    delivered dword and VAP_VTX_SIZE is directly comparable to the
-   GA-side tuple.  Fewer than eight identity EXT writes causes the
+   GA-side tuple.  Fewer than eight identity EXT writes cause the
    check to decline (partial coverage never rejects) so unwritten
    upper slots cannot hide stale non-identity expansion.
 4. No format bits outside the decoded set (FMT_0 outside
