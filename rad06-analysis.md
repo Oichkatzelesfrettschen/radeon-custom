@@ -67,9 +67,9 @@ input:
    each is the identity swizzle 0xF688F688 (select X,Y,Z,W, full write
    mask, both halves), so the PSC maps one fetched dword to one
    delivered dword and VAP_VTX_SIZE is directly comparable to the
-   GA-side tuple.  Fewer than eight identity EXT writes declines the
-   check (partial coverage never rejects) so unwritten upper slots
-   cannot hide stale non-identity expansion.
+   GA-side tuple.  Fewer than eight identity EXT writes causes the
+   check to decline (partial coverage never rejects) so unwritten
+   upper slots cannot hide stale non-identity expansion.
 4. No format bits outside the decoded set (FMT_0 outside
    POS|COLOR0..3|PT_SIZE, FMT_1 above bit 23, any texcoord component
    count above 4).
@@ -84,8 +84,9 @@ required` is then a proven GA-starvation shape and is rejected -EINVAL.
 
 ## When it must decline
 
-- Any of the five registers unseen in this CS: state may be inherited
-  from a previous submission the parser cannot see.
+- Any of the tracked VAP inputs unseen in this CS (VAP_CNTL_STATUS,
+  VAP_OUT_VTX_FMT_0/1, VAP_VTX_SIZE, or any of EXT_0..7): state may be
+  inherited from a previous submission the parser cannot see.
 - TCL_BYPASS clear or VAP_CNTL_STATUS unseen: with the PVS active the
   GA tuple comes from the shader's output map, not from the fetch
   stream, and VAP_VTX_SIZE governs only the input side; no comparison
