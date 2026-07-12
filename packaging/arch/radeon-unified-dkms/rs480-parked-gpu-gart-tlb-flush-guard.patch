@@ -1,0 +1,46 @@
+--- a/radeon/radeon.h
++++ b/radeon/radeon.h
+@@ -2399,6 +2399,13 @@
+ 	bool				accel_working;
+ 	bool				fastfb_working; /* IGP feature*/
+ 	bool				needs_reset, in_reset;
++	/* Failed RS400/RS480 reset with the GA register bus wedged: every
++	 * MMIO read -- direct 3D space, RBBM after clock gating re-engages,
++	 * MC-indirect GART queries -- is a non-posted HyperTransport black
++	 * hole that hard-locks the CPU. gpu_parked gates all register access
++	 * on paths still reachable from userspace teardown.
++	 */
++	bool				gpu_parked;
+ 	struct radeon_surface_reg surface_regs[RADEON_GEM_MAX_SURFACES];
+ 	const struct firmware *me_fw;	/* all family ME firmware */
+ 	const struct firmware *pfp_fw;	/* r6/700 PFP firmware */
+--- a/radeon/radeon_device.c
++++ b/radeon/radeon_device.c
+@@ -1992,6 +1992,7 @@
+ 		msleep(1);
+ 		dev_err(rdev->dev, "parked: acceleration off, skipping pm/atom/hpd/modeset resume\n");
+ 		rdev->accel_working = false;
++		rdev->gpu_parked = true;
+ 		rdev->in_reset = true;
+ 		rdev->needs_reset = false;
+ 		msleep(1);
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -74,6 +74,17 @@
+ 	uint32_t tmp;
+ 	unsigned int timeout = rdev->usec_timeout;
+ 
++	/* The GART cache serves the 3D engine's fetch path, and the MC
++	 * indirect data read polls a block held by the wedged GA client: on a
++	 * parked GPU the RREG32_MC below is a non-posted black hole. Teardown
++	 * still rewrites the PTEs in system RAM; nothing fetches through
++	 * these TLBs again before a reboot, so the flush is skippable.
++	 */
++	if (rdev->gpu_parked) {
++		dev_err_once(rdev->dev, "parked: skipping GART tlb flush (MC indirect unreadable)\n");
++		return;
++	}
++
+ 	WREG32_MC(RS480_GART_CACHE_CNTRL, RS480_GART_CACHE_INVALIDATE);
+ 	do {
+ 		tmp = RREG32_MC(RS480_GART_CACHE_CNTRL);
