@@ -1,0 +1,126 @@
+--- a/radeon/radeon_device.c
++++ b/radeon/radeon_device.c
+@@ -1883,6 +1883,7 @@
+ 	uint32_t *ring_data[RADEON_NUM_RINGS];
+ 
+ 	bool saved = false;
++	bool gpu_parked;
+ 
+ 	int i, r;
+ 
+@@ -1938,11 +1939,34 @@
+ 	}
+ 
+ 	r = radeon_asic_reset(rdev);
++
++	/* Park the GPU when the ASIC reset fails on an RS400/RS480 IGP.
++	 *
++	 * A failed reset leaves the GA register-bus client wedged, and every
++	 * register in the 0x4000+ 3D pipe space remains a non-posted-read
++	 * black hole: the HyperTransport read never completes and the CPU
++	 * hard-locks silently. RB3D_BUSY=0 does not make RB3D registers
++	 * readable; the readback grant is GA-routed. The resume-side stream
++	 * (power management, AtomBIOS encoder tables, HPD, forced modeset)
++	 * executes BIOS bytecode and display bring-up with unaudited register
++	 * access, so none of it may run against a wedged frontend. Parking
++	 * keeps the host alive: fences force-complete so userspace waiters
++	 * unblock, acceleration turns off so no new CS reaches the dead
++	 * frontend, and the stage breadcrumbs let netconsole pin any residual
++	 * hazard to an exact instruction window.
++	 */
++	gpu_parked = (r != 0) &&
++		(rdev->family == CHIP_RS480 || rdev->family == CHIP_RS400);
++	if (gpu_parked)
++		dev_err(rdev->dev, "RS480 reset failed: parking GPU, skipping resume-side access\n");
++
+ 	if (!r) {
+ 		dev_info(rdev->dev, "GPU reset succeeded, trying to resume\n");
+ 		radeon_resume(rdev);
+ 	}
+ 
++	if (gpu_parked)
++		dev_err(rdev->dev, "parked: restoring BIOS scratch (posted writes)\n");
+ 	radeon_restore_bios_scratch_regs(rdev);
+ 
+ 	for (i = 0; i < RADEON_NUM_RINGS; ++i) {
+@@ -1950,11 +1974,38 @@
+ 			radeon_ring_restore(rdev, &rdev->ring[i],
+ 					    ring_sizes[i], ring_data[i]);
+ 		} else {
++			if (gpu_parked) {
++				msleep(1);
++				dev_err(rdev->dev, "parked: force-completing fences on ring %d\n", i);
++			}
+ 			radeon_fence_driver_force_completion(rdev, i);
+ 			kfree(ring_data[i]);
+ 		}
+ 	}
+ 
++	if (gpu_parked) {
++		/* Paced breadcrumbs: netconsole netpoll has no flow control and
++		 * drops frames under printk bursts; a millisecond between lines
++		 * keeps every stage on the wire so the off-box capture pins a
++		 * death to one instruction window.
++		 */
++		msleep(1);
++		dev_err(rdev->dev, "parked: acceleration off, skipping pm/atom/hpd/modeset resume\n");
++		rdev->accel_working = false;
++		rdev->in_reset = true;
++		rdev->needs_reset = false;
++		msleep(1);
++		dev_err(rdev->dev, "parked: downgrading exclusive lock\n");
++		downgrade_write(&rdev->exclusive_lock);
++		msleep(1);
++		dev_info(rdev->dev, "GPU reset failed, GPU parked, host kept alive\n");
++		rdev->in_reset = false;
++		up_read(&rdev->exclusive_lock);
++		msleep(1);
++		dev_err(rdev->dev, "parked: radeon_gpu_reset returning %d to caller\n", r);
++		return r;
++	}
++
+ 	if ((rdev->pm.pm_method == PM_METHOD_DPM) && rdev->pm.dpm_enabled) {
+ 		/* do dpm late init */
+ 		r = radeon_pm_late_init(rdev);
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -2064,7 +2064,9 @@
+ 
+ 	rdev->needs_reset = true;
+ 	r = radeon_gpu_reset(rdev);
++	dev_err(rdev->dev, "probe: radeon_gpu_reset returned %d, sampling post RBBM\n", r);
+ 	post = RREG32(R_000E40_RBBM_STATUS);
++	dev_err(rdev->dev, "probe: post RBBM_STATUS=0x%08x, returning to seq_file\n", post);
+ 
+ 	seq_printf(m,
+ 		   "reset-hang probe wedged-3D(%s): pre RBBM_STATUS=0x%08x (VAP_BUSY=%u GA_BUSY=%u RB3D_BUSY=%u RE_BUSY=%u) "
+--- a/radeon/radeon_kms.c
++++ b/radeon/radeon_kms.c
+@@ -749,6 +749,13 @@
+ void radeon_driver_postclose_kms(struct drm_device *dev,
+ 				 struct drm_file *file_priv)
+ {
++	{
++		struct radeon_device *bc_rdev = dev->dev_private;
++
++		if (bc_rdev && !bc_rdev->accel_working)
++			dev_err(bc_rdev->dev, "postclose on parked GPU: begin teardown\n");
++	}
++
+ 	struct radeon_device *rdev = dev->dev_private;
+ 
+ 	pm_runtime_get_sync(dev->dev);
+@@ -784,6 +791,13 @@
+ 	}
+ 	pm_runtime_mark_last_busy(dev->dev);
+ 	pm_runtime_put_autosuspend(dev->dev);
++	{
++		struct radeon_device *bc_rdev = dev->dev_private;
++
++		if (bc_rdev && !bc_rdev->accel_working)
++			dev_err(bc_rdev->dev, "postclose on parked GPU: teardown complete\n");
++	}
++
+ }
+ 
+ /*

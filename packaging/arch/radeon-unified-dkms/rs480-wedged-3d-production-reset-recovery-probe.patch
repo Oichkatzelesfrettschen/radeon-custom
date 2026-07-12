@@ -1,0 +1,140 @@
+--- a/radeon/radeon_drv.c
++++ b/radeon/radeon_drv.c
+@@ -323,9 +323,14 @@ module_param_named(rs480_gpu_reset_recover_probe, radeon_rs480_gpu_reset_recover
+ MODULE_PARM_DESC(rs480_reset_hang_probe,
+ 	"Arm the RBBM soft-reset recovery probe debugfs node "
+ 	"radeon_rs480_reset_hang_probe. Default 0 (OFF); arm with 0x53525354 "
+-	"('SRST') for the idle soft-reset stage, or 0x48414E47 ('HANG') for the "
++	"('SRST') for the idle soft-reset stage, 0x48414E47 ('HANG') for the "
+ 	"2D-blit in-busy stage that busies the E2 engine via r100_copy_blit and resets "
+-	"while it drains. Reading the armed node force-clocks "
++	"while it drains, 0x57443341 ('WD3A') for the wedged-3D drainable stage, or "
++	"0x57443342 ('WD3B') for the wedged-3D hung stage. The WD3A/WD3B stages recover "
++	"a userspace-induced VAP/GA frontend stall through the production radeon_gpu_reset "
++	"path (ring backup, r300_asic_reset, ring restore or fence force-completion, "
++	"radeon_ib_ring_tests); WD3A gates on a busy frontend, WD3B on the frontend-wedge "
++	"signature (RB3D/RE idle). Reading a soft-reset-scaffold node (SRST/HANG) force-clocks "
+ 	"VAP/GA/E2 and runs the documented RBBM_SOFT_RESET sequence (the half of "
+ 	"r300_asic_reset that radeon_gpu_reset skips on an idle engine), rebuilds the "
+ 	"CP with r100_cp_init, and re-tests it with r100_ib_test. It proves whether the "
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -1994,6 +1994,84 @@ unref:
+ 	return 0;
+ }
+ 
++/* Wedged-3D stages: recover a busy geometry frontend through the production
++ * reset path radeon.lockup_timeout invokes -- radeon_gpu_reset ->
++ * radeon_asic_reset -> r300_asic_reset -- not the standalone rs480_soft_reset
++ * scaffold the SRST/HANG stages drive.  The fault is induced out of band (a
++ * userspace 3D draw for the drainable stage; the pre-fix #996 TEXCOORD_XY
++ * rectangular-point-sprite blit on has_tcl=false for the hung stage), so these
++ * stages only validate recovery.  radeon_gpu_reset runs the full production
++ * recovery: radeon_ring_backup saves the in-flight ring, radeon_asic_reset drives
++ * r300_asic_reset (which, with the IGP force-clock, recovers instead of
++ * hard-locking), then radeon_ring_restore re-emits on success or
++ * radeon_fence_driver_force_completion retires the wedged fence on failure,
++ * closing with radeon_ib_ring_tests.  It early-returns unless rdev->needs_reset,
++ * which lockup detection sets and these stages set by hand.  Return code: 0
++ * recovered; -EAGAIN reset landed but the ring re-test failed and commands were
++ * saved (partial, another reset pending); other negative failed.
++ *
++ * Two stages preserve the ladder cadence.  WD3A drainable gates on a busy
++ * frontend alone (VAP or GA busy), so a legitimate mid-flight 3D draw whose 3D
++ * backend is still busy is accepted -- the first reset of an actually-busy
++ * VAP/GA block, reboot-safe.  WD3B hung gates on the #996 signature (frontend
++ * busy with RB3D/RE idle, the live 0x8411c100 shape), the production stall
++ * lockup_timeout exists for.  A RECOVERED verdict must be corroborated by the
++ * r300_asic_reset dmesg lines ("GPU reset succeed" and a non-idle at-reset
++ * RBBM_STATUS); if the fault drains in the gap before r300_asic_reset samples
++ * RBBM_STATUS it early-returns at !GUI_ACTIVE and resets nothing. */
++#define RS480_RESET_HANG_PROBE_WEDGED_3D_DRAINABLE_TOKEN 0x57443341u	/* "WD3A" */
++#define RS480_RESET_HANG_PROBE_WEDGED_3D_HUNG_TOKEN      0x57443342u	/* "WD3B" */
++
++static bool rs480_frontend_busy(u32 status)
++{
++	return G_000E40_VAP_BUSY(status) || G_000E40_GA_BUSY(status);
++}
++
++static bool rs480_frontend_wedged(u32 status)
++{
++	return rs480_frontend_busy(status) &&
++	       !G_000E40_RB3D_BUSY(status) && !G_000E40_RE_BUSY(status);
++}
++
++static int rs480_wedged_3d_reset(struct radeon_device *rdev, struct seq_file *m,
++				 bool require_backend_idle)
++{
++	const char *stage = require_backend_idle ? "hung" : "drainable";
++	u32 pre, post;
++	int r;
++
++	pre = RREG32(R_000E40_RBBM_STATUS);
++	if (require_backend_idle ? !rs480_frontend_wedged(pre)
++				 : !rs480_frontend_busy(pre)) {
++		seq_printf(m,
++			   "reset-hang probe wedged-3D(%s) refused: RBBM_STATUS=0x%08x lacks the "
++			   "%s; induce the userspace 3D fault before reading this node\n",
++			   stage, pre,
++			   require_backend_idle
++				   ? "frontend-wedge signature (VAP_BUSY|GA_BUSY set, RB3D/RE idle)"
++				   : "busy-frontend signature (VAP_BUSY|GA_BUSY set)");
++		return 0;
++	}
++
++	rdev->needs_reset = true;
++	r = radeon_gpu_reset(rdev);
++	post = RREG32(R_000E40_RBBM_STATUS);
++
++	seq_printf(m,
++		   "reset-hang probe wedged-3D(%s): pre RBBM_STATUS=0x%08x (VAP_BUSY=%u GA_BUSY=%u RB3D_BUSY=%u RE_BUSY=%u) "
++		   "radeon_gpu_reset=%d post=0x%08x -> %s\n"
++		   "production path: ring backup, r300_asic_reset (IGP force-clocked), ring restore or fence "
++		   "force-completion, radeon_ib_ring_tests; corroborate RECOVERED with the r300_asic_reset dmesg "
++		   "\"GPU reset succeed\" line and a non-idle at-reset RBBM_STATUS\n",
++		   stage, pre, G_000E40_VAP_BUSY(pre), G_000E40_GA_BUSY(pre),
++		   G_000E40_RB3D_BUSY(pre), G_000E40_RE_BUSY(pre),
++		   r, post,
++		   r == 0 ? "RECOVERED(corroborate via dmesg)" :
++		   r == -EAGAIN ? "PARTIAL(reset landed, ring re-test failed, commands saved)" :
++		   "FAILED");
++	return 0;
++}
++
+ static int rs480_reset_hang_probe_show(struct seq_file *m, void *unused)
+ {
+ 	struct radeon_device *rdev = m->private;
+@@ -2002,12 +2080,17 @@ static int rs480_reset_hang_probe_show(struct seq_file *m, void *unused)
+ 	u32 pre;
+ 
+ 	if (radeon_rs480_reset_hang_probe != RS480_RESET_HANG_PROBE_SOFT_RESET_TOKEN &&
+-	    radeon_rs480_reset_hang_probe != RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN) {
++	    radeon_rs480_reset_hang_probe != RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN &&
++	    radeon_rs480_reset_hang_probe != RS480_RESET_HANG_PROBE_WEDGED_3D_DRAINABLE_TOKEN &&
++	    radeon_rs480_reset_hang_probe != RS480_RESET_HANG_PROBE_WEDGED_3D_HUNG_TOKEN) {
+ 		seq_printf(m,
+ 			   "reset-hang probe disarmed: set rs480_reset_hang_probe=0x%08x for the idle "
+-			   "soft-reset stage, or 0x%08x for the 2D-blit in-busy stage\n",
++			   "soft-reset stage, 0x%08x for the 2D-blit in-busy stage, 0x%08x for the "
++			   "wedged-3D drainable stage, or 0x%08x for the wedged-3D hung stage\n",
+ 			   RS480_RESET_HANG_PROBE_SOFT_RESET_TOKEN,
+-			   RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN);
++			   RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN,
++			   RS480_RESET_HANG_PROBE_WEDGED_3D_DRAINABLE_TOKEN,
++			   RS480_RESET_HANG_PROBE_WEDGED_3D_HUNG_TOKEN);
+ 		return 0;
+ 	}
+ 
+@@ -2021,6 +2104,12 @@ static int rs480_reset_hang_probe_show(struct seq_file *m, void *unused)
+ 	if (radeon_rs480_reset_hang_probe == RS480_RESET_HANG_PROBE_BLIT_RESET_TOKEN)
+ 		return rs480_blit_busy_reset(rdev, m);
+ 
++	if (radeon_rs480_reset_hang_probe == RS480_RESET_HANG_PROBE_WEDGED_3D_DRAINABLE_TOKEN)
++		return rs480_wedged_3d_reset(rdev, m, false);
++
++	if (radeon_rs480_reset_hang_probe == RS480_RESET_HANG_PROBE_WEDGED_3D_HUNG_TOKEN)
++		return rs480_wedged_3d_reset(rdev, m, true);
++
+ 	pre = RREG32(R_000E40_RBBM_STATUS);
+ 	if (G_000E40_GUI_ACTIVE(pre)) {
+ 		seq_printf(m,

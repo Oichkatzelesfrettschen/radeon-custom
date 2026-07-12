@@ -1,0 +1,142 @@
+From: radeon-custom rs480 reset-recovery track
+Subject: [PATCH] drm/radeon: parameterized RS480 0x00F0 soft-reset mask candidates
+
+No-submit implementation of the RAD-05j 0x00F0 reset-body design. 0043 asserts
+S_0000F0_SOFT_RESET_VAP|GA and GA still holds; the still-open recovery space is
+host-safe co-masks, led by GA+RB (the dedicated 0x429C reset couples GA and
+RB3D). This lets r300_asic_reset assert one of a small bounded set of NAMED
+compiled masks so each candidate can be tested one at a time under separate
+authorization.
+
+The selector is a bounded module-param index (rs480_reset_mask), never a raw
+operator mask -- a free mask is too easy to point at a host-facing bit. An
+out-of-range value falls back to BASELINE, so an invalid selector never passes
+through as a mask. The four candidates (BASELINE VAP|GA, GA_RB, GA_RE, FULL_3D)
+are compiled constants; a static_assert on each rejects at compile time any mask
+intersecting the host-facing bits HI|HDP|MC|AIC (0x0382 -- host interface, host
+data path, the memory controller behind the UMA framebuffer, GART/AIC).
+
+The reset body keeps the 0043 shape and changes only the asserted mask: posted
+assert, 500 ms hold, posted deassert. It drops 0043's RREG32 posting flush so the
+assert path performs NO readback; the RBBM_STATUS success test and the
+force-clock park-on-failure path are unchanged, so host survival holds regardless
+of which mask is selected. The default is BASELINE, so behaviour is identical to
+0043 unless an operator explicitly selects a candidate; the diagnostic print
+reports the selected candidate name and mask (software state), not sampled
+hardware.
+
+This is a no-submit implementation of the design. It does not validate GA
+recovery. Efficacy remains one attended fire per named mask after separate
+authorization.
+
+--- a/radeon/r300.c
++++ b/radeon/r300.c
+@@ -30,6 +30,8 @@
+ #include <linux/pci.h>
+ #include <linux/seq_file.h>
+ #include <linux/slab.h>
++#include <linux/moduleparam.h>
++#include <linux/build_bug.h>
+ 
+ #include <drm/drm.h>
+ #include <drm/drm_device.h>
+@@ -432,6 +434,73 @@
+ 					BIT(27) | BIT(28) | BIT(30))
+ #define R300_RS480_SCLK_CNTL2_FORCE_3D (BIT(13) | BIT(14) | BIT(15))
+ 
++/* RS480 0x0000F0 soft-reset candidate masks (RAD-05j).  0043 asserts VAP|GA and
++ * GA still holds; the still-open recovery space is host-safe co-masks.  Expose a
++ * small bounded set of NAMED compiled masks, never a raw operator mask -- a free
++ * mask is too easy to point at a host-facing bit and wedge the box.  The
++ * host-facing bits HI/HDP/MC/AIC (host interface, host data path, the memory
++ * controller behind the UMA framebuffer, and GART/AIC) are compile-rejected in
++ * every candidate. */
++#define RS480_RESET_FORBIDDEN_MASK \
++	(S_0000F0_SOFT_RESET_HI(1) | S_0000F0_SOFT_RESET_HDP(1) | \
++	 S_0000F0_SOFT_RESET_MC(1) | S_0000F0_SOFT_RESET_AIC(1))
++
++#define RS480_RESET_M_BASELINE \
++	(S_0000F0_SOFT_RESET_VAP(1) | S_0000F0_SOFT_RESET_GA(1))
++#define RS480_RESET_M_GA_RB \
++	(RS480_RESET_M_BASELINE | S_0000F0_SOFT_RESET_RB(1))
++#define RS480_RESET_M_GA_RE \
++	(RS480_RESET_M_BASELINE | S_0000F0_SOFT_RESET_RE(1))
++#define RS480_RESET_M_FULL_3D \
++	(S_0000F0_SOFT_RESET_VAP(1) | S_0000F0_SOFT_RESET_RE(1) | \
++	 S_0000F0_SOFT_RESET_PP(1) | S_0000F0_SOFT_RESET_E2(1) | \
++	 S_0000F0_SOFT_RESET_RB(1) | S_0000F0_SOFT_RESET_GA(1) | \
++	 S_0000F0_SOFT_RESET_IDCT(1))
++
++static_assert((RS480_RESET_M_BASELINE & RS480_RESET_FORBIDDEN_MASK) == 0,
++	      "RS480 baseline reset mask touches a host-facing bit");
++static_assert((RS480_RESET_M_GA_RB & RS480_RESET_FORBIDDEN_MASK) == 0,
++	      "RS480 ga_rb reset mask touches a host-facing bit");
++static_assert((RS480_RESET_M_GA_RE & RS480_RESET_FORBIDDEN_MASK) == 0,
++	      "RS480 ga_re reset mask touches a host-facing bit");
++static_assert((RS480_RESET_M_FULL_3D & RS480_RESET_FORBIDDEN_MASK) == 0,
++	      "RS480 full_3d reset mask touches a host-facing bit");
++
++enum rs480_reset_mask_sel {
++	RS480_RESET_MASK_BASELINE = 0,
++	RS480_RESET_MASK_GA_RB,
++	RS480_RESET_MASK_GA_RE,
++	RS480_RESET_MASK_FULL_3D,
++	RS480_RESET_MASK__COUNT
++};
++
++static const struct {
++	const char *name;
++	u32 mask;
++} rs480_reset_mask_tbl[RS480_RESET_MASK__COUNT] = {
++	[RS480_RESET_MASK_BASELINE] = { "baseline(VAP|GA)", RS480_RESET_M_BASELINE },
++	[RS480_RESET_MASK_GA_RB]    = { "ga_rb(VAP|GA|RB)",  RS480_RESET_M_GA_RB },
++	[RS480_RESET_MASK_GA_RE]    = { "ga_re(VAP|GA|RE)",  RS480_RESET_M_GA_RE },
++	[RS480_RESET_MASK_FULL_3D]  = { "full_3d",           RS480_RESET_M_FULL_3D },
++};
++
++static unsigned int rs480_reset_mask = RS480_RESET_MASK_BASELINE;
++module_param(rs480_reset_mask, uint, 0644);
++MODULE_PARM_DESC(rs480_reset_mask,
++		 "RS480 0x00F0 soft-reset candidate: 0=baseline(VAP|GA) 1=ga_rb 2=ga_re 3=full_3d (invalid -> baseline)");
++
++/* Bounded selector: an out-of-range value never passes through as a mask, it
++ * falls back to the conservative BASELINE (0043) candidate. */
++static u32 rs480_selected_reset_mask(const char **name_out)
++{
++	unsigned int sel = rs480_reset_mask;
++
++	if (sel >= RS480_RESET_MASK__COUNT)
++		sel = RS480_RESET_MASK_BASELINE;
++	*name_out = rs480_reset_mask_tbl[sel].name;
++	return rs480_reset_mask_tbl[sel].mask;
++}
++
+ int r300_asic_reset(struct radeon_device *rdev, bool hard)
+ {
+ 	struct r100_mc_save save;
+@@ -464,11 +533,20 @@
+ 		WREG32_PLL(0x0000000D, sclk | R300_RS480_SCLK_CNTL_FORCE_3D);
+ 		WREG32_PLL(0x0000001E, sclk2 | R300_RS480_SCLK_CNTL2_FORCE_3D);
+ 	}
+-	WREG32(R_0000F0_RBBM_SOFT_RESET, S_0000F0_SOFT_RESET_VAP(1) |
+-					S_0000F0_SOFT_RESET_GA(1));
+-	RREG32(R_0000F0_RBBM_SOFT_RESET);
+-	mdelay(500);
+-	WREG32(R_0000F0_RBBM_SOFT_RESET, 0);
++	{
++		const char *rs480_mask_name;
++		u32 rs480_mask = rs480_selected_reset_mask(&rs480_mask_name);
++
++		dev_info(rdev->dev,
++			 "RS480 soft-reset candidate %s mask 0x%04x\n",
++			 rs480_mask_name, rs480_mask);
++		/* Posted assert; NO readback on the assert path -- the
++		 * mdelay(500) hold serializes the write before the deassert.
++		 * Failure classification stays on the RBBM_STATUS read below. */
++		WREG32(R_0000F0_RBBM_SOFT_RESET, rs480_mask);
++		mdelay(500);
++		WREG32(R_0000F0_RBBM_SOFT_RESET, 0);
++	}
+ 	mdelay(1);
+ 	status = RREG32(R_000E40_RBBM_STATUS);
+ 	dev_info(rdev->dev, "(%s:%d) RBBM_STATUS=0x%08X\n", __func__, __LINE__, status);

@@ -1,0 +1,79 @@
+From: radeon-custom rs480 reset-recovery track
+Subject: [PATCH] drm/radeon: fix RS480 reset-mask selector races and make the idle check mask-aware
+
+Follow-up review fixes for 0064 (PR #17 comments).
+
+- rs480_reset_mask is a 0644 sysfs-writable module param; the one-shot consume
+  and the read now use READ_ONCE/WRITE_ONCE so a concurrent sysfs write cannot
+  tear the value (KCSAN-clean) and the one-shot semantics stay reliable.
+- The success predicate is now genuinely mask-aware instead of unconditionally
+  checking RB3D_BUSY/RE_BUSY/GUI_ACTIVE.  GA and VAP are in every candidate and
+  are always checked (the 0043 baseline predicate); RB3D and RE are checked only
+  when the asserted mask actually reset them.  A BASELINE reset -- and the
+  discrete R3xx/R4xx path, which forces BASELINE -- is therefore classified
+  exactly as before and is never failed for a block it did not reset.  This
+  removes the 0064 behaviour change on the non-experimental and non-target-ASIC
+  paths, and the "mask-aware" comment now matches the code.
+
+No behaviour change on BASELINE or discrete R3xx/R4xx. No fire; efficacy still
+one attended fire per named mask under separate authorization.
+
+--- a/radeon/r300.c
++++ b/radeon/r300.c
+@@ -502,12 +502,14 @@
+  * unrelated GPU reset uses the safe baseline rather than reusing GA_RB. */
+ static u32 rs480_selected_reset_mask(const char **name_out)
+ {
+-	unsigned int sel = rs480_reset_mask;
++	unsigned int sel = READ_ONCE(rs480_reset_mask);
+ 
+ 	if (sel >= RS480_RESET_MASK__COUNT)
+ 		sel = RS480_RESET_MASK_BASELINE;
++	/* READ_ONCE/WRITE_ONCE: rs480_reset_mask is a 0644 sysfs-writable module
++	 * param, so a concurrent write must not tear the one-shot consume. */
+ 	if (sel != RS480_RESET_MASK_BASELINE)
+-		rs480_reset_mask = RS480_RESET_MASK_BASELINE;
++		WRITE_ONCE(rs480_reset_mask, RS480_RESET_MASK_BASELINE);
+ 	*name_out = rs480_reset_mask_tbl[sel].name;
+ 	return rs480_reset_mask_tbl[sel].mask;
+ }
+@@ -518,6 +520,7 @@
+ 	bool igp_force_clk = (rdev->family == CHIP_RS400 ||
+ 			      rdev->family == CHIP_RS480);
+ 	u32 status, tmp, sclk = 0, sclk2 = 0;
++	u32 rs480_reset_used_mask = RS480_RESET_M_BASELINE;
+ 	int ret = 0;
+ 
+ 	status = RREG32(R_000E40_RBBM_STATUS);
+@@ -560,6 +563,7 @@
+ 		dev_info(rdev->dev,
+ 			 "RS480 soft-reset candidate %s mask 0x%08x\n",
+ 			 rs480_mask_name, rs480_mask);
++		rs480_reset_used_mask = rs480_mask;
+ 		/* Posted assert; NO readback on the assert path -- the
+ 		 * mdelay(500) hold serializes the write before the deassert.
+ 		 * Failure classification stays on the RBBM_STATUS read below. */
+@@ -585,14 +589,16 @@
+ 	/* restore PCI & busmastering */
+ 	pci_restore_state(rdev->pdev);
+ 	r100_enable_bm(rdev);
+-	/* Check if GPU is idle.  A candidate co-mask (GA_RB, GA_RE, full_3d)
+-	 * also resets RB3D/RE, so GA and VAP clearing is not sufficient: a
+-	 * newly reset block left stuck would otherwise be misread as recovered.
+-	 * Fail the reset if any of the reset 3D blocks stays busy or the master
+-	 * GUI_ACTIVE bit is still set. */
++	/* Check if GPU is idle, mask-aware.  GA and VAP are in every candidate and
++	 * are always checked (the 0043 baseline predicate).  RB3D and RE are checked
++	 * only when the asserted mask actually reset them, so a BASELINE reset -- and
++	 * the discrete R3xx/R4xx path, which forces BASELINE -- is classified exactly
++	 * as before and is never failed for a block it did not reset. */
+ 	if (G_000E40_GA_BUSY(status) || G_000E40_VAP_BUSY(status) ||
+-	    G_000E40_RB3D_BUSY(status) || G_000E40_RE_BUSY(status) ||
+-	    G_000E40_GUI_ACTIVE(status)) {
++	    ((rs480_reset_used_mask & S_0000F0_SOFT_RESET_RB(1)) &&
++	     G_000E40_RB3D_BUSY(status)) ||
++	    ((rs480_reset_used_mask & S_0000F0_SOFT_RESET_RE(1)) &&
++	     G_000E40_RE_BUSY(status))) {
+ 		dev_err(rdev->dev, "failed to reset GPU\n");
+ 		ret = -1;
+ 	} else
