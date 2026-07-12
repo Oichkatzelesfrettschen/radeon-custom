@@ -21,11 +21,13 @@ coordinates their 3-bit component counts -- and reject with -EINVAL when
 VAP_VTX_SIZE is strictly smaller.  The check runs only when the command
 stream itself proves the configuration: TCL_BYPASS set by a
 VAP_CNTL_STATUS write in this CS, both format words and VAP_VTX_SIZE
-written in this CS, every PSC EXT write the identity swizzle
-(0xF688F688), and no undecoded format bits.  Any missing or ambiguous
-input makes the check decline (permissive default), because the PSC can
-legitimately expand a narrower fetch and inherited state is invisible to
-the parser.
+written in this CS, all eight VAP_PROG_STREAM_CNTL_EXT_0..7 written in
+this CS with the identity swizzle (0xF688F688), and no undecoded format
+bits.  Partial EXT coverage (fewer than eight identity writes) declines
+the check so stale PSC expansion in unwritten slots cannot hide a
+VTX_SIZE under-feed.  Any other missing or ambiguous input also declines
+(permissive default), because the PSC can legitimately expand a narrower
+fetch and inherited state is invisible to the parser.
 
 The radeon/reg_srcs/rs480 hunk applies on top of the series member that
 creates that table (0021-rs480-cs-checker-r400-us-allowlist.patch); the
@@ -48,7 +50,7 @@ index 1b5ff3f..db338fd 100644
 +	bool				vap_out_vtx_fmt_1_seen;
 +	bool				vap_cntl_status_seen;
 +	bool				vap_vtx_size_seen;
-+	bool				vap_psc_ext_seen;
++	u8				vap_psc_ext_seen_mask;
 +	bool				vap_psc_ext_nonident;
  	struct r100_cs_track_array	arrays[16];
  	struct r100_cs_track_cb 	cb[R300_MAX_CB];
@@ -90,11 +92,13 @@ index d2ee6de..56477c0 100644
 +		 * pair for two vertex elements.  0xF688F688 is the identity
 +		 * pair (select X, Y, Z, W with a full write mask in both
 +		 * halves); any other value can widen or narrow a fetched
-+		 * element, so the TCL-bypass size cross-check declines to
-+		 * judge the stream. */
++		 * element, so the TCL-bypass size cross-check declines.
++		 * Bit i of vap_psc_ext_seen_mask records EXT_i written in
++		 * this CS; the draw-time check requires all eight. */
 +		if (idx_value != 0xF688F688)
 +			track->vap_psc_ext_nonident = true;
-+		track->vap_psc_ext_seen = true;
++		track->vap_psc_ext_seen_mask |=
++			(u8)(1u << ((reg - 0x21E0) / 4));
  		break;
  	case 0x2134:
  		/* VAP_VF_MAX_VTX_INDX */
@@ -111,9 +115,9 @@ index d2ee6de..56477c0 100644
 + *
 + * The comparison is sound only when the command stream pins every input:
 + * TCL bypass proven by a VAP_CNTL_STATUS write with R300_VAP_TCL_BYPASS
-+ * set, both output-format words written, VAP_VTX_SIZE written, and every
-+ * VAP_PROG_STREAM_CNTL_EXT write carrying the identity swizzle so one
-+ * fetched dword maps to one delivered dword.  When any of those is
++ * set, both output-format words written, VAP_VTX_SIZE written, and all
++ * eight VAP_PROG_STREAM_CNTL_EXT_0..7 written as the identity swizzle so
++ * one fetched dword maps to one delivered dword.  When any of those is
 + * missing or undecodable the state is inherited or expanded outside this
 + * command stream and the check declines rather than guesses.
 + *
@@ -133,7 +137,9 @@ index d2ee6de..56477c0 100644
 +	if (!track->vap_out_vtx_fmt_0_seen || !track->vap_out_vtx_fmt_1_seen ||
 +	    !track->vap_vtx_size_seen)
 +		return 0;
-+	if (!track->vap_psc_ext_seen || track->vap_psc_ext_nonident)
++	/* Require the full EXT_0..7 set written identity in this CS. */
++	if (track->vap_psc_ext_nonident ||
++	    track->vap_psc_ext_seen_mask != 0xff)
 +		return 0;
 +	/* Format bits outside the decoded set make the tuple width
 +	 * unknown; decline. */
@@ -287,6 +293,97 @@ index 21c04b7..345be48 100644
  0x2154 VAP_PROG_STREAM_CNTL_1
  0x2158 VAP_PROG_STREAM_CNTL_2
 @@ -67,14 +64,6 @@ rs480 0x4f60
+ 0x21C0 VAP_VTX_STATE_IND_REG_14
+ 0x21C4 VAP_VTX_STATE_IND_REG_15
+ 0x21DC VAP_PSC_SGN_NORM_CNTL
+-0x21E0 VAP_PROG_STREAM_CNTL_EXT_0
+-0x21E4 VAP_PROG_STREAM_CNTL_EXT_1
+-0x21E8 VAP_PROG_STREAM_CNTL_EXT_2
+-0x21EC VAP_PROG_STREAM_CNTL_EXT_3
+-0x21F0 VAP_PROG_STREAM_CNTL_EXT_4
+-0x21F4 VAP_PROG_STREAM_CNTL_EXT_5
+-0x21F8 VAP_PROG_STREAM_CNTL_EXT_6
+-0x21FC VAP_PROG_STREAM_CNTL_EXT_7
+ 0x2200 VAP_PVS_VECTOR_INDX_REG
+ 0x2204 VAP_PVS_VECTOR_DATA_REG
+ 0x2208 VAP_PVS_VECTOR_DATA_REG_128
+diff --git a/radeon/reg_srcs/r420 b/radeon/reg_srcs/r420
+index 0000000..0000001 100644
+--- a/radeon/reg_srcs/r420
++++ b/radeon/reg_srcs/r420
+@@ -35,11 +35,8 @@ r420 0x4f60
+ 0x1DA8 VAP_VPORT_ZSCALE
+ 0x1DAC VAP_VPORT_ZOFFSET
+ 0x2080 VAP_CNTL
+-0x2090 VAP_OUT_VTX_FMT_0
+-0x2094 VAP_OUT_VTX_FMT_1
+ 0x20B0 VAP_VTE_CNTL
+ 0x2138 VAP_VF_MIN_VTX_INDX
+-0x2140 VAP_CNTL_STATUS
+ 0x2150 VAP_PROG_STREAM_CNTL_0
+ 0x2154 VAP_PROG_STREAM_CNTL_1
+ 0x2158 VAP_PROG_STREAM_CNTL_2
+@@ -67,14 +64,6 @@ r420 0x4f60
+ 0x21C0 VAP_VTX_STATE_IND_REG_14
+ 0x21C4 VAP_VTX_STATE_IND_REG_15
+ 0x21DC VAP_PSC_SGN_NORM_CNTL
+-0x21E0 VAP_PROG_STREAM_CNTL_EXT_0
+-0x21E4 VAP_PROG_STREAM_CNTL_EXT_1
+-0x21E8 VAP_PROG_STREAM_CNTL_EXT_2
+-0x21EC VAP_PROG_STREAM_CNTL_EXT_3
+-0x21F0 VAP_PROG_STREAM_CNTL_EXT_4
+-0x21F4 VAP_PROG_STREAM_CNTL_EXT_5
+-0x21F8 VAP_PROG_STREAM_CNTL_EXT_6
+-0x21FC VAP_PROG_STREAM_CNTL_EXT_7
+ 0x2200 VAP_PVS_VECTOR_INDX_REG
+ 0x2204 VAP_PVS_VECTOR_DATA_REG
+ 0x2208 VAP_PVS_VECTOR_DATA_REG_128
+diff --git a/radeon/reg_srcs/rv515 b/radeon/reg_srcs/rv515
+index 0000000..0000001 100644
+--- a/radeon/reg_srcs/rv515
++++ b/radeon/reg_srcs/rv515
+@@ -36,11 +36,8 @@ rv515 0x4f60
+ 0x2080 VAP_CNTL
+ 0x208C VAP_INDEX_OFFSET
+-0x2090 VAP_OUT_VTX_FMT_0
+-0x2094 VAP_OUT_VTX_FMT_1
+ 0x20B0 VAP_VTE_CNTL
+ 0x2138 VAP_VF_MIN_VTX_INDX
+-0x2140 VAP_CNTL_STATUS
+ 0x2150 VAP_PROG_STREAM_CNTL_0
+ 0x2154 VAP_PROG_STREAM_CNTL_1
+ 0x2158 VAP_PROG_STREAM_CNTL_2
+@@ -68,14 +65,6 @@ rv515 0x4f60
+ 0x21C0 VAP_VTX_STATE_IND_REG_14
+ 0x21C4 VAP_VTX_STATE_IND_REG_15
+ 0x21DC VAP_PSC_SGN_NORM_CNTL
+-0x21E0 VAP_PROG_STREAM_CNTL_EXT_0
+-0x21E4 VAP_PROG_STREAM_CNTL_EXT_1
+-0x21E8 VAP_PROG_STREAM_CNTL_EXT_2
+-0x21EC VAP_PROG_STREAM_CNTL_EXT_3
+-0x21F0 VAP_PROG_STREAM_CNTL_EXT_4
+-0x21F4 VAP_PROG_STREAM_CNTL_EXT_5
+-0x21F8 VAP_PROG_STREAM_CNTL_EXT_6
+-0x21FC VAP_PROG_STREAM_CNTL_EXT_7
+ 0x2200 VAP_PVS_VECTOR_INDX_REG
+ 0x2204 VAP_PVS_VECTOR_DATA_REG
+diff --git a/radeon/reg_srcs/rs600 b/radeon/reg_srcs/rs600
+index 0000000..0000001 100644
+--- a/radeon/reg_srcs/rs600
++++ b/radeon/reg_srcs/rs600
+@@ -35,11 +35,8 @@ rs600 0x4f60
+ 0x1DA8 VAP_VPORT_ZSCALE
+ 0x1DAC VAP_VPORT_ZOFFSET
+ 0x2080 VAP_CNTL
+-0x2090 VAP_OUT_VTX_FMT_0
+-0x2094 VAP_OUT_VTX_FMT_1
+ 0x20B0 VAP_VTE_CNTL
+ 0x2138 VAP_VF_MIN_VTX_INDX
+-0x2140 VAP_CNTL_STATUS
+ 0x2150 VAP_PROG_STREAM_CNTL_0
+ 0x2154 VAP_PROG_STREAM_CNTL_1
+ 0x2158 VAP_PROG_STREAM_CNTL_2
+@@ -67,14 +64,6 @@ rs600 0x4f60
  0x21C0 VAP_VTX_STATE_IND_REG_14
  0x21C4 VAP_VTX_STATE_IND_REG_15
  0x21DC VAP_PSC_SGN_NORM_CNTL

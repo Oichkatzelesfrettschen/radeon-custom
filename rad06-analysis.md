@@ -63,10 +63,13 @@ input:
 1. A VAP_CNTL_STATUS write with R300_VAP_TCL_BYPASS set (bypass proven,
    not inherited).
 2. Both VAP_OUT_VTX_FMT words and VAP_VTX_SIZE written.
-3. At least one VAP_PROG_STREAM_CNTL_EXT write, and every such write is
-   the identity swizzle 0xF688F688 (select X,Y,Z,W, full write mask,
-   both halves), so the PSC maps one fetched dword to one delivered
-   dword and VAP_VTX_SIZE is directly comparable to the GA-side tuple.
+3. All eight VAP_PROG_STREAM_CNTL_EXT_0..7 writes appear in this CS and
+   each is the identity swizzle 0xF688F688 (select X,Y,Z,W, full write
+   mask, both halves), so the PSC maps one fetched dword to one
+   delivered dword and VAP_VTX_SIZE is directly comparable to the
+   GA-side tuple.  Fewer than eight identity EXT writes declines the
+   check (partial coverage never rejects) so unwritten upper slots
+   cannot hide stale non-identity expansion.
 4. No format bits outside the decoded set (FMT_0 outside
    POS|COLOR0..3|PT_SIZE, FMT_1 above bit 23, any texcoord component
    count above 4).
@@ -87,11 +90,12 @@ required` is then a proven GA-starvation shape and is rejected -EINVAL.
   GA tuple comes from the shader's output map, not from the fetch
   stream, and VAP_VTX_SIZE governs only the input side; no comparison
   is valid.
-- Any non-identity PSC EXT swizzle: the PSC can synthesize components
+- Any non-identity PSC EXT swizzle, or fewer than eight EXT_0..7
+  identity writes in this CS: the PSC can synthesize components
   (ZERO/ONE selects, replication), so a vertex narrower than the tuple
-  is legitimate.  This also declines on streams whose unused upper EXT
-  slots carry stale non-identity values -- a deliberate
-  false-negative-over-false-positive trade.
+  is legitimate, and unwritten upper EXT slots may retain inherited
+  non-identity state the parser cannot see.  The full eight-slot
+  identity requirement is the false-negative-over-false-positive trade.
 - Undecoded FMT bits or texcoord component counts of 5-7: unknown tuple
   width.
 - vtx_size larger than the tuple: not rejected; over-delivery is not
@@ -138,20 +142,22 @@ indirection in r300's six draw cases.  r100/r200 parse paths call
 These clauses answer residual review on the draft without changing the
 kernel series wiring (still a draft):
 
-1. **PSC EXT required.**  The check declines unless at least one
-   VAP_PROG_STREAM_CNTL_EXT write appears in this CS and every such write
-   is identity `0xF688F688`.  Partial EXT coverage never rejects; only
-   the full identity set permits the VTX_SIZE vs tuple compare.
-2. **Safe-list removal.**  The draft removes 0x2090/0x2094/0x2140 (and
-   the EXT range) from the r300 and rs480 mkregtable sources so
-   `r300_packet0_check` sees them.  Sibling family tables (r420/rv515)
-   remain a follow-on trim; they are not silent false rejections, only
-   absent coverage.
-3. **Indexed draws.**  Every `PACKET3_3D_DRAW_*` case in
-   `r300_packet3_check` (including `3D_DRAW_INDX` / `3D_DRAW_INDX_2` /
-   `DRAW_VBUF` / `DRAW_VBUF_2` / IMMD variants) routes through the same
-   wrapper before `r100_cs_track_check`, so indexed bypass IBs face the
-   same VTX_SIZE vs OUTPUT_VTX_FMT gate as array draws.
+1. **PSC EXT full identity set.**  The check declines unless
+   `VAP_PROG_STREAM_CNTL_EXT_0..7` are all written in this CS and every
+   write is identity `0xF688F688` (`vap_psc_ext_seen_mask == 0xff` and
+   `!vap_psc_ext_nonident`).  Partial EXT coverage never rejects; only
+   the full eight-slot identity set permits the VTX_SIZE vs tuple
+   compare.
+2. **Safe-list removal.**  The draft removes 0x2090/0x2094/0x2140 and
+   the EXT range from the r300, rs480, r420, rv515, and rs600
+   `reg_srcs` tables so `r300_packet0_check` sees them on every
+   r300-family chip that shares that parse path.
+3. **Indexed draws.**  `PACKET3_INDX_BUFFER` only binds the index BO;
+   the subsequent `PACKET3_3D_DRAW_INDX` / `3D_DRAW_INDX_2` (and
+   `DRAW_VBUF` / `DRAW_VBUF_2` / IMMD variants) call the same
+   `r300_cs_track_check` wrapper before `r100_cs_track_check`, so
+   indexed bypass IBs face the same VTX_SIZE vs OUTPUT_VTX_FMT gate as
+   array draws.  No separate check is required on the bind packet.
 
 ## Open questions
 
@@ -163,10 +169,10 @@ kernel series wiring (still a draft):
   `radeon/r300_reg.h:116-119`; mesa uses the same encodings in anger
   (`r300_state_derived.c`), so confidence is high, but a
   color-present bypass IB replay would pin the color weight of 4.
-- reg_srcs tables for r420/rv515/rs600 still list the three registers
-  as safe; RV515 draws route through r300_packet0_check too, so those
-  chips silently keep the old permissive behavior until their tables
-  get the same trim.
+- reg_srcs tables for r420/rv515/rs600 are trimmed in the same draft
+  as r300/rs480; residual open work is regenerating the sibling
+  `*_reg_safe.h` headers via mkregtable when the draft is wired into
+  the DKMS series.
 - Whether to also require PRIM_WALK != 3 (immediate draws embed vertex
   data in the IB; the GA starvation shape may differ).  The draft
   applies the check to all six draw opcodes.
