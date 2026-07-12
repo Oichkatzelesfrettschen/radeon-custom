@@ -1,10 +1,7 @@
 # radeon-custom
 
-Dedicated fork of the Linux `radeon` DRM kernel module for the RS480-class
-(Vostro 1000 / RS482 / K8) and Palm/Warrior targets, packaged as DKMS. This
-repository is the single build source for the radeon kernel-side work that
-was previously scattered across the steinmarder trees; the userspace r300
-gallium and r3v Vulkan drivers live in `mesa-26-gororoba`.
+Dedicated out-of-tree Radeon DRM/DKMS source for the RS480/RS482/RS485 and
+PALM/Wrestler safety and reverse-engineering lanes.
 
 The canonical registry of which kernel modules the Vostro 1000 runs (radeon,
 snd-hda, sb600 watchdog, and the DKMS series this repo builds) is
@@ -12,51 +9,97 @@ snd-hda, sb600 watchdog, and the DKMS series this repo builds) is
 source of truth and update it when this repo changes the installed DKMS
 `pkgrel` or patch series.
 
+This repository is the single active kernel build source. Mesa userspace lives
+in `mesa-26-gororoba`; retained RS482 probes, logs, result bundles, and hardware
+verdicts live in `steinmarder-r300`. Historical Steinmarder package trees remain
+provenance, not active build inputs.
+
 ## Why this exists
 
-The RS482 IGP shares the K8 northbridge, and a GPU command-stream fault
-hangs the ring. With the stock `radeon.lockup_timeout=0` the kernel waits
-on the fence forever rather than resetting -- an unrecoverable soft hang
-(proven on the Vostro 1000: a `util_blitter` clear stalls in
-`radeon_fence_default_wait`, while a Vulkan draw on the same winsys
-completes, so the fence path itself works). This module supplies the
-RS480-class GPU reset that makes such a hang recoverable, plus the register
-read/write hazard guards that keep the northbridge alive during probing.
+## What this repository proves—and what it does not
 
-## lockup_timeout policy
+The live package manifest proves which mechanisms are present in the built
+module. It does not by itself prove those mechanisms worked on silicon.
 
-The stock value `0` (no self-reset) is retained as the default. A non-zero
-`lockup_timeout` is enabled ONLY after the reset patches in this repo
-(`rs480-crash-shim-recovery`, `rs480-rbbm-soft-reset-recovery-probe`) are
-proven to actually recover the GPU on RS482 hardware rather than wedge it
-harder -- the reason the stock value was set to 0 in the first place. Do not
-flip it globally before that evidence exists.
-
-## Layout
-
-| Path | Role |
+| Property | Current status |
 | --- | --- |
-| `patches/rs480/` | RS480 / Vostro reset, safe-register, and debugfs patch series (0001-0040+) |
-| `patches/palm/` | Palm / x130e reset, validator, and CS-observer patches |
-| `sources/` | Prepatched radeon source tarballs per kernel line (cachyos 6.18/7.0, xanmod 6.18) plus provenance |
-| `packaging/arch/radeon-unified-dkms/` | Arch `PKGBUILD` + `dkms.conf` (module name `radeon`, installs to `/updates/dkms`) |
-| `packaging/debian/` | Debian DKMS adapter |
-| `scripts/` | Build, apply, and verification helpers |
-| `docs/` | `RADEON_DKMS_UNIFICATION_PLAN.md` (canonical patchset + packaging plan), method-transfer and UMR readiness notes |
+| Unified DKMS package builds and installs on the recorded CachyOS kernels | compile-verified and installed |
+| Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
+| RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
+| Display scanout recovers without reboot | not achieved |
+| 0060 SIGBUS isolation gate fires | unverified; installed but not exercised in the retained pass |
+| 0063-0068 non-baseline reset masks | implemented, compile-verified, installed, and not fired |
 
-## Build and install (Arch / cachyos)
+Therefore `radeon.lockup_timeout=0` remains the safe default. Do not describe the
+package as an automatic reset-recovery driver and do not enable a nonzero timeout
+until an attended RS482 run demonstrates GPU recovery, not merely host survival.
 
-    cd packaging/arch/radeon-unified-dkms
-    makepkg -f
-    sudo pacman -U radeon-unified-dkms-*.pkg.tar.zst
+The authoritative per-patch hardware verdict is
+`steinmarder-r300:src/re/r300/findings/rs480-reset-recovery-patch-status-table.md`.
+The package and patch order are authoritative here.
 
-The package `replaces` the older `radeon-rs480-safe-regs-dkms` and
-`radeon-palm-gate-dkms` staging packages. The PKGBUILD reads its patches and
-source tarball by relative path from `../../../patches` and
-`../../../sources`, so keep the top-level layout intact.
+## Unified package
 
-## Relationship to the other repositories
+The primary package is `packaging/arch/radeon-unified-dkms/`.
 
-- `mesa-26-gororoba` -- userspace r300/r3v drivers; `docs/hardware/vostro1000-kernel-modules.md` is the registry that names this module and why the hardware needs it.
-- `vostro1000-re` -- non-radeon platform DKMS (SB600 `sp5100-tco-ioapic` watchdog, `vostro1000-ec-fan` hwmon) and the `vostro1000-wedge-recovery` userspace posture; those stay there.
-- `steinmarder` / `steinmarder-r300` -- the reverse-engineering evidence and probe corpus that produced these patches; `MIGRATION.md` records the provenance.
+- `dkms.conf` is the ordered patch manifest.
+- `PKGBUILD` generates and installs the canonical Radeon source tree used by
+  DKMS and rebuilds the boot initramfs after installation.
+- `patches/rs480/` contains RS480/RS482 instrumentation, reset experiments,
+  failed-reset parking/containment, and bounded reset-mask candidates.
+- Palm/Wrestler safety gates are carried in the same module package but remain a
+  separate hardware-generation lane; Palm evidence does not validate RS482 and
+  RS482 evidence does not validate Palm.
+
+The older `radeon-rs480-safe-regs-dkms` and `radeon-palm-gate-dkms` package
+identities were folded into the unified package. The PKGBUILD provides/replaces
+them and conflicts with the superseded DKMS packages so there is one active
+module source.
+
+## Hazard stack and watchdog boundary
+
+`packaging/arch/rs480-reset-hazard-stack/` installs the Radeon module under test,
+the SB600 watchdog substrate, and a runtime preflight. The dependency records a
+consistent machine configuration and the watchdog fired-latch fix; package
+presence is not a safety verdict.
+
+Active watchdog feeding is retired for RAD-05 fire timing. Retained calibration
+shows the SB600 reset event is not deferred by `WDIOC_SETTIMEOUT`,
+`WDIOC_KEEPALIVE`, or magic close, so the watchdog must not be represented as a
+deferrable dead-man fuse for multi-second GPU wedges. Destructive runs rely on
+explicit preflight, boot-persistent netconsole, retained manifests, and manual
+recovery.
+
+## Repository layout
+
+- `patches/` — ordered kernel changes and generated patch material.
+- `sources/` — canonical source snapshots used to construct the DKMS tree.
+- `scripts/` — source generation, validation, and packaging helpers.
+- `packaging/arch/radeon-unified-dkms/` — active Arch DKMS package.
+- `packaging/arch/rs480-reset-hazard-stack/` — hazardous-run meta-package and
+  preflight.
+- `packaging/debian/` — Debian-family packaging adapters.
+- `docs/` — package/readiness documentation; hardware run verdicts remain in
+  `steinmarder-r300`.
+
+## Build and validation
+
+Run the repository checks before packaging:
+
+```sh
+make check
+```
+
+Build the active Arch package from its package directory with the intended
+kernel trees available. A successful build or install may promote a claim only
+to `compile-verified` or `installed`; promotion to `hardware-run`, `partial`,
+`hardware-pass`, or `refuted` requires a retained target-silicon result bundle.
+
+## Cross-repository contract
+
+- `radeon-custom` owns kernel code, package contents, patch order, dependencies,
+  and safe defaults.
+- `steinmarder-r300` owns RS482 probes, evidence bundles, falsifiers, and hardware
+  verdicts.
+- `mesa-26-gororoba` owns r300g/r3v userspace behavior and the cross-repository
+  integration index at `docs/hardware/rs482-source-authority.md`.
