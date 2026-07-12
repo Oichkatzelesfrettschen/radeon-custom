@@ -23,9 +23,9 @@ stream itself proves the configuration: TCL_BYPASS set by a
 VAP_CNTL_STATUS write in this CS, both format words and VAP_VTX_SIZE
 written in this CS, all eight VAP_PROG_STREAM_CNTL_EXT_0..7 written in
 this CS with the identity swizzle (0xF688F688), and no undecoded format
-bits.  Partial EXT coverage (fewer than eight identity writes) declines
-the check so stale PSC expansion in unwritten slots cannot hide a
-VTX_SIZE under-feed.  Any other missing or ambiguous input also declines
+bits.  Partial EXT coverage (fewer than eight identity writes) causes the
+check to decline so stale PSC expansion in unwritten slots cannot
+hide a VTX_SIZE under-feed.  Any other missing or ambiguous input also declines
 (permissive default), because the PSC can legitimately expand a narrower
 fetch and inherited state is invisible to the parser.
 
