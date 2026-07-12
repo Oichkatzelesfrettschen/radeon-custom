@@ -1,7 +1,8 @@
 # RAD-06 analysis: TCL-bypass VAP_VTX_SIZE vs VAP_OUT_VTX_FMT cross-check
 
-Companion to `rad06-tcl-bypass-vtx-output-crosscheck.draft.patch` (both
-untracked drafts at the repo root).  Paths below are relative to the
+Companion to the tracked draft
+`rad06-tcl-bypass-vtx-output-crosscheck.draft.patch` at the repo root
+(not yet wired into the DKMS series).  Paths below are relative to the
 unpacked DKMS source tree
 `packaging/arch/radeon-unified-dkms/pkg/radeon-unified-dkms/usr/src/radeon-unified-0.3/`.
 
@@ -131,6 +132,26 @@ indirection in r300's six draw cases.  r100/r200 parse paths call
    VAP_CNTL_STATUS write; expect acceptance (permissive default), even
    with a mismatched size, demonstrating the check never fires on
    inherited state.
+
+## Review closure (draft intent)
+
+These clauses answer residual review on the draft without changing the
+kernel series wiring (still a draft):
+
+1. **PSC EXT required.**  The check declines unless at least one
+   VAP_PROG_STREAM_CNTL_EXT write appears in this CS and every such write
+   is identity `0xF688F688`.  Partial EXT coverage never rejects; only
+   the full identity set permits the VTX_SIZE vs tuple compare.
+2. **Safe-list removal.**  The draft removes 0x2090/0x2094/0x2140 (and
+   the EXT range) from the r300 and rs480 mkregtable sources so
+   `r300_packet0_check` sees them.  Sibling family tables (r420/rv515)
+   remain a follow-on trim; they are not silent false rejections, only
+   absent coverage.
+3. **Indexed draws.**  Every `PACKET3_3D_DRAW_*` case in
+   `r300_packet3_check` (including `3D_DRAW_INDX` / `3D_DRAW_INDX_2` /
+   `DRAW_VBUF` / `DRAW_VBUF_2` / IMMD variants) routes through the same
+   wrapper before `r100_cs_track_check`, so indexed bypass IBs face the
+   same VTX_SIZE vs OUTPUT_VTX_FMT gate as array draws.
 
 ## Open questions
 
