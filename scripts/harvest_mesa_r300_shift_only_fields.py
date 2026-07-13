@@ -41,7 +41,7 @@ MESA_REG_H = REPO_ROOT / (
 )
 REGISTERS = REPO_ROOT / "src/re/r300/registry/registers.tsv"
 FIELDS = REPO_ROOT / "src/re/r300/registry/fields.tsv"
-OUT = REPO_ROOT / "src/re/radeon/docs/radeon_reg_mesa_r300_shift_only_reconstructed.tsv"
+OUT = REPO_ROOT / "docs/radeon_reg_mesa_r300_shift_only_reconstructed.tsv"
 HEADER = ["register", "offset", "field", "start_bit", "stop_bit", "mask", "source"]
 SOURCE = "mesa_r300_reg.h (shift-only boundary reconstructed)"
 DOCUMENTED_SINGLE_BIT_LAST_FIELDS = {

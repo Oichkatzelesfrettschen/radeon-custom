@@ -31,7 +31,7 @@ from build_rs4xx_r300_register_opcode_atom_inventory import (  # noqa: E402
 
 PDF_TEXT = Path("docs/external_sources/rs480_r300_registers_and_driver_sources/raw/pdf")
 VERSIONS = ["v1.1", "v1.2", "v1.3", "v1.4", "v1.5"]
-OUTPUT = Path("src/re/radeon/docs/r5xx_accel_version_delta_registers.tsv")
+OUTPUT = Path("docs/r5xx_accel_version_delta_registers.tsv")
 FIELDS = [
     "register",
     "offset_hex",

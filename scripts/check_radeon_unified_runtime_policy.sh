@@ -3,8 +3,8 @@ set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
-expected_conf="$repo_root/src/re/radeon/packaging/arch/radeon-unified-dkms/radeon-re.conf"
-experiment_allowlist="$repo_root/src/re/radeon/packaging/arch/radeon-unified-dkms/radeon-re-experiment-allowlist.conf"
+expected_conf="$repo_root/packaging/arch/radeon-unified-dkms/radeon-re.conf"
+experiment_allowlist="$repo_root/packaging/arch/radeon-unified-dkms/radeon-re-experiment-allowlist.conf"
 host=
 
 usage() {

@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
-package_dir="$repo_root/src/re/radeon/packaging/arch/radeon-unified-dkms"
+package_dir="$repo_root/packaging/arch/radeon-unified-dkms"
 pkgbuild="$package_dir/PKGBUILD"
 dkms_conf="$package_dir/dkms.conf"
 
@@ -103,20 +103,20 @@ check_member \
     "${dkms_root}/radeon-dkms-ccache-clang" \
     "radeon-dkms-ccache-clang"
 check_member \
-    "$repo_root/src/re/radeon/patches/rs480/SAFE_REGS.tsv" \
+    "$repo_root/patches/rs480/SAFE_REGS.tsv" \
     "${dkms_root}/SAFE_REGS.tsv" \
     "SAFE_REGS.tsv"
 check_member \
-    "$repo_root/src/re/radeon/patches/rs480/CANDIDATE_REGS.tsv" \
+    "$repo_root/patches/rs480/CANDIDATE_REGS.tsv" \
     "${dkms_root}/CANDIDATE_REGS.tsv" \
     "CANDIDATE_REGS.tsv"
 check_member \
-    "$repo_root/src/re/radeon/patches/rs480/0001-rs480-safe-regs-debugfs.patch" \
+    "$repo_root/patches/rs480/0001-rs480-safe-regs-debugfs.patch" \
     "${dkms_root}/patches/0001-radeon-rs480-safe-regs-debugfs.patch" \
     "0001-rs480-safe-regs-debugfs.patch"
 for patch_name in "${PATCH[@]}"; do
     check_member \
-        "$repo_root/src/re/radeon/patches/rs480/$patch_name" \
+        "$repo_root/patches/rs480/$patch_name" \
         "${dkms_root}/patches/$patch_name" \
         "$patch_name"
 done

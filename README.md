@@ -85,28 +85,46 @@ recovery.
 ## Build and validation
 
 There is no top-level `Makefile`. Before packaging, run the scripted checks
-from the repository root:
+from the repository root. Several checks source the PKGBUILD or use bash
+arrays, so invoke them with `bash` rather than `sh`:
 
-```sh
+```bash
 # PKGBUILD sha256sums match the patch files on disk
-sh packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
+bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 
 # Patch series applies and (when a kernel build dir is present) compiles
+# (POSIX sh; uses repository-root packaging/, patches/, and sources/)
 sh scripts/check_radeon_patch_series_compiles.sh
 
-# Unified DKMS source tree / package contents
-sh scripts/verify_radeon_unified_dkms_sources.sh
-sh scripts/verify_radeon_unified_dkms_package.sh
-
-# Optional: runtime modprobe policy on a live host
-sh scripts/check_radeon_unified_runtime_policy.sh
+# Unified DKMS source tree hashes and patch-chain apply dry-run
+bash scripts/verify_radeon_unified_dkms_sources.sh
 ```
 
 Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with
-the intended kernel trees available. A successful build or install may promote
-a claim only to `compile-verified` or `installed`; promotion to
-`hardware-run`, `partial`, `hardware-pass`, or `refuted` requires a retained
-target-silicon result bundle.
+the intended kernel trees available:
+
+```bash
+cd packaging/arch/radeon-unified-dkms
+makepkg -f
+```
+
+After a package artifact exists under that directory, verify its payload
+against the canonical inputs:
+
+```bash
+# Requires a built radeon-unified-dkms-*.pkg.tar.* in the package directory
+bash scripts/verify_radeon_unified_dkms_package.sh
+```
+
+Optional runtime check on a live host (module loaded from the unified package):
+
+```bash
+bash scripts/check_radeon_unified_runtime_policy.sh
+```
+
+A successful build or install may promote a claim only to `compile-verified`
+or `installed`; promotion to `hardware-run`, `partial`, `hardware-pass`, or
+`refuted` requires a retained target-silicon result bundle.
 
 ## Cross-repository contract
 
