@@ -34,13 +34,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 MESA_REG_H = REPO_ROOT / (
     "docs/external_sources/rs480_r300_registers_and_driver_sources/"
     "raw/source/mesa_r300/r300_reg.h"
 )
-REGISTERS = REPO_ROOT / "src/re/r300/registry/registers.tsv"
-FIELDS = REPO_ROOT / "src/re/r300/registry/fields.tsv"
+REGISTERS = REPO_ROOT / "../steinmarder-r300/src/re/r300/registry/registers.tsv"
+FIELDS = REPO_ROOT / "../steinmarder-r300/src/re/r300/registry/fields.tsv"
 OUT = REPO_ROOT / "docs/radeon_reg_mesa_r300_shift_only_reconstructed.tsv"
 HEADER = ["register", "offset", "field", "start_bit", "stop_bit", "mask", "source"]
 SOURCE = "mesa_r300_reg.h (shift-only boundary reconstructed)"

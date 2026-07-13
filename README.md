@@ -104,8 +104,8 @@ Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with
 the intended kernel trees available:
 
 ```bash
-cd packaging/arch/radeon-unified-dkms
-makepkg -f
+# keep the shell at the repository root for the checks below
+( cd packaging/arch/radeon-unified-dkms && makepkg -f )
 ```
 
 After a package artifact exists under that directory, verify its payload

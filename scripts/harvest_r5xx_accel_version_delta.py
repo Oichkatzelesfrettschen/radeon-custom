@@ -21,10 +21,10 @@ from pathlib import Path
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[1]
 
 
-sys.path.insert(0, str(repo_root() / "src/re/r300/scripts"))
+sys.path.insert(0, str(repo_root() / "../steinmarder-r300/src/re/r300/scripts"))
 from build_rs4xx_r300_register_opcode_atom_inventory import (  # noqa: E402
     parse_mmreg_line,
 )

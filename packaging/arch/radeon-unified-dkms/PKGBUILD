@@ -149,7 +149,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=85
+pkgrel=86
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/steinmarder'
@@ -257,10 +257,11 @@ source=(
   "rs480-reset-idle-check-comment-grammar.patch::file://${startdir}/../../../patches/rs480/0068-rs480-reset-idle-check-comment-grammar.patch"
   "rs480-parked-fbdev-write-advance-ppos.patch::file://${startdir}/../../../patches/rs480/0069-rs480-parked-fbdev-write-advance-ppos.patch"
   "rs480-parked-gem-fault-reserve-before-placement.patch::file://${startdir}/../../../patches/rs480/0070-rs480-parked-gem-fault-reserve-before-placement.patch"
+  "rs480-parked-residual-irq-cursor-detect-debugfs-gates.patch::file://${startdir}/../../../patches/rs480/0071-rs480-parked-residual-irq-cursor-detect-debugfs-gates.patch"
 )
 sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'cc921d8f17005e3e77fb7a610c427d585b15c1dfd907525c6d7575dac168b5c3'
-            'e074c1d097d7a9d04e3dab66e2ba6ec11481833f0558bd2a249c887f74f9d34d'
+            'c968c0d2f829c19a31ad531f754f51cfca3e11c407a15077a6d3733736eeccc9'
             '1ce4bdbb37c2b1a1d5669878c9e76840c23c4611031e1dd701077e26492decb0'
             '0096c2fe01a114793169e120a006684b8d98403a678568f8adc967948b134743'
             'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
@@ -339,7 +340,8 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             '83b4b2b545dea37139eda3165c6486eec8b87d9f01b21240a4462d8ec50566fd'
             'c81db75464b1e819c6e2a20c7d337467fcfca3ad635b10eee33a9d4f454e0850'
             'eb54349d64e3c5d9a45e204ed09e80f04c6a62217651ff0976fed13678b4d9c3'
-            '21d0a28edb3825d8c5ee208307f553c076599c69405feadf3cad268a28a48061')
+            '21d0a28edb3825d8c5ee208307f553c076599c69405feadf3cad268a28a48061'
+            '1bb113fa512f9c449bcc30145177b8678f1b43aeeb5ad94fd7921e3e871cc42c')
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
   install -Dm644 "${srcdir}/rs480-cp-mc-cache-flush.patch" "${_dkmsdir}/patches/0002-rs480-cp-mc-cache-flush.patch"

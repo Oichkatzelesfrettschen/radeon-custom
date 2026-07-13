@@ -52,7 +52,19 @@ if lsmod | grep -q '^sp5100_tco'; then
     # Prefer the running module matches the installed DKMS build when both
     # srcversions are readable; mismatch is WARN (reboot/reload needed).
     sp_running=$(cat /sys/module/sp5100_tco/srcversion 2>/dev/null || true)
-    sp_installed=$(modinfo -k "$(uname -r)" -F srcversion sp5100_tco 2>/dev/null || true)
+    sp_path=$(modinfo -k "$(uname -r)" -n sp5100_tco 2>/dev/null || true)
+    case "$sp_path" in
+        *updates/*|*dkms*) ;;
+        *)
+            for cand in /lib/modules/"$(uname -r)"/updates/dkms/sp5100_tco.ko*; do
+                [ -e "$cand" ] || continue
+                sp_path=$cand
+                break
+            done
+            ;;
+    esac
+    sp_installed=
+    [ -n "$sp_path" ] && sp_installed=$(modinfo -F srcversion "$sp_path" 2>/dev/null || true)
     if [ -n "$sp_running" ] && [ -n "$sp_installed" ]; then
         if [ "$sp_running" = "$sp_installed" ]; then
             ok "sp5100_tco srcversion $sp_running matches installed module"
@@ -61,7 +73,11 @@ if lsmod | grep -q '^sp5100_tco'; then
         fi
     fi
 else
-    note "sp5100_tco not loaded (watchdog substrate not visible; fine for a no-watchdog fire; preflight never modprobes it)"
+    if [ "${RS480_WD_RESEARCH:-0}" = "1" ]; then
+        note "sp5100_tco not loaded (RS480_WD_RESEARCH=1: substrate absent; preflight still never modprobes it)"
+    else
+        note "sp5100_tco not loaded (watchdog substrate not visible; fine for a no-watchdog fire; preflight never modprobes it)"
+    fi
 fi
 
 # 2. Watchdog character device identity (observe only).
@@ -163,11 +179,28 @@ fi
 #    Resolve by module name through modinfo so compression (.ko, .ko.zst, .ko.xz)
 #    and install layout do not hard-code a single path.
 running=$(cat /sys/module/radeon/srcversion 2>/dev/null || true)
-installed=$(modinfo -k "$(uname -r)" -F srcversion radeon 2>/dev/null || true)
+# Prefer the DKMS install under updates/; modinfo -n can otherwise resolve
+# an in-tree radeon.ko that is not the package under test.
+radeon_path=$(modinfo -k "$(uname -r)" -n radeon 2>/dev/null || true)
+case "$radeon_path" in
+    *updates/dkms*|*updates/*) ;;
+    *)
+        radeon_path=
+        for cand in /lib/modules/"$(uname -r)"/updates/dkms/radeon.ko*; do
+            [ -e "$cand" ] || continue
+            radeon_path=$cand
+            break
+        done
+        ;;
+esac
+installed=
+if [ -n "$radeon_path" ]; then
+    installed=$(modinfo -F srcversion "$radeon_path" 2>/dev/null || true)
+fi
 if [ -z "$running" ]; then
     bad "radeon module not loaded (no /sys/module/radeon/srcversion)"
 elif [ -z "$installed" ]; then
-    bad "cannot resolve installed radeon srcversion via modinfo -k $(uname -r) radeon"
+    bad "cannot resolve DKMS/updates radeon srcversion (modinfo path=${radeon_path:-none})"
 elif [ "$running" = "$installed" ]; then
     ok "radeon srcversion $running matches installed package"
 else
