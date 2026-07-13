@@ -3,11 +3,11 @@ set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
-package_dir="$repo_root/src/re/radeon/packaging/arch/radeon-unified-dkms"
+package_dir="$repo_root/packaging/arch/radeon-unified-dkms"
 pkgbuild="$package_dir/PKGBUILD"
 
-rs480_dir="$repo_root/src/re/radeon/patches/rs480"
-fragment_generator="$repo_root/src/re/radeon/scripts/generate_rs480_debugfs_fragments.py"
+rs480_dir="$repo_root/patches/rs480"
+fragment_generator="$repo_root/scripts/generate_rs480_debugfs_fragments.py"
 safe_regs_tsv="$rs480_dir/SAFE_REGS.tsv"
 candidate_regs_tsv="$rs480_dir/CANDIDATE_REGS.tsv"
 

@@ -30,7 +30,7 @@
 set -u
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-# shellcheck source=src/re/radeon/scripts/radeon_debugfs_path.sh
+# shellcheck source=scripts/radeon_debugfs_path.sh
 . "$SCRIPT_DIR/radeon_debugfs_path.sh"
 
 MODE="${1:-}"

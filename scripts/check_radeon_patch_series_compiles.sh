@@ -15,7 +15,9 @@
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel) || { echo "not inside a git repo" >&2; exit 2; }
-RAD="$repo_root/src/re/radeon"
+# Standalone radeon-custom layout: package, patches, and sources live at the
+# repository root (not under a nested src/re/radeon tree).
+RAD="$repo_root"
 DKMSDIR="$RAD/packaging/arch/radeon-unified-dkms"
 BASE="$RAD/sources/radeon-unified-0.3-source.tar.xz"
 [ -f "$BASE" ] || { echo "missing base tarball: $BASE" >&2; exit 2; }

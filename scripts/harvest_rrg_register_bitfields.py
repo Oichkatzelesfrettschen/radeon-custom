@@ -298,7 +298,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--out-dir",
         type=Path,
-        default=Path("src/re/radeon/docs"),
+        default=Path("docs"),
         help="output directory for the harvest TSV triple",
     )
     args = parser.parse_args(argv)

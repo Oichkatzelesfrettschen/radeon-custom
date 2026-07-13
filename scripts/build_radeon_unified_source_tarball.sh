@@ -9,7 +9,7 @@ usage() {
 usage: build_radeon_unified_source_tarball.sh [--check]
 
 Generates:
-  src/re/radeon/sources/radeon-unified-0.3-source.tar.xz
+  sources/radeon-unified-0.3-source.tar.xz
 
 The generated source starts from the RS480/CachyOS superset snapshot,
 removes patch-backup artifacts, normalizes permissions, and writes a

@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-GENERATED_DIR = REPO_ROOT / "src/re/radeon/registry/generated"
+GENERATED_DIR = REPO_ROOT / "registry/generated"
 JSON_PATH = GENERATED_DIR / "rs480_observer_telemetry.json"
 TSV_PATH = GENERATED_DIR / "rs480_observer_telemetry.tsv"
 
@@ -40,8 +40,8 @@ SURFACES: tuple[SurfaceSpec, ...] = (
             "the positive control that candidate rows must stay outside of."
         ),
         required_globs=(
-            "src/re/radeon/packaging/arch/radeon-unified-dkms/README.md",
-            "src/re/radeon/patches/rs480/*safe-regs*.patch",
+            "packaging/arch/radeon-unified-dkms/README.md",
+            "patches/rs480/*safe-regs*.patch",
         ),
     ),
     SurfaceSpec(
@@ -61,7 +61,7 @@ SURFACES: tuple[SurfaceSpec, ...] = (
         required_globs=(
             "src/re/r300/scripts/run_vostro_safe_probe.sh",
             "src/re/r300/scripts/remote/r300-candidate-regs-read",
-            "src/re/radeon/patches/rs480/*candidate-regs*.patch",
+            "patches/rs480/*candidate-regs*.patch",
         ),
     ),
     SurfaceSpec(
@@ -94,8 +94,8 @@ SURFACES: tuple[SurfaceSpec, ...] = (
             "it as absent rather than silently imply parity."
         ),
         required_globs=(
-            "src/re/radeon/packaging/debian/radeon-unified-dkms/prep-source.sh",
-            "src/re/radeon/patches/palm/*perf-query*.patch",
+            "packaging/debian/radeon-unified-dkms/prep-source.sh",
+            "patches/palm/*perf-query*.patch",
         ),
     ),
     SurfaceSpec(
@@ -111,8 +111,8 @@ SURFACES: tuple[SurfaceSpec, ...] = (
             "not yet own an equivalent default observer path."
         ),
         required_globs=(
-            "src/re/radeon/packaging/debian/radeon-unified-dkms/prep-source.sh",
-            "src/re/radeon/patches/palm/**/*palm*observer*.c",
+            "packaging/debian/radeon-unified-dkms/prep-source.sh",
+            "patches/palm/**/*palm*observer*.c",
         ),
     ),
 )
@@ -154,7 +154,7 @@ def write_json(rows: list[dict[str, object]]) -> None:
         "target": "rs480",
         "scope": "observer-telemetry",
         "status": "source-backed",
-        "generated_from": "src/re/radeon/scripts/build_rs480_observer_telemetry_report.py",
+        "generated_from": "scripts/build_rs480_observer_telemetry_report.py",
         "rows": rows,
     }
     JSON_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -27,7 +27,7 @@ CORPUS_LINUX = REPO_ROOT / (
     "docs/external_sources/rs480_r300_registers_and_driver_sources/raw/source/linux"
 )
 SOURCES = ("r300d.h", "rs400d.h")
-OUTPUT = REPO_ROOT / "src/re/radeon/docs/linux_d_header_harvested_bitfields.tsv"
+OUTPUT = REPO_ROOT / "docs/linux_d_header_harvested_bitfields.tsv"
 HEADER = ["register", "offset", "field", "start_bit", "stop_bit", "mask", "source"]
 
 REGISTER_RE = re.compile(r"^#define R_([0-9A-F]{6})_(\w+)\s+0x([0-9A-Fa-f]+)")
