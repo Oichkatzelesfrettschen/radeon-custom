@@ -57,7 +57,7 @@ GPU recovery. The current evidence verdict is owned by
 - `mesa-26-gororoba` is authoritative for r300g/r3v userspace behavior.
 - `implemented`, `compile-verified`, `installed`, and `hardware-pass` are
   separate statuses and must not be collapsed.
-- PALM/Wrestler and RS480/RS482 claims remain generation-scoped even when the
+- Palm/Wrestler and RS480/RS482 claims remain generation-scoped even when the
   mechanisms share one DKMS package.
 
 ## Follow-ups
