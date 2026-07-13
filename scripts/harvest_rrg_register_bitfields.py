@@ -101,7 +101,7 @@ FLAGGED_FIELDS = ["doc", "line", "register", "reason", "text"]
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[1]
 
 
 def normalize_access(access: str) -> str:

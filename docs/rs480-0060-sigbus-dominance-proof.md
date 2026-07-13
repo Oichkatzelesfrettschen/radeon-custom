@@ -18,28 +18,25 @@ every later access refaults through that gate.
 `radeon_gem_fault` (radeon_gem.c) in patched order:
 
 ```
-60  bo   = vmf->vma->vm_private_data;      /* plain read */
-61  rdev = radeon_get_rdev(bo->bdev);      /* pointer deref */
-62  vm_fault_t ret;
-73  if (rdev->gpu_parked &&
-74      bo->resource && bo->resource->mem_type == TTM_PL_VRAM) {
-75      dev_err_once(...);
-77      return VM_FAULT_SIGBUS;            /* <-- the gate */
-80  down_read(&rdev->pm.mclk_lock);         /* first lock  */
-82  ret = ttm_bo_vm_reserve(bo, vmf);       /* first sleeping BO reservation */
-86  ret = radeon_bo_fault_reserve_notify(bo);   /* first TTM driver callback */
-90  ret = ttm_bo_vm_fault_reserved(...);    /* the aperture/PTE map */
+bo   = vmf->vma->vm_private_data;      /* plain read */
+rdev = radeon_get_rdev(bo->bdev);      /* pointer deref */
+down_read(&rdev->pm.mclk_lock);        /* first lock */
+ret  = ttm_bo_vm_reserve(bo, vmf);     /* reserve before placement read */
+if (rdev->gpu_parked &&
+    bo->resource && bo->resource->mem_type == TTM_PL_VRAM) {
+    dev_err_once(...);
+    ret = VM_FAULT_SIGBUS;             /* <-- the gate under reserve */
+    goto unlock_resv;
+}
+ret = radeon_bo_fault_reserve_notify(bo);  /* first TTM driver callback */
+ret = ttm_bo_vm_fault_reserved(...);       /* the aperture/PTE map */
 ```
 
-Dominance holds by line order. Everything executed before the gate (lines 60-74)
-is plain-memory: a `vm_private_data` read, a `radeon_get_rdev` pointer deref, and
-the reads of `rdev->gpu_parked` and `bo->resource->mem_type`. No lock is taken
-(the first is `down_read(mclk_lock)` at :80), no BO reservation happens (the
-first is `ttm_bo_vm_reserve` at :82, which can sleep into teardown), no TTM
-driver callback runs (`radeon_bo_fault_reserve_notify` at :86), no
-GART/aperture/PTE operation runs (`ttm_bo_vm_fault_reserved` at :90), and no
-register is read anywhere in the function. So for a parked VRAM BO the return at
-:77 strictly precedes all of them.
+Dominance holds on the gated path after 0070: the parked VRAM decision runs only
+after `ttm_bo_vm_reserve`, so placement is read under a stable reserved view, and
+`VM_FAULT_SIGBUS` returns through `unlock_resv` before
+`radeon_bo_fault_reserve_notify` and `ttm_bo_vm_fault_reserved`. On that path no
+GART/aperture map and no register access is reached before the SIGBUS return.
 
 ## Half 2 -- the park path forces every VRAM mapping to refault into the gate
 
@@ -49,9 +46,9 @@ The park path (radeon_device.c) zaps the userspace GEM mappings:
 unmap_mapping_range(rdev_to_drm(rdev)->anon_inode->i_mapping, 0, 0, 1);
 ```
 
-- **What mapping receives it:** the DRM device's `anon_inode->i_mapping` -- the
-  single `address_space` that backs every GEM object CPU mmap for the radeon DRM
-  device (DRM routes all GEM mmap offsets through the device anon inode).
+- **What mapping receives it:** the DRM device `anon_inode->i_mapping` that the park path passes to
+  `unmap_mapping_range` (the mapping 0060/0071 actually zap). A broader claim
+  that this is the only address_space for every GEM mmap is not proven here.
 - **Does it cover every GEM mmap offset, or a subset:** every one. The args are
   `holebegin = 0`, `holelen = 0` (which `unmap_mapping_range` treats as "to the
   end of the address space"), `even_cows = 1`. So all PTEs in the device GEM
@@ -99,3 +96,13 @@ lock, reservation, TTM callback, GART/aperture op, or register access. No WD3B
 fire is required to establish this; the fire only failed to *observe* the SIGBUS
 because no client happened to re-touch VRAM in that run. Edge 3 is closed by this
 static dominance argument, no code change.
+
+
+## Remaining proof residuals
+
+- Pre-zap window: 0071 zaps immediately after latching `gpu_parked` and
+  free_irq, before the drain sleeps. A PTE touch strictly between latch and
+  zap remains a theoretical race; the window is milliseconds of pure software.
+- Post-park TTM create/migrate: GEM create ioctls are not fully gated; 0071
+  clears `ring.ready` to stop blit moves. Full quiescence of TTM is residual.
+- fbdev `/dev/fb0` mmap is outside the GEM offset zap (see parked-access audit).

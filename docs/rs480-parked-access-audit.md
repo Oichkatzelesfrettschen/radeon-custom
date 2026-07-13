@@ -23,25 +23,29 @@ and cannot reference it; that fact is load-bearing for the uncovered rows.
 | pristine entry point | gating patch | prior hardware access | behavior under gpu_parked | proof |
 |---|---|---|---|---|
 | `radeon_gpu_reset` failure path (`radeon_device.c`) | 0046 | resume-side register access | classify parked, skip resume-side access, restore BIOS scratch by posted write only | F22 park path executes end to end |
-| `r100_mc_resume` / display-request restore | 0046 + 0048 | MC/display request re-enable then read | leave MC/display requests parked; touch nothing after classification | F3/F4 (GART flush was the last hole) |
+| `r100_mc_resume` / display-request restore | 0046 + 0048 | MC/display request re-enable then read | leave MC/display requests parked; touch nothing after classification | F22 park path; GART flush residual closed by 0049 |
 | PM resume (`radeon_pm_resume`) | 0046 | PLL/clock register access | acceleration off, skip pm/atom/hpd/modeset resume | F22 |
 | AtomBIOS encoder / HPD / modeset init | 0046 + 0050 | AtomBIOS + modeset register I/O | skip atom/hpd resume; `radeon_display.c` modeset returns -ENODEV / rejects | F22/F23 |
-| KMS output poll / connector detect (`radeon_connectors.c`) | 0058 | connector detect register reads (load-detect) | detect callbacks early-return `connector->status`; `drm_kms_helper_poll_disable` | F23 quiet window survived (one-fire proof) |
-| IRQ handler | 0056 | IRQ-ack MMIO | disable IRQ line, no MMIO | F22 |
+| KMS output poll / connector detect (`radeon_connectors.c`) | 0058 + 0071 | connector detect register reads (load-detect) | detect returns `connector_status_disconnected` under `gpu_parked`; `drm_kms_helper_poll_disable` | F23 quiet window survived (one-fire proof) |
+| IRQ handler | 0056 + 0071 | IRQ-ack MMIO | free_irq the radeon handler (shared-line safe); handler early-returns under `gpu_parked` | F22 |
 | fence lockup work (`radeon_fence.c`) | 0051 + 0057 | ring / RBBM read | early-return under gpu_parked; sync-drain the work | F22 drains printed |
 | dynpm idle / hotplug work | 0056 + 0057 | clock / HPD read | cancel then sync-drain | F22 |
 | DRM file close / postclose | 0052 | full teardown | hold close-path pins; postclose gated | F23 died at postclose -> F28 survived |
 | GEM object free (`radeon_gem.c`) | 0052 + 0053 | TTM BO teardown | leak GEM objects, defer teardown to reboot | F23/F28 |
 | TTM BO finalization | 0053 | `ttm_bo_fini` hardware path | no `ttm_bo_fini` under gpu_parked | F28 |
-| GART unbind / TLB flush (`radeon_gart.c`) | 0049 + 0052 | MC-indirect flush readback | skip GART TLB flush; GART unbind flush guarded | F3/F4 identified; F28 |
+| GART unbind / TLB flush (`radeon_gart.c`) | 0049 + 0052 | MC-indirect flush readback | skip GART TLB flush; GART unbind flush guarded | F22/F28; GART residual named in F28 teardown |
+| cursor set/move (`radeon_cursor.c`) | 0071 | CRTC cursor MMIO | return -ENODEV under `gpu_parked` | static gate |
+| vblank enable/counter (`radeon_kms.c`) | 0071 | vblank register / irq_set | early return under `gpu_parked` | static gate |
+| mc_flush debugfs write | 0071 | CP ring commit readback | return -EIO under `gpu_parked` | static gate |
+| `radeon_gpu_reset` re-entry | 0071 | crash-shim RREG32 + asic_reset | refuse with -EIO once parked | static gate |
 | fbcon / scanout aperture (`radeon_fbdev.c`) | 0059 | `fb_read`/copyarea VRAM aperture read | aperture read returns -ENODEV; draw ops swallowed | F24b (fbcon refuted as specific actor; gate kept) |
 | debugfs post-reset read (reset-hang probe) | 0046 | post-park register read | probe skips the post-park read ("no post-park register read") | F28 |
 
 ## Uncovered channels (RAD-05q rows to close, in order)
 
-These three edges are not gated by `gpu_parked`. They are classified here; the
-follow-up is one mechanical patch per gap, not a broad cleanup, in the order
-below. No fire is required to close any of them.
+These edges were classified as open at the time of the original audit table.
+Several are now closed by later patches (0061, 0062, 0071). Remaining residuals
+are listed after the covered subsections.
 
 ### 1. RE debugfs register readers (patches 0001-0042) -- COVERED by 0061
 
@@ -119,3 +123,24 @@ should name the rule at each new cut edge so future edits are auditable against
 this table. Any new patch that adds a hardware-access entry point reachable after
 park must add a row here and a `gpu_parked` terminus, or it regresses the
 invariant.
+
+
+## Remaining residuals after 0071
+
+- **fbdev mmap**: 0059 leaves `.fb_mmap = fb_io_mmap`. GEM offset mappings are
+  zapped by 0060/0071; a direct `/dev/fb0` mmap is still an uncovered aperture
+  edge until gated or refused.
+- **System PM resume/thaw**: park skips reset-path PM resume, but
+  `radeon_pmops_resume` / thaw on a parked host without reboot is not gated.
+- **Backlight and PM sysfs setters**: legacy brightness/sysfs stores can still
+  reach display/clock MMIO if userspace writes them after park.
+- **In-flight poll/detect**: a detect already inside DDC when park latches can
+  still touch hardware until that call returns; new passes are blocked.
+- **Init/resume `radeon_asic_reset` outside `radeon_gpu_reset`**: boot-time
+  failure paths that never set `gpu_parked` remain a separate residual.
+- **Modeset vs reset race**: a modeset that passed the parked check can still
+  race a concurrent park before set_config MMIO; exclusive_lock recheck is
+  not yet shared across that path.
+- **TTM create/evict after park**: userspace GEM create can still enter TTM;
+  ring.ready is cleared in 0071 to stop blit moves, but full ioctl gating is
+  not claimed.

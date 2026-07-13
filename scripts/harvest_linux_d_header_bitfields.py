@@ -22,7 +22,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 CORPUS_LINUX = REPO_ROOT / (
     "docs/external_sources/rs480_r300_registers_and_driver_sources/raw/source/linux"
 )

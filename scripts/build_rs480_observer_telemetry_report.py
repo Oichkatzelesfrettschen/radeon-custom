@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 GENERATED_DIR = REPO_ROOT / "registry/generated"
 JSON_PATH = GENERATED_DIR / "rs480_observer_telemetry.json"
 TSV_PATH = GENERATED_DIR / "rs480_observer_telemetry.tsv"
@@ -59,8 +59,8 @@ SURFACES: tuple[SurfaceSpec, ...] = (
             "validation exists."
         ),
         required_globs=(
-            "src/re/r300/scripts/run_vostro_safe_probe.sh",
-            "src/re/r300/scripts/remote/r300-candidate-regs-read",
+            "../steinmarder-r300/src/re/r300/scripts/run_vostro_safe_probe.sh",
+            "../steinmarder-r300/src/re/r300/scripts/remote/r300-candidate-regs-read",
             "patches/rs480/*candidate-regs*.patch",
         ),
     ),
@@ -77,8 +77,8 @@ SURFACES: tuple[SurfaceSpec, ...] = (
             "telemetry; it exists to recover or rebaseline the lane safely."
         ),
         required_globs=(
-            "src/re/r300/scripts/run_vostro_safe_probe.sh",
-            "src/re/r300/scripts/**/*force*pci*reset*safe*",
+            "../steinmarder-r300/src/re/r300/scripts/run_vostro_safe_probe.sh",
+            "../steinmarder-r300/src/re/r300/scripts/**/*force*pci*reset*safe*",
         ),
     ),
     SurfaceSpec(
