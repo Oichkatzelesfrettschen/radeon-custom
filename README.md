@@ -1,20 +1,20 @@
 # radeon-custom
 
 Dedicated out-of-tree Radeon DRM/DKMS source for the RS480/RS482/RS485 and
-PALM/Wrestler safety and reverse-engineering lanes.
+Palm/Wrestler safety and reverse-engineering lanes.
 
 The canonical registry of which kernel modules the Vostro 1000 runs (radeon,
-snd-hda, sb600 watchdog, and the DKMS series this repo builds) is
-`mesa-26-gororoba/docs/hardware/vostro1000-kernel-modules.md`; treat it as the
-source of truth and update it when this repo changes the installed DKMS
+snd-hda, sb600 watchdog, and the DKMS series this repo builds) lives in the
+sibling Mesa checkout at
+`../mesa-26-gororoba/docs/hardware/vostro1000-kernel-modules.md` (or the
+equivalent path under that repository on the workstation). Treat that file as
+the source of truth and update it when this repo changes the installed DKMS
 `pkgrel` or patch series.
 
 This repository is the single active kernel build source. Mesa userspace lives
 in `mesa-26-gororoba`; retained RS482 probes, logs, result bundles, and hardware
 verdicts live in `steinmarder-r300`. Historical Steinmarder package trees remain
 provenance, not active build inputs.
-
-## Why this exists
 
 ## What this repository proves—and what it does not
 
@@ -84,16 +84,29 @@ recovery.
 
 ## Build and validation
 
-Run the repository checks before packaging:
+There is no top-level `Makefile`. Before packaging, run the scripted checks
+from the repository root:
 
 ```sh
-make check
+# PKGBUILD sha256sums match the patch files on disk
+sh packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
+
+# Patch series applies and (when a kernel build dir is present) compiles
+sh scripts/check_radeon_patch_series_compiles.sh
+
+# Unified DKMS source tree / package contents
+sh scripts/verify_radeon_unified_dkms_sources.sh
+sh scripts/verify_radeon_unified_dkms_package.sh
+
+# Optional: runtime modprobe policy on a live host
+sh scripts/check_radeon_unified_runtime_policy.sh
 ```
 
-Build the active Arch package from its package directory with the intended
-kernel trees available. A successful build or install may promote a claim only
-to `compile-verified` or `installed`; promotion to `hardware-run`, `partial`,
-`hardware-pass`, or `refuted` requires a retained target-silicon result bundle.
+Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with
+the intended kernel trees available. A successful build or install may promote
+a claim only to `compile-verified` or `installed`; promotion to
+`hardware-run`, `partial`, `hardware-pass`, or `refuted` requires a retained
+target-silicon result bundle.
 
 ## Cross-repository contract
 
