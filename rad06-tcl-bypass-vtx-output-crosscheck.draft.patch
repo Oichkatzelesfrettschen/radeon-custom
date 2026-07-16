@@ -36,7 +36,7 @@ other hunks apply to the base radeon-unified-0.3 tree.  Regenerated
 rule.
 
 diff --git a/radeon/r100_track.h b/radeon/r100_track.h
-index 1b5ff3f..db338fd 100644
+index 1b5ff3f..f901def 100644
 --- a/radeon/r100_track.h
 +++ b/radeon/r100_track.h
 @@ -66,6 +66,15 @@ struct r100_cs_track {
@@ -56,10 +56,10 @@ index 1b5ff3f..db338fd 100644
  	struct r100_cs_track_cb 	cb[R300_MAX_CB];
  	struct r100_cs_track_cb 	zb;
 diff --git a/radeon/r300.c b/radeon/r300.c
-index d2ee6de..56477c0 100644
+index 9a5ba91..4a8218b 100644
 --- a/radeon/r300.c
 +++ b/radeon/r300.c
-@@ -738,6 +738,40 @@ static int r300_packet0_check(struct radeon_cs_parser *p,
+@@ -909,6 +909,42 @@ static int r300_packet0_check(struct radeon_cs_parser *p,
  	case 0x20B4:
  		/* VAP_VTX_SIZE */
  		track->vtx_size = idx_value & 0x7F;
@@ -102,7 +102,7 @@ index d2ee6de..56477c0 100644
  		break;
  	case 0x2134:
  		/* VAP_VF_MAX_VTX_INDX */
-@@ -1170,6 +1204,90 @@ fail:
+@@ -1341,6 +1377,92 @@ fail:
  	return -EINVAL;
  }
  
@@ -195,7 +195,7 @@ index d2ee6de..56477c0 100644
  static int r300_packet3_check(struct radeon_cs_parser *p,
  			      struct radeon_cs_packet *pkt)
  {
-@@ -1212,7 +1330,7 @@ static int r300_packet3_check(struct radeon_cs_parser *p,
+@@ -1383,7 +1505,7 @@ static int r300_packet3_check(struct radeon_cs_parser *p,
  		}
  		track->vap_vf_cntl = radeon_get_ib_value(p, idx + 1);
  		track->immd_dwords = pkt->count - 1;
@@ -204,7 +204,7 @@ index d2ee6de..56477c0 100644
  		if (r) {
  			return r;
  		}
-@@ -1227,35 +1345,35 @@ static int r300_packet3_check(struct radeon_cs_parser *p,
+@@ -1398,35 +1520,35 @@ static int r300_packet3_check(struct radeon_cs_parser *p,
  		}
  		track->vap_vf_cntl = radeon_get_ib_value(p, idx);
  		track->immd_dwords = pkt->count;
@@ -276,6 +276,37 @@ index e8a1786..f0374dc 100644
  0x2200 VAP_PVS_VECTOR_INDX_REG
  0x2204 VAP_PVS_VECTOR_DATA_REG
  0x2208 VAP_PVS_VECTOR_DATA_REG_128
+diff --git a/radeon/reg_srcs/r420 b/radeon/reg_srcs/r420
+index 722074e..430804e 100644
+--- a/radeon/reg_srcs/r420
++++ b/radeon/reg_srcs/r420
+@@ -35,11 +35,8 @@ r420 0x4f60
+ 0x1DA8 VAP_VPORT_ZSCALE
+ 0x1DAC VAP_VPORT_ZOFFSET
+ 0x2080 VAP_CNTL
+-0x2090 VAP_OUT_VTX_FMT_0
+-0x2094 VAP_OUT_VTX_FMT_1
+ 0x20B0 VAP_VTE_CNTL
+ 0x2138 VAP_VF_MIN_VTX_INDX
+-0x2140 VAP_CNTL_STATUS
+ 0x2150 VAP_PROG_STREAM_CNTL_0
+ 0x2154 VAP_PROG_STREAM_CNTL_1
+ 0x2158 VAP_PROG_STREAM_CNTL_2
+@@ -67,14 +64,6 @@ r420 0x4f60
+ 0x21C0 VAP_VTX_STATE_IND_REG_14
+ 0x21C4 VAP_VTX_STATE_IND_REG_15
+ 0x21DC VAP_PSC_SGN_NORM_CNTL
+-0x21E0 VAP_PROG_STREAM_CNTL_EXT_0
+-0x21E4 VAP_PROG_STREAM_CNTL_EXT_1
+-0x21E8 VAP_PROG_STREAM_CNTL_EXT_2
+-0x21EC VAP_PROG_STREAM_CNTL_EXT_3
+-0x21F0 VAP_PROG_STREAM_CNTL_EXT_4
+-0x21F4 VAP_PROG_STREAM_CNTL_EXT_5
+-0x21F8 VAP_PROG_STREAM_CNTL_EXT_6
+-0x21FC VAP_PROG_STREAM_CNTL_EXT_7
+ 0x2200 VAP_PVS_VECTOR_INDX_REG
+ 0x2204 VAP_PVS_VECTOR_DATA_REG
+ 0x2208 VAP_PVS_VECTOR_DATA_REG_128
 diff --git a/radeon/reg_srcs/rs480 b/radeon/reg_srcs/rs480
 index 21c04b7..345be48 100644
 --- a/radeon/reg_srcs/rs480
@@ -307,11 +338,11 @@ index 21c04b7..345be48 100644
  0x2200 VAP_PVS_VECTOR_INDX_REG
  0x2204 VAP_PVS_VECTOR_DATA_REG
  0x2208 VAP_PVS_VECTOR_DATA_REG_128
-diff --git a/radeon/reg_srcs/r420 b/radeon/reg_srcs/r420
-index 0000000..0000001 100644
---- a/radeon/reg_srcs/r420
-+++ b/radeon/reg_srcs/r420
-@@ -35,11 +35,8 @@ r420 0x4f60
+diff --git a/radeon/reg_srcs/rs600 b/radeon/reg_srcs/rs600
+index d9f6286..8628879 100644
+--- a/radeon/reg_srcs/rs600
++++ b/radeon/reg_srcs/rs600
+@@ -35,11 +35,8 @@ rs600 0x6d40
  0x1DA8 VAP_VPORT_ZSCALE
  0x1DAC VAP_VPORT_ZOFFSET
  0x2080 VAP_CNTL
@@ -323,7 +354,7 @@ index 0000000..0000001 100644
  0x2150 VAP_PROG_STREAM_CNTL_0
  0x2154 VAP_PROG_STREAM_CNTL_1
  0x2158 VAP_PROG_STREAM_CNTL_2
-@@ -67,14 +64,6 @@ r420 0x4f60
+@@ -67,14 +64,6 @@ rs600 0x6d40
  0x21C0 VAP_VTX_STATE_IND_REG_14
  0x21C4 VAP_VTX_STATE_IND_REG_15
  0x21DC VAP_PSC_SGN_NORM_CNTL
@@ -339,10 +370,11 @@ index 0000000..0000001 100644
  0x2204 VAP_PVS_VECTOR_DATA_REG
  0x2208 VAP_PVS_VECTOR_DATA_REG_128
 diff --git a/radeon/reg_srcs/rv515 b/radeon/reg_srcs/rv515
-index 0000000..0000001 100644
+index 78d5e99..f95befe 100644
 --- a/radeon/reg_srcs/rv515
 +++ b/radeon/reg_srcs/rv515
-@@ -36,11 +36,8 @@ rv515 0x4f60
+@@ -36,11 +36,8 @@ rv515 0x6d40
+ 0x1DAC VAP_VPORT_ZOFFSET
  0x2080 VAP_CNTL
  0x208C VAP_INDEX_OFFSET
 -0x2090 VAP_OUT_VTX_FMT_0
@@ -353,37 +385,7 @@ index 0000000..0000001 100644
  0x2150 VAP_PROG_STREAM_CNTL_0
  0x2154 VAP_PROG_STREAM_CNTL_1
  0x2158 VAP_PROG_STREAM_CNTL_2
-@@ -68,14 +65,6 @@ rv515 0x4f60
- 0x21C0 VAP_VTX_STATE_IND_REG_14
- 0x21C4 VAP_VTX_STATE_IND_REG_15
- 0x21DC VAP_PSC_SGN_NORM_CNTL
--0x21E0 VAP_PROG_STREAM_CNTL_EXT_0
--0x21E4 VAP_PROG_STREAM_CNTL_EXT_1
--0x21E8 VAP_PROG_STREAM_CNTL_EXT_2
--0x21EC VAP_PROG_STREAM_CNTL_EXT_3
--0x21F0 VAP_PROG_STREAM_CNTL_EXT_4
--0x21F4 VAP_PROG_STREAM_CNTL_EXT_5
--0x21F8 VAP_PROG_STREAM_CNTL_EXT_6
--0x21FC VAP_PROG_STREAM_CNTL_EXT_7
- 0x2200 VAP_PVS_VECTOR_INDX_REG
- 0x2204 VAP_PVS_VECTOR_DATA_REG
-diff --git a/radeon/reg_srcs/rs600 b/radeon/reg_srcs/rs600
-index 0000000..0000001 100644
---- a/radeon/reg_srcs/rs600
-+++ b/radeon/reg_srcs/rs600
-@@ -35,11 +35,8 @@ rs600 0x4f60
- 0x1DA8 VAP_VPORT_ZSCALE
- 0x1DAC VAP_VPORT_ZOFFSET
- 0x2080 VAP_CNTL
--0x2090 VAP_OUT_VTX_FMT_0
--0x2094 VAP_OUT_VTX_FMT_1
- 0x20B0 VAP_VTE_CNTL
- 0x2138 VAP_VF_MIN_VTX_INDX
--0x2140 VAP_CNTL_STATUS
- 0x2150 VAP_PROG_STREAM_CNTL_0
- 0x2154 VAP_PROG_STREAM_CNTL_1
- 0x2158 VAP_PROG_STREAM_CNTL_2
-@@ -67,14 +64,6 @@ rs600 0x4f60
+@@ -68,14 +65,6 @@ rv515 0x6d40
  0x21C0 VAP_VTX_STATE_IND_REG_14
  0x21C4 VAP_VTX_STATE_IND_REG_15
  0x21DC VAP_PSC_SGN_NORM_CNTL
