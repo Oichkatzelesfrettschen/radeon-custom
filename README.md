@@ -29,6 +29,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 | Display scanout recovers without reboot | not achieved |
 | 0060 SIGBUS isolation gate fires | unverified; installed but not exercised in the retained pass |
 | 0063-0068 non-baseline reset masks | implemented, compile-verified, installed, and not fired |
+| Bounded RS480 GART page-table reader | source-verified; exact-target rows require a retained Vostro capture |
 
 Therefore `radeon.lockup_timeout=0` remains the safe default. Do not describe the
 package as an automatic reset-recovery driver and do not enable a nonzero timeout
@@ -47,6 +48,10 @@ The primary package is `packaging/arch/radeon-unified-dkms/`.
   DKMS and rebuilds the boot initramfs after installation.
 - `patches/rs480/` contains RS480/RS482 instrumentation, reset experiments,
   failed-reset parking/containment, and bounded reset-mask candidates.
+- `radeon_rs480_gart_page_table` exposes at most 64 hardware GART entries and
+  two CPU page-table rows through a root-only read-only debugfs file. The
+  decoded backing field remains a DMA address until the target capture proves
+  that the device uses a direct-DMA route.
 - Palm/Wrestler safety gates are carried in the same module package but remain a
   separate hardware-generation lane; Palm evidence does not validate RS482 and
   RS482 evidence does not validate Palm.
