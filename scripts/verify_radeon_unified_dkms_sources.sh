@@ -136,7 +136,42 @@ for patch_name in "${patch_chain[@]}"; do
     fi
 done
 
+rs400_source="$apply_root/radeon/rs400.c"
+[ -r "$rs400_source" ] || die "patched rs400.c is missing"
+
+grep -Fq '#define RS400_GART_PAGE_TABLE_ENTRY_LIMIT 64' "$rs400_source" || {
+    printf 'GART reader: the 64-entry output bound is missing\n' >&2
+    failures=$((failures + 1))
+}
+grep -Fq 'debugfs_create_file("radeon_rs480_gart_page_table", 0400' \
+    "$rs400_source" || {
+    printf 'GART reader: the root-only read permission is missing\n' >&2
+    failures=$((failures + 1))
+}
+grep -Fq 'page_dma_address' "$rs400_source" || {
+    printf 'GART reader: the DMA-address qualification is missing\n' >&2
+    failures=$((failures + 1))
+}
+grep -Fq 'shadow_match' "$rs400_source" || {
+    printf 'GART reader: the hardware-shadow comparison is missing\n' >&2
+    failures=$((failures + 1))
+}
+grep -Fq 'kernel_pte_raw' "$rs400_source" || {
+    printf 'GART reader: the CPU page-table evidence is missing\n' >&2
+    failures=$((failures + 1))
+}
+
+gart_reader=$(sed -n \
+    '/static int rs400_debugfs_gart_page_table_show/,/DEFINE_SHOW_ATTRIBUTE(rs400_debugfs_gart_page_table)/p' \
+    "$rs400_source")
+if printf '%s\n' "$gart_reader" | \
+        grep -Eq '\b(WREG|writel|writeq|iowrite|memcpy_toio|copy_from_user)[A-Za-z0-9_]*[[:space:]]*\('; then
+    printf 'GART reader: a hardware or userspace-fed write primitive is present\n' >&2
+    failures=$((failures + 1))
+fi
+
 [ "$failures" -eq 0 ] || exit 1
 printf 'radeon unified DKMS source hashes: ok\n'
 printf 'radeon unified DKMS patch chain: applies clean (%d patches)\n' \
     "${#patch_chain[@]}"
+printf 'radeon unified DKMS GART reader policy: bounded and read-only\n'

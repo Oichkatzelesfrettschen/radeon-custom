@@ -1,0 +1,48 @@
+From: radeon-custom rs480 reset-recovery track
+Subject: [PATCH] drm/radeon: reserve BO before parked VRAM fault placement check
+
+radeon_gem_fault decided the parked SIGBUS path by reading
+bo->resource->mem_type before ttm_bo_vm_reserve. A concurrent TTM move
+can free or rewrite the resource between that unlocked peek and the
+later reserve, so the SIGBUS decision and the fault path could observe
+different placements.
+
+Reserve first, then decide SIGBUS under the reserved view, and unlock
+through the existing unlock_resv path.
+
+--- a/radeon/radeon_gem.c
++++ b/radeon/radeon_gem.c
+@@ -69,20 +69,26 @@
+ 	 * its buffer objects already outlive teardown via the parked
+ 	 * GEM-leak path. GTT and system placements stay mapped -- their
+ 	 * pages are plain system RAM.
++	 *
++	 * Reserve the BO before reading placement: a concurrent TTM move
++	 * can free or rewrite bo->resource between an unlocked mem_type
++	 * peek and the later reserve, so the SIGBUS decision and the
++	 * subsequent fault path must share one reserved view.
+ 	 */
+-	if (rdev->gpu_parked &&
+-	    bo->resource && bo->resource->mem_type == TTM_PL_VRAM) {
+-		dev_err_once(rdev->dev,
+-			     "parked: SIGBUS on VRAM mmap fault (aperture unreadable)\n");
+-		return VM_FAULT_SIGBUS;
+-	}
+-
+ 	down_read(&rdev->pm.mclk_lock);
+ 
+ 	ret = ttm_bo_vm_reserve(bo, vmf);
+ 	if (ret)
+ 		goto unlock_mclk;
+ 
++	if (rdev->gpu_parked &&
++	    bo->resource && bo->resource->mem_type == TTM_PL_VRAM) {
++		dev_err_once(rdev->dev,
++			     "parked: SIGBUS on VRAM mmap fault (aperture unreadable)\n");
++		ret = VM_FAULT_SIGBUS;
++		goto unlock_resv;
++	}
++
+ 	ret = radeon_bo_fault_reserve_notify(bo);
+ 	if (ret)
+ 		goto unlock_resv;

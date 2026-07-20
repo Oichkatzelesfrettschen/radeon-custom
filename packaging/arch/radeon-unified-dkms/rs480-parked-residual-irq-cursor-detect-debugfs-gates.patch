@@ -1,0 +1,280 @@
+From: radeon-custom rs480 reset-recovery track
+Subject: [PATCH] drm/radeon: park residual gates for IRQ, cursor, detect, debugfs
+
+Close residual parked-GPU host-survival edges found in review of the
+0046-0062 stack:
+
+- free_irq the radeon handler (shared-line safe) instead of disable_irq
+- IRQ handler early-returns under gpu_parked before GEN_INT_STATUS MMIO
+- refuse radeon_gpu_reset re-entry once parked
+- clear ring.ready so TTM cannot blit-evict through a dead CP
+- zap GEM CPU mappings immediately after latching gpu_parked
+- gate cursor set/move, vblank enable/counter, mc_flush debugfs write
+- parked connector detect reports disconnected (no get_modes/DDC re-entry)
+- seq_file refuse-if-parked emits one line per open (CP-ME RAM iterator)
+- gpu-reset recovery probe skips post RBBM_STATUS when the reset parks
+
+--- a/radeon/radeon_irq_kms.c
++++ b/radeon/radeon_irq_kms.c
+@@ -56,6 +56,15 @@
+ 	struct radeon_device *rdev = dev->dev_private;
+ 	irqreturn_t ret;
+ 
++	/* Shared PCI lines still deliver IRQs after a parked RS480 reset.
++	 * r100_irq_ack starts with RREG32(GEN_INT_STATUS); that MMIO is a
++	 * non-posted black hole once the GA client is wedged. Return without
++	 * touching hardware so an unrelated device on the same line cannot
++	 * re-enter the parked register path.
++	 */
++	if (rdev->gpu_parked)
++		return IRQ_NONE;
++
+ 	ret = radeon_irq_process(rdev);
+ 	if (ret == IRQ_HANDLED)
+ 		pm_runtime_mark_last_busy(dev->dev);
+--- a/radeon/radeon_device.c
++++ b/radeon/radeon_device.c
+@@ -1349,6 +1349,8 @@
+ 
+ 	if (rdev->family != CHIP_RS480 && rdev->family != CHIP_RS400)
+ 		return -ENODEV;
++	if (rdev->gpu_parked)
++		return -EIO;
+ 
+ 	r = radeon_ring_lock(rdev, ring, 16);
+ 	if (r)
+@@ -1895,6 +1897,14 @@
+ 		return 0;
+ 	}
+ 
++	if (rdev->gpu_parked) {
++		rdev->needs_reset = false;
++		up_write(&rdev->exclusive_lock);
++		dev_err_once(rdev->dev,
++			     "parked: refusing radeon_gpu_reset re-entry\n");
++		return -EIO;
++	}
++
+ 	atomic_inc(&rdev->gpu_reset_counter);
+ 
+ 	/* Log RS400/RS480 queue and cache state before GPU reset.
+@@ -1993,33 +2003,27 @@
+ 		msleep(1);
+ 		dev_err(rdev->dev, "parked: acceleration off, skipping pm/atom/hpd/modeset resume\n");
+ 		rdev->accel_working = false;
++		/* Stop TTM blit eviction choosing the copy ring after park. */
++		for (i = 0; i < RADEON_NUM_RINGS; ++i)
++			rdev->ring[i].ready = false;
+ 		rdev->gpu_parked = true;
+ 		for (i = 0; i < RADEON_NUM_RINGS; ++i)
+ 			cancel_delayed_work(&rdev->fence_drv[i].lockup_work);
+-		/* Fire 18 pins the residual death to the 3-second quiet window
+-		 * after the park completes and the probe verdict returns to
+-		 * userspace: a period of zero userspace and zero harness GPU
+-		 * activity. The killer is an asynchronous in-kernel agent on
+-		 * its own timer reading a black-hole register. Quiesce every
+-		 * such agent here, touching no GPU register: disable_irq masks
+-		 * the PCI interrupt line at the APIC with no MMIO, stopping the
+-		 * radeon IRQ handler entirely, and the remaining delayed works
+-		 * (dynamic PM idle, hotplug) are cancelled so neither re-arms.
+-		 * A parked GPU releases software ownership and touches no
+-		 * hardware until the reboot that reclaims it.
++		/* free_irq uses the same dev_id as request_irq so only the radeon
++		 * handler is removed. disable_irq would mask a shared PCI line.
++		 * The IRQ handler also early-returns under gpu_parked.
+ 		 */
+-		dev_err(rdev->dev, "parked: disabling IRQ line (no MMIO)\n");
+-		disable_irq(rdev->pdev->irq);
++		dev_err(rdev->dev, "parked: freeing radeon IRQ handler (shared-line safe)\n");
++		free_irq(rdev->pdev->irq, rdev_to_drm(rdev));
+ 		msleep(1);
+-		/* cancel_delayed_work is asynchronous: a handler already past its
+-		 * gpu_parked gate and mid-execution when cancelled continues into a
+-		 * register read during the quiet epoch. Drain with the _sync variant
+-		 * so that after this returns no handler is running or scheduled. The
+-		 * fence lockup work early-returns under gpu_parked (0051) and neither
+-		 * the dynamic-PM idle nor hotplug work takes exclusive_lock, so
+-		 * cancel_delayed_work_sync from this write-locked context cannot
+-		 * deadlock.
++		/* Zap GEM CPU mappings immediately so a live VRAM PTE cannot be
++		 * touched during the drain sleeps. Page-table only, no MMIO.
+ 		 */
++		dev_err(rdev->dev, "parked: zapping userspace GEM mappings (SIGBUS on re-fault)\n");
++		unmap_mapping_range(rdev_to_drm(rdev)->anon_inode->i_mapping,
++				    0, 0, 1);
++		msleep(1);
++		/* Drain remaining delayed works after gpu_parked is latched. */
+ 		dev_err(rdev->dev, "parked: draining fence lockup works (sync)\n");
+ 		for (i = 0; i < RADEON_NUM_RINGS; ++i)
+ 			cancel_delayed_work_sync(&rdev->fence_drv[i].lockup_work);
+@@ -2030,28 +2034,9 @@
+ 		dev_err(rdev->dev, "parked: draining hotplug work (sync)\n");
+ 		cancel_delayed_work_sync(&rdev->hotplug_work);
+ 		msleep(1);
+-		/* The drm_kms_helper output-poll worker runs from a system
+-		 * workqueue outside every radeon-local work drained above, and
+-		 * its periodic connector-detect pass reads DDC and load-detect
+-		 * registers. The radeon detect callbacks early-return under
+-		 * gpu_parked, so a pass already in flight completes without
+-		 * hardware; drm_kms_helper_poll_disable then sync-cancels
+-		 * output_poll_work so no further pass is scheduled. No MMIO.
+-		 */
+ 		dev_err(rdev->dev, "parked: disabling KMS output poll worker (sync)\n");
+ 		drm_kms_helper_poll_disable(rdev_to_drm(rdev));
+ 		msleep(1);
+-		/* Userspace holds live CPU mappings of VRAM buffer objects
+-		 * through the GEM offset space; any touch of those pages is
+-		 * the aperture black hole described in radeon_gem_fault. Zap
+-		 * every PTE in the GEM mapping so the next touch re-faults
+-		 * into the gpu_parked SIGBUS gate instead of the bus. Pure
+-		 * page-table surgery, no hardware access.
+-		 */
+-		dev_err(rdev->dev, "parked: zapping userspace GEM mappings (SIGBUS on re-fault)\n");
+-		unmap_mapping_range(rdev_to_drm(rdev)->anon_inode->i_mapping,
+-				    0, 0, 1);
+-		msleep(1);
+ 		dev_err(rdev->dev, "parked: async agents quiesced, entering quiet epoch\n");
+ 		rdev->in_reset = true;
+ 		rdev->needs_reset = false;
+--- a/radeon/radeon_cursor.c
++++ b/radeon/radeon_cursor.c
+@@ -264,8 +264,12 @@
+ int radeon_crtc_cursor_move(struct drm_crtc *crtc,
+ 			    int x, int y)
+ {
++	struct radeon_device *rdev = crtc->dev->dev_private;
+ 	int ret;
+ 
++	if (rdev->gpu_parked)
++		return -ENODEV;
++
+ 	radeon_lock_cursor(crtc, true);
+ 	ret = radeon_cursor_move_locked(crtc, x, y);
+ 	radeon_lock_cursor(crtc, false);
+@@ -287,6 +291,9 @@
+ 	struct radeon_bo *robj;
+ 	int ret;
+ 
++	if (rdev->gpu_parked)
++		return -ENODEV;
++
+ 	if (!handle) {
+ 		/* turn off cursor */
+ 		radeon_hide_cursor(crtc);
+--- a/radeon/radeon_connectors.c
++++ b/radeon/radeon_connectors.c
+@@ -849,10 +849,10 @@
+ 	 * detection walks DDC and load-detect paths straight into the wedged
+ 	 * register bus, and the drm_kms_helper output-poll worker calls detect
+ 	 * from a system workqueue outside every radeon-local drained work.
+-	 * Report the last known status without touching hardware.
++	 * Report disconnected without touching hardware so get_modes does not re-enter DDC/EDID.
+ 	 */
+ 	if (rdev->gpu_parked)
+-		return connector->status;
++		return connector_status_disconnected;
+ 
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+@@ -1006,10 +1006,10 @@
+ 	 * detection walks DDC and load-detect paths straight into the wedged
+ 	 * register bus, and the drm_kms_helper output-poll worker calls detect
+ 	 * from a system workqueue outside every radeon-local drained work.
+-	 * Report the last known status without touching hardware.
++	 * Report disconnected without touching hardware so get_modes does not re-enter DDC/EDID.
+ 	 */
+ 	if (rdev->gpu_parked)
+-		return connector->status;
++		return connector_status_disconnected;
+ 
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+@@ -1155,10 +1155,10 @@
+ 	 * detection walks DDC and load-detect paths straight into the wedged
+ 	 * register bus, and the drm_kms_helper output-poll worker calls detect
+ 	 * from a system workqueue outside every radeon-local drained work.
+-	 * Report the last known status without touching hardware.
++	 * Report disconnected without touching hardware so get_modes does not re-enter DDC/EDID.
+ 	 */
+ 	if (rdev->gpu_parked)
+-		return connector->status;
++		return connector_status_disconnected;
+ 
+ 	if (!radeon_connector->dac_load_detect)
+ 		return ret;
+@@ -1253,10 +1253,10 @@
+ 	 * detection walks DDC and load-detect paths straight into the wedged
+ 	 * register bus, and the drm_kms_helper output-poll worker calls detect
+ 	 * from a system workqueue outside every radeon-local drained work.
+-	 * Report the last known status without touching hardware.
++	 * Report disconnected without touching hardware so get_modes does not re-enter DDC/EDID.
+ 	 */
+ 	if (rdev->gpu_parked)
+-		return connector->status;
++		return connector_status_disconnected;
+ 
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+@@ -1671,10 +1671,10 @@
+ 	 * detection walks DDC and load-detect paths straight into the wedged
+ 	 * register bus, and the drm_kms_helper output-poll worker calls detect
+ 	 * from a system workqueue outside every radeon-local drained work.
+-	 * Report the last known status without touching hardware.
++	 * Report disconnected without touching hardware so get_modes does not re-enter DDC/EDID.
+ 	 */
+ 	if (rdev->gpu_parked)
+-		return connector->status;
++		return connector_status_disconnected;
+ 
+ 	if (!drm_kms_helper_is_poll_worker()) {
+ 		r = pm_runtime_get_sync(connector->dev->dev);
+--- a/radeon/radeon_kms.c
++++ b/radeon/radeon_kms.c
+@@ -841,6 +841,9 @@
+ 	u32 count;
+ 	struct radeon_device *rdev = dev->dev_private;
+ 
++	if (rdev->gpu_parked)
++		return 0;
++
+ 	if (pipe >= rdev->num_crtc) {
+ 		DRM_ERROR("Invalid crtc %u\n", pipe);
+ 		return -EINVAL;
+@@ -911,6 +914,9 @@
+ 	unsigned long irqflags;
+ 	int r;
+ 
++	if (rdev->gpu_parked)
++		return -ENODEV;
++
+ 	if (pipe >= rdev->num_crtc) {
+ 		DRM_ERROR("Invalid crtc %d\n", pipe);
+ 		return -EINVAL;
+--- a/radeon/rs400.c
++++ b/radeon/rs400.c
+@@ -349,8 +349,10 @@
+ {
+ 	if (!rdev->gpu_parked)
+ 		return false;
+-	seq_puts(m,
+-		 "gpu parked: RS480 register read disabled to avoid non-posted MMIO black hole\n");
++	/* seq_file iterators call .show per position; emit once per open. */
++	if (m->count == 0)
++		seq_puts(m,
++			 "gpu parked: RS480 register read disabled to avoid non-posted MMIO black hole\n");
+ 	return true;
+ }
+ 
+@@ -1866,6 +1868,12 @@
+ 	 * exclusive_lock is held here; radeon_gpu_reset takes its own down_write. */
+ 	rdev->needs_reset = true;
+ 	r = radeon_gpu_reset(rdev);
++	if (rdev->gpu_parked) {
++		seq_printf(m,
++			   "gpu-reset recovery probe: parked after reset (r=%d); skipping post RBBM_STATUS\n",
++			   r);
++		return 0;
++	}
+ 
+ 	status = RREG32(R_000E40_RBBM_STATUS);
+ 	seq_printf(m,
