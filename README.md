@@ -50,8 +50,9 @@ The primary package is `packaging/arch/radeon-unified-dkms/`.
   failed-reset parking/containment, and bounded reset-mask candidates.
 - `radeon_rs480_gart_page_table` exposes at most 64 hardware GART entries and
   two CPU page-table rows through a root-only read-only debugfs file. The
-  decoded backing field remains a DMA address until the target capture proves
-  that the device uses a direct-DMA route.
+  reader selects the PAT bit by page-table level and emits a fixed 20-column
+  schema. Decoded backing remains a DMA address, and non-dummy backing does not
+  imply BO ownership, until independent target evidence closes those joins.
 - Palm/Wrestler safety gates are carried in the same module package but remain a
   separate hardware-generation lane; Palm evidence does not validate RS482 and
   RS482 evidence does not validate Palm.

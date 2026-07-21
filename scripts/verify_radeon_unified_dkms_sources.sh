@@ -8,6 +8,7 @@ pkgbuild="$package_dir/PKGBUILD"
 
 rs480_dir="$repo_root/patches/rs480"
 fragment_generator="$repo_root/scripts/generate_rs480_debugfs_fragments.py"
+gart_reader_verifier="$repo_root/scripts/verify_rs400_gart_reader_schema.py"
 safe_regs_tsv="$rs480_dir/SAFE_REGS.tsv"
 candidate_regs_tsv="$rs480_dir/CANDIDATE_REGS.tsv"
 
@@ -152,14 +153,17 @@ grep -Fq 'page_dma_address' "$rs400_source" || {
     printf 'GART reader: the DMA-address qualification is missing\n' >&2
     failures=$((failures + 1))
 }
-grep -Fq 'shadow_match' "$rs400_source" || {
-    printf 'GART reader: the hardware-shadow comparison is missing\n' >&2
+grep -Fq 'backing_class' "$rs400_source" || {
+    printf 'GART reader: the bounded backing classification is missing\n' >&2
     failures=$((failures + 1))
 }
 grep -Fq 'kernel_pte_raw' "$rs400_source" || {
     printf 'GART reader: the CPU page-table evidence is missing\n' >&2
     failures=$((failures + 1))
 }
+if ! python3 "$gart_reader_verifier" "$rs400_source"; then
+    failures=$((failures + 1))
+fi
 
 gart_reader=$(sed -n \
     '/static int rs400_debugfs_gart_page_table_show/,/DEFINE_SHOW_ATTRIBUTE(rs400_debugfs_gart_page_table)/p' \
