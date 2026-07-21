@@ -109,13 +109,16 @@ def c_code_only(source: str) -> str:
 
 def c_function(source: str, signature: str) -> str:
     source = c_code_only(source)
-    start = source.find(signature)
-    if start < 0:
-        fail(f"function signature is missing: {signature}")
-
-    opening_brace = source.find("{", start)
-    if opening_brace < 0:
-        fail(f"function body is missing: {signature}")
+    search_offset = 0
+    while True:
+        start = source.find(signature, search_offset)
+        if start < 0:
+            fail(f"function definition is missing: {signature}")
+        opening_brace = source.find("{", start)
+        semicolon = source.find(";", start)
+        if opening_brace >= 0 and (semicolon < 0 or opening_brace < semicolon):
+            break
+        search_offset = start + len(signature)
 
     depth = 0
     state = "code"
@@ -245,6 +248,51 @@ def verify_lock_negative_tests(source: str) -> None:
         fail(f"negative lock mutation passed: {name}")
 
 
+def verify_debugfs_registration(source: str) -> None:
+    registration = c_function(source, "void radeon_rs480_re_debugfs_register(")
+    early_initializer = c_function(
+        source, "static void rs400_debugfs_pcie_gart_info_init("
+    )
+    reader_operations = "rs400_debugfs_gart_page_table_fops"
+
+    if registration.count(reader_operations) != 1:
+        fail("DRM primary-minor callback must register the GART reader exactly once")
+    if re.search(
+        r"debugfs_create_file\s*\([^;]*minor->debugfs_root[^;]*"
+        r"rs400_debugfs_gart_page_table_fops\s*\)",
+        registration,
+        re.DOTALL,
+    ) is None:
+        fail("GART reader registration must use the assigned primary-minor debugfs root")
+    if reader_operations in early_initializer:
+        fail("early GART initialization must not register the debugfs reader")
+
+
+def verify_debugfs_registration_negative_tests(source: str) -> None:
+    missing_root = source.replace(
+        "minor->debugfs_root, rdev, &rs400_debugfs_gart_page_table_fops",
+        "root, rdev, &rs400_debugfs_gart_page_table_fops",
+        1,
+    )
+    early_registration = source.replace(
+        "&rs400_debugfs_gart_info_fops);",
+        "&rs400_debugfs_gart_info_fops);\n\t(void)&rs400_debugfs_gart_page_table_fops;",
+        1,
+    )
+    if missing_root == source or early_registration == source:
+        fail("negative debugfs registration mutation could not be constructed")
+
+    for name, variant in (
+        ("missing-primary-minor-root", missing_root),
+        ("early-reader-registration", early_registration),
+    ):
+        try:
+            verify_debugfs_registration(variant)
+        except VerificationError:
+            continue
+        fail(f"negative debugfs registration mutation passed: {name}")
+
+
 def c_string_value(expression: str) -> str:
     tokens = re.findall(r'"(?:\\.|[^"\\])*"', expression)
     return "".join(ast.literal_eval(token) for token in tokens)
@@ -316,6 +364,8 @@ def verify_source(path: Path) -> None:
 
     verify_lock_coverage(source)
     verify_lock_negative_tests(source)
+    verify_debugfs_registration(source)
+    verify_debugfs_registration_negative_tests(source)
 
     forbidden = ("shadow_raw", "shadow_match", "pages_entry[index]", "mapped-backing")
     for token in forbidden:

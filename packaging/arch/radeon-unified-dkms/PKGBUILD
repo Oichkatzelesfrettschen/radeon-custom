@@ -149,7 +149,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=88
+pkgrel=89
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
@@ -343,7 +343,7 @@ sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
             'eb54349d64e3c5d9a45e204ed09e80f04c6a62217651ff0976fed13678b4d9c3'
             '21d0a28edb3825d8c5ee208307f553c076599c69405feadf3cad268a28a48061'
             '1bb113fa512f9c449bcc30145177b8678f1b43aeeb5ad94fd7921e3e871cc42c'
-            '65fb007d9abd756c9e20ec30ab56bc74f8be1db806d8cf31d03c99d06cdc7ad7')
+            '1daf38555f0a9a2e295e1d9c2706c1cf49bc84f786baf7dcb446f5250e72d4a8')
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
   install -Dm644 "${srcdir}/rs480-cp-mc-cache-flush.patch" "${_dkmsdir}/patches/0002-rs480-cp-mc-cache-flush.patch"
