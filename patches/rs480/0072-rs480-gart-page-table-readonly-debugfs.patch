@@ -1,28 +1,29 @@
 Subject: [PATCH] drm/radeon: expose bounded RS480 GART page-table evidence
 
 Add a root-only, read-only debugfs view of the first 64 RS400/RS480 GART
-entries.  Each row records the raw hardware PTE, the driver shadow entry,
-decoded DMA address and access bits, and whether the two representations
-agree.  The bounded view recovers active backing without mapping a BAR,
+entries. Each row records one atomic hardware PTE observation, the decoded
+DMA address and access bits, and whether the entry points at the driver's
+dummy page. The bounded view recovers active backing without mapping a BAR,
 reading physical memory, or touching an MMIO register.
 
 Also expose the x86 page-table cache bits for the first and last CPU pages
-of the coherent GART table allocation.  These rows let a capture join the
-live kernel PTE state with IA32_PAT and the driver's set_memory_uc()
-source path.
-The output calls decoded GART addresses DMA addresses because a physical-
-address claim still requires an independently proven direct-DMA route.
+of the coherent GART table allocation. Select the PAT bit according to the
+page-table level so physical-address and large-page bits cannot masquerade
+as cache attributes. The output calls decoded GART addresses DMA addresses
+because a physical-address claim still requires an independently proven
+direct-DMA route.
 
-The node emits at most one header, one metadata row, two CPU mapping rows,
-and 64 GART rows.  It refuses unsupported, parked, and uninitialized
-devices.
+The node emits one 20-column header, one metadata row, at most two CPU
+mapping rows, and at most 64 GART rows. It refuses unsupported, parked, and
+uninitialized devices.
 
 ---
 diff --git a/radeon/rs400.c b/radeon/rs400.c
 --- a/radeon/rs400.c
 +++ b/radeon/rs400.c
-@@ -33,6 +33,10 @@
+@@ -33,6 +33,11 @@
  #include <linux/pci.h>
++#include <linux/mutex.h>
  #include <linux/uaccess.h>
  
 +#if defined(CONFIG_X86)
@@ -32,7 +33,19 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
  #include <drm/drm_device.h>
  #include <drm/drm_file.h>
  
-@@ -426,6 +430,124 @@
+@@ -43,2 +48,4 @@
+ static void rs400_debugfs_pcie_gart_info_init(struct radeon_device *rdev);
+ static void rs480_safe_regs_debugfs_init(struct radeon_device *rdev);
++static DEFINE_MUTEX(rs400_gart_page_table_lock);
++
+@@ -227,2 +234,3 @@ void rs400_gart_disable(struct radeon_device *rdev)
+ void rs400_gart_fini(struct radeon_device *rdev)
+ {
++	mutex_lock(&rs400_gart_page_table_lock);
+@@ -232,1 +240,2 @@ void rs400_gart_fini(struct radeon_device *rdev)
++	mutex_unlock(&rs400_gart_page_table_lock);
+ }
+@@ -426,6 +435,164 @@
  }
  
  DEFINE_SHOW_ATTRIBUTE(rs400_debugfs_gart_info);
@@ -44,6 +57,27 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
 +	return (entry & 0xfffff000ULL) | ((entry & 0x00000ff0ULL) << 28);
 +}
 +
++static bool rs400_gart_cpu_pat_index(u64 raw, unsigned int level,
++				     unsigned int *pat, unsigned int *index)
++{
++#if defined(CONFIG_X86)
++	unsigned int pcd = !!(raw & _PAGE_PCD);
++	unsigned int pwt = !!(raw & _PAGE_PWT);
++
++	if (level == PG_LEVEL_4K)
++		*pat = !!(raw & _PAGE_PAT);
++	else if (level == PG_LEVEL_2M || level == PG_LEVEL_1G)
++		*pat = !!(raw & _PAGE_PAT_LARGE);
++	else
++		return false;
++
++	*index = (*pat << 2) | (pcd << 1) | pwt;
++	return true;
++#else
++	return false;
++#endif
++}
++
 +static void rs400_debugfs_gart_cpu_mapping_emit(struct seq_file *m,
 +						struct radeon_device *rdev,
 +						unsigned int page_index)
@@ -53,12 +87,14 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
 +				page_index * PAGE_SIZE;
 +	unsigned int level = 0;
 +	pte_t *pte = lookup_address(address, &level);
++	unsigned int pat;
++	unsigned int pat_index;
 +	u64 raw;
 +
 +	if (!pte) {
 +		seq_printf(m,
-+			   "cpu-table-map\t%u\t%u\t\t\t\t\t\t\t\t\t\t"
-+			   "0x%016llx\t%u\t%u\t\t\t\t\t\t\t\tlookup-failed\n",
++			   "cpu-table-map\t%u\t%u\t\t\t\t\t\t\t\t"
++			   "0x%016llx\t%u\t%u\t\t\t\t\t\t\tlookup-failed\n",
 +			   page_index, page_index + 1,
 +			   (unsigned long long)rdev->gart.table_addr,
 +			   rdev->gart.table_size, rdev->gart.num_gpu_pages);
@@ -66,19 +102,32 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
 +	}
 +
 +	raw = pte_val(*pte);
++	if (!rs400_gart_cpu_pat_index(raw, level, &pat, &pat_index)) {
++		seq_printf(m,
++			   "cpu-table-map\t%u\t%u\t\t\t\t\t\t\t\t"
++			   "0x%016llx\t%u\t%u\t0x%016llx\t%u\t%u\t%u\t\t\t"
++			   "unsupported-page-level\n",
++			   page_index, page_index + 1,
++			   (unsigned long long)rdev->gart.table_addr,
++			   rdev->gart.table_size, rdev->gart.num_gpu_pages,
++			   (unsigned long long)raw, level,
++			   !!(raw & _PAGE_PWT), !!(raw & _PAGE_PCD));
++		return;
++	}
++
 +	seq_printf(m,
-+		   "cpu-table-map\t%u\t%u\t\t\t\t\t\t\t\t\t\t"
++		   "cpu-table-map\t%u\t%u\t\t\t\t\t\t\t\t"
 +		   "0x%016llx\t%u\t%u\t0x%016llx\t%u\t%u\t%u\t%u\t%u\tok\n",
 +		   page_index, page_index + 1,
 +		   (unsigned long long)rdev->gart.table_addr,
 +		   rdev->gart.table_size, rdev->gart.num_gpu_pages,
 +		   (unsigned long long)raw, level,
 +		   !!(raw & _PAGE_PWT), !!(raw & _PAGE_PCD),
-+		   !!(raw & _PAGE_PAT), !!(raw & _PAGE_PAT_LARGE));
++		   pat, pat_index);
 +#else
 +	seq_printf(m,
-+		   "cpu-table-map\t%u\t%u\t\t\t\t\t\t\t\t\t\t"
-+		   "0x%016llx\t%u\t%u\t\t\t\t\t\t\t\tnon-x86\n",
++		   "cpu-table-map\t%u\t%u\t\t\t\t\t\t\t\t"
++		   "0x%016llx\t%u\t%u\t\t\t\t\t\t\tnon-x86\n",
 +		   page_index, page_index + 1,
 +		   (unsigned long long)rdev->gart.table_addr,
 +		   rdev->gart.table_size, rdev->gart.num_gpu_pages);
@@ -88,37 +137,42 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
 +static int rs400_debugfs_gart_page_table_show(struct seq_file *m, void *unused)
 +{
 +	struct radeon_device *rdev = m->private;
-+	u32 *table = rdev->gart.ptr;
++	__le32 *table;
++	u32 dummy_pte;
 +	unsigned int entry_count;
 +	unsigned int table_pages;
 +	unsigned int index;
 +
 +	seq_puts(m,
 +		 "row_type\tstart_index\tend_index_exclusive\tgpu_address\tpte_raw\t"
-+		 "shadow_raw\tpage_dma_address\tunsnooped\twriteable\treadable\t"
-+		 "shadow_match\ttable_dma\ttable_bytes\ttable_entries\t"
-+		 "kernel_pte_raw\tkernel_pte_level\tpwt\tpcd\tpat_4k\tpat_large\tstatus\n");
++		 "page_dma_address\tunsnooped\twriteable\treadable\tbacking_class\t"
++		 "table_dma\ttable_bytes\ttable_entries\tkernel_pte_raw\t"
++		 "kernel_pte_level\tpwt\tpcd\tpat\tpat_index\tstatus\n");
 +
 +	if (rdev->family != CHIP_RS400 && rdev->family != CHIP_RS480) {
-+		seq_puts(m, "metadata\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tunsupported-family\n");
++		seq_puts(m, "metadata\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tunsupported-family\n");
 +		return 0;
 +	}
 +
 +	if (rdev->gpu_parked) {
-+		seq_puts(m, "metadata\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tgpu-parked\n");
++		seq_puts(m, "metadata\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tgpu-parked\n");
 +		return 0;
 +	}
 +
-+	if (!rdev->gart.ready || !table || !rdev->gart.pages_entry) {
-+		seq_puts(m, "metadata\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tgart-not-ready\n");
++	mutex_lock(&rs400_gart_page_table_lock);
++	if (!rdev->gart.ready || !rdev->gart.ptr) {
++		seq_puts(m, "metadata\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tgart-not-ready\n");
++		mutex_unlock(&rs400_gart_page_table_lock);
 +		return 0;
 +	}
 +
++	table = rdev->gart.ptr;
++	dummy_pte = lower_32_bits(READ_ONCE(rdev->dummy_page.entry));
 +	entry_count = min_t(unsigned int, rdev->gart.num_gpu_pages,
 +			    RS400_GART_PAGE_TABLE_ENTRY_LIMIT);
 +	table_pages = DIV_ROUND_UP(rdev->gart.table_size, PAGE_SIZE);
 +	seq_printf(m,
-+		   "metadata\t0\t%u\t\t\t\t\t\t\t\t\t\t0x%016llx\t%u\t%u\t"
++		   "metadata\t0\t%u\t\t\t\t\t\t\t\t0x%016llx\t%u\t%u\t"
 +		   "\t\t\t\t\t\tready\n",
 +		   entry_count, (unsigned long long)rdev->gart.table_addr,
 +		   rdev->gart.table_size, rdev->gart.num_gpu_pages);
@@ -129,27 +183,26 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
 +
 +	for (index = 0; index < entry_count; index++) {
 +		u32 pte_raw = le32_to_cpu(READ_ONCE(table[index]));
-+		u64 shadow_raw = READ_ONCE(rdev->gart.pages_entry[index]);
 +
 +		seq_printf(m,
 +			   "gart-entry\t%u\t%u\t0x%016llx\t0x%08x\t0x%016llx\t"
-+			   "0x%016llx\t%u\t%u\t%u\t%u\t0x%016llx\t%u\t%u\t"
-+			   "\t\t\t\t\t\t%s\n",
++			   "%u\t%u\t%u\t%s\t0x%016llx\t%u\t%u\t"
++			   "\t\t\t\t\t\tobserved\n",
 +			   index, index + 1,
 +			   (unsigned long long)(rdev->mc.gtt_start +
 +						index * RADEON_GPU_PAGE_SIZE),
-+			   pte_raw, (unsigned long long)shadow_raw,
++			   pte_raw,
 +			   (unsigned long long)rs400_gart_page_dma_address(pte_raw),
 +			   !!(pte_raw & RS400_PTE_UNSNOOPED),
 +			   !!(pte_raw & RS400_PTE_WRITEABLE),
 +			   !!(pte_raw & RS400_PTE_READABLE),
-+			   pte_raw == lower_32_bits(shadow_raw),
++			   pte_raw == dummy_pte ?
++			   "dummy-backing" : "non-dummy-backing",
 +			   (unsigned long long)rdev->gart.table_addr,
-+			   rdev->gart.table_size, rdev->gart.num_gpu_pages,
-+			   shadow_raw == rdev->dummy_page.entry ?
-+			   "dummy-backing" : "mapped-backing");
++			   rdev->gart.table_size, rdev->gart.num_gpu_pages);
 +	}
 +
++	mutex_unlock(&rs400_gart_page_table_lock);
 +	return 0;
 +}
 +
@@ -157,7 +210,7 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
  #endif
  
  
-@@ -2976,6 +3098,8 @@
+@@ -2976,6 +3143,8 @@
  
  	debugfs_create_file("rs400_gart_info", 0444, root, rdev,
  			    &rs400_debugfs_gart_info_fops);
