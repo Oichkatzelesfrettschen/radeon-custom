@@ -15,7 +15,8 @@ direct-DMA route.
 
 The node emits one 20-column header, one metadata row, at most two CPU
 mapping rows, and at most 64 GART rows. It refuses unsupported, parked, and
-uninitialized devices.
+uninitialized devices. Register the node from the DRM primary-minor callback,
+after DRM assigns the minor debugfs root.
 
 ---
 diff --git a/radeon/rs400.c b/radeon/rs400.c
@@ -210,11 +211,8 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
  #endif
  
  
-@@ -2976,6 +3143,8 @@
- 
- 	debugfs_create_file("rs400_gart_info", 0444, root, rdev,
- 			    &rs400_debugfs_gart_info_fops);
-+	debugfs_create_file("radeon_rs480_gart_page_table", 0400, root, rdev,
-+			    &rs400_debugfs_gart_page_table_fops);
- #endif
- }
+@@ -3122,1 +3289,3 @@ void radeon_rs480_re_debugfs_register(struct drm_minor *minor)
+-	rs480_candidate_regs_debugfs_init(rdev);
++	rs480_candidate_regs_debugfs_init(rdev);
++	debugfs_create_file("radeon_rs480_gart_page_table", 0400,
++			    minor->debugfs_root, rdev, &rs400_debugfs_gart_page_table_fops);
