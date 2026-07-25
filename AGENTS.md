@@ -390,6 +390,12 @@ A compact semantic table that encodes a register layout, a bit layout, or a
 state transition is content. Delimiter lines, banner boxes, ASCII art, and
 wrappers such as `/* ----- */` and `// =====` are decoration.
 
+The language form follows the evidence class. Documented behavior takes the
+plain indicative. Reproduced-but-undocumented behavior names the part and the
+path where it was observed, so a reader knows the claim rests on a run rather
+than a register document. Conjecture carries a marker (`appears to`, `seems
+to`) or leaves.
+
 ### TODO comments
 
 A deferred-work comment opens with `TODO:`, `FIXME:`, `XXX:`, or `HACK:`, and a
