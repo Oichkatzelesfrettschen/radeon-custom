@@ -106,8 +106,27 @@ bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 # (POSIX sh; uses repository-root packaging/, patches/, and sources/)
 sh scripts/check_radeon_patch_series_compiles.sh
 
+# Same gate in the mode a CI job uses: a missing kernel build dir becomes
+# exit 5, so a green status means the touched units reached the compiler
+sh scripts/check_radeon_patch_series_compiles.sh --require-compile
+
 # Unified DKMS source tree hashes and patch-chain apply dry-run
 bash scripts/verify_radeon_unified_dkms_sources.sh
+
+# Project-authored prose carries no dash construction
+python3 scripts/check_project_prose_style.py
+```
+
+Each verdict-producing gate calibrates against known-good and known-bad inputs
+before it is trusted to judge the tree. Run the calibration when changing a
+gate:
+
+```bash
+# 2 known-bad series rejected, 1 known-good series cleared
+sh scripts/check_radeon_patch_series_compiles.sh --self-test
+
+# known-good prose silent, known-bad prose reported, corpus selection correct
+python3 scripts/check_project_prose_style.py --self-test
 ```
 
 Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with
