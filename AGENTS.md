@@ -329,7 +329,7 @@ function, module parameter, or measured behavior.
 
 State what a thing is and does, in positive declarative form. Name the mechanism
 and let the binding constraint stand as fact: `the parked classifier runs before
-any MMIO access, so the reader returns -ENODEV without touching the wedged
+any MMIO access, so the reader hard-returns -EIO without touching the wedged
 engine`. Correctness follows from the mechanism, so the reviewer assumes it and
 contrast framing falls away.
 
@@ -340,9 +340,10 @@ An apparent negation names a mechanism, so write the mechanism: `the caller
 retains the allocation`; `radeon's sync is implicit dma_resv only`. A hard-stop
 safety boundary keeps its prohibition, where that is the whole content.
 
-Write third-person present tense: `the kernel reads WORD0`, `rs400_gart_set_page
-writes the entry`. Ceremonial prose falls away; when terse prose hides the
-mechanism, the missing invariant is the fix.
+Write third-person present tense: `the kernel reads the GART entry`,
+`rs400_gart_cpu_pat_index selects the PAT bit by page-table level`. Ceremonial
+prose falls away; when terse prose hides the mechanism, the missing invariant is
+the fix.
 
 For a silicon bug or workaround, name the affected chip or register, state the
 observable failure in one sentence, and cite a public bug URL or register
@@ -350,6 +351,11 @@ document when one exists. A workaround comment separates what was observed, on
 which chip and path, what the code enforces, and what remains hypothetical.
 
 ### Comment shape
+
+Use these hunks as style anchors: the page-table decode block in
+`rs480-gart-page-table-readonly-debugfs.patch` around
+`rs400_gart_cpu_pat_index` and `lookup_address`, and the parked-classifier
+guard in `rs480-parked-gpu-debugfs-readers-hard-return.patch`.
 
 A full mechanism comment orders its facts: the load-bearing claim, the named
 authority (kernel function, register macro, register document rule), the
@@ -373,9 +379,10 @@ Use active voice, and a causal connective when one fact forces another, or
 sequence when the order itself is the mechanism:
 
 ```text
-The kernel reads the GART entry as a DMA address. Then it applies the PAT bit
-selected by page-table level. The decoded row shows backing, and non-dummy
-backing implies BO ownership only after independent target evidence.
+lookup_address returns the page-table level with the raw entry. Then
+rs400_gart_cpu_pat_index picks _PAGE_PAT at PG_LEVEL_4K and _PAGE_PAT_LARGE at
+PG_LEVEL_2M and PG_LEVEL_1G, so a large-page bit cannot masquerade as a
+physical-address bit in the emitted row.
 ```
 
 A compact semantic table that encodes a register layout, a bit layout, or a
@@ -399,10 +406,10 @@ commit message or PR description.
 Right shape:
 
 ```text
-/* TODO: rs400_gart_set_page does not expose the RS485 PAT bit position, so the
- *       decoded row reports level-2 backing as level-1.  Blocked on an RS485
- *       register document rule for the second-level PAT bit.  Tracking:
- *       rs400_gart_set_page.
+/* TODO: rs400_debugfs_gart_page_table_show decodes each entry to a DMA
+ *       address, so a non-dummy row reports backing rather than BO ownership.
+ *       Closing that join needs a retained target capture from the RS482
+ *       host.  Tracking: rs400_debugfs_gart_page_table_show.
  */
 ```
 
