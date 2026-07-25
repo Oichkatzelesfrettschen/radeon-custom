@@ -438,6 +438,12 @@ the commits were not granular enough: split them or compress to the aggregate
 mechanism. Commit prose is plain ASCII mechanism text with no `WHY`/`WHAT`/`HOW`
 scaffolding headers.
 
+An appended `(#NNN)` on the subject moves to a trailer that carries the PR
+link. A squash-merge button that appends `(#NNN)` to the merged subject is a
+forge artifact rather than an author artifact, so it refutes no commit and
+justifies no history rewrite; passing an explicit merge subject keeps the
+suffix off the subject line.
+
 Markdown in this repository uses exactly one H1, heading depth no deeper than
 `###`, language tags on code fences, exact cross-references, and rule text as
 direct positive-declarative statements. Emphasis comes from the claim, not from
