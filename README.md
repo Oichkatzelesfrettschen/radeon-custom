@@ -87,6 +87,10 @@ recovery.
 - `packaging/debian/` holds the Debian-family packaging adapters.
 - `docs/` holds package and readiness documentation; hardware run verdicts
   remain in `steinmarder-r300`.
+  `docs/rs480-containment-architecture-and-evidence-decomposition.md` is the
+  entry point: it decomposes the silicon substrate, the containment ladder, the
+  register evidence partition, and the reproducible quantitative spine, and it
+  states the evidence class and falsifier for each claim.
 
 ## Build and validation
 
