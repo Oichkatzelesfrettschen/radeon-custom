@@ -47,9 +47,10 @@ nearest principle.
    point to it.
 6. Smallest complete mechanism: a patch, comment, or script carries exactly its
    distinct load-bearing facts, free of stubs, decoration, and repetition.
-7. Fail-closed gates: hazardous paths open on exact opt-in values only; unset,
-   empty, and zero stay closed; a verdict-producing script earns trust by
-   calibration on known-good and known-bad inputs first.
+7. Fail-closed gates: a hazardous path opens on the exact token its own
+   declaration names as armed, and the closed state is whatever that
+   declaration makes inert rather than zero by assumption; a verdict-producing
+   script earns trust by calibration on known-good and known-bad inputs first.
 
 ### Boundary and paths
 
@@ -117,10 +118,21 @@ nearest principle.
 
 ### Hazard gates
 
-- A hazardous path opens on an exact opt-in value. `radeon_rs480_r400_us_cs=1`,
-  `rs480_hazard_readers_armed`, and the reset-mask and probe-index parameters
-  are closed when unset, empty, or zero; parameter presence alone is not
+- A hazardous path opens on the exact token its declaration names as armed, and
+  the three arming domains in this series close differently. Read the
+  declaration before assuming a value is inert; parameter presence alone is not
   consent.
+  - Boolean gates open at exactly `1`: `radeon_rs480_r400_us_cs` and
+    `rs480_hazard_readers_armed`. Zero closes these.
+  - Index selectors use `-1` as the no-selection sentinel, and the guard reads
+    `idx < 0 || idx >= ARRAY_SIZE(...)`. Every in-range nonnegative value
+    selects an entry and performs the read, so
+    `radeon_rs480_force_clock_index=0` selects the first entry and drives a
+    force-clocked MMIO read. Zero arms these.
+  - The reset-mask selector resolves to a mask rather than to nothing.
+    `RS480_RESET_MASK_BASELINE = 0`, so `rs480_reset_mask=0` selects the
+    baseline mask, named nonzero values select experimental masks, and an
+    out-of-range value collapses to baseline. Zero selects here.
 - `options radeon lockup_timeout=0` is the safe default and stays until an
   attended RS482 run demonstrates GPU recovery rather than host survival.
 - `radeon-re.conf` is package-owned policy.
