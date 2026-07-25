@@ -249,7 +249,7 @@ not the atomic ioctl. Advertising `DRIVER_ATOMIC` does not make it switch:
 legacy userspace continues to issue legacy ioctls, and the DRM core routes them
 through `drm_atomic_helper_set_config`/`_page_flip` transparently. The cap
 advertisement is therefore not itself the regression surface. The real risk to
-the currently-validated fixed-refresh TearFree configuration is flip-completion
+the validated fixed-refresh TearFree configuration is flip-completion
 timing: TearFree depends on page flips landing in vblank, and the conversion
 replaces the hand-tuned `radeon_crtc_page_flip_target` completion path with the
 helper commit model. Any drift in when the flip-done event is emitted is a

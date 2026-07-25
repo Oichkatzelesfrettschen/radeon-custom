@@ -17,7 +17,7 @@ every later access refaults through that gate.
 
 `radeon_gem_fault` (radeon_gem.c) in patched order:
 
-```
+```c
 bo   = vmf->vma->vm_private_data;      /* plain read */
 rdev = radeon_get_rdev(bo->bdev);      /* pointer deref */
 down_read(&rdev->pm.mclk_lock);        /* first lock */
@@ -42,7 +42,7 @@ GART/aperture map and no register access is reached before the SIGBUS return.
 
 The park path (radeon_device.c) zaps the userspace GEM mappings:
 
-```
+```c
 unmap_mapping_range(rdev_to_drm(rdev)->anon_inode->i_mapping, 0, 0, 1);
 ```
 
