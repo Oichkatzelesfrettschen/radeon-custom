@@ -230,9 +230,17 @@ package is not an automatic reset-recovery driver.
 
 ## Assumption register
 
-One statement in `AGENTS.md` is a project assumption introduced by this
-workspace rather than a claim derived from a source: the fixed priority order of
-host safety, containment, evidence fidelity, recovery capability, and
-performance. It follows from the containment framing in `README.md` and the
-`lockup_timeout=0` default, and no cited document states it. It stands as a
-stated assumption open to correction.
+One statement in `AGENTS.md` is a project decision rather than a claim derived
+from a source: the fixed priority order of host safety, containment, evidence
+fidelity, recovery capability, and performance. It follows from the containment
+framing in `README.md` and the `lockup_timeout=0` default, and no cited document
+states it.
+
+The maintainer ratified this ordering, so it governs conflicts as written. It
+carries the authority of a project decision, and a reader looking for a silicon
+or specification source behind it finds a maintainer choice instead. The
+alternative orderings considered were the `mesa-26-gororoba` sequence of
+conformance, standards, stability, and performance, which governs a userspace
+conformance target rather than an out-of-tree kernel safety module, and an
+evidence-first sequence that would rank the research-instrument role above the
+host-safety role.
