@@ -130,13 +130,13 @@ analyzed in Section 4.
 **Park gate vs. commit ordering (primary hazard, unresolved design).** Patch
 `0050-rs480-parked-gpu-modeset-and-flip-gate.patch` places the failed-reset
 containment gate in two legacy entry points: `radeon_crtc_set_config` returns
-`0` (no-op success -- accept the modeset, leave the display dark, keep the
+`0` (no-op success: accept the modeset, leave the display dark, keep the
 host alive) when `rdev->gpu_parked`, and `radeon_crtc_page_flip_target`
 returns `-ENODEV`. The rationale in the patch is specific: a modeset against a
 parked RS480 re-enables display memory requests into the wedge-held MC client
 arbiter, the host interface deadlocks, and the next CPU MMIO read hard-locks
 the machine; the fbdev-restore-on-last-close is the trigger. Under atomic,
-`.set_config` no longer exists as a driver callback -- it becomes
+`.set_config` no longer exists as a driver callback; it becomes
 `drm_atomic_helper_set_config`, and the gate must move. Where it moves is not
 settled; it is three candidates, each with a stated advantage and a stated
 problem, and none is adopted here:
@@ -144,7 +144,7 @@ problem, and none is adopted here:
 - **(A) Intercept in `mode_config_funcs.atomic_commit`, before
   `drm_atomic_helper_swap_state`.** Advantage: rejecting or diverting the
   commit before software state is published keeps software state and hardware
-  state consistent -- nothing claims a mode is active when it is not.
+  state consistent, so nothing claims a mode is active when it is not.
   Problem: legacy last-close (fbdev restore) wants "accept the transaction,
   write nothing, succeed" (no-op success), while an atomic client issuing the
   same commit needs an honest completion (success or failure that reflects
@@ -155,8 +155,8 @@ problem, and none is adopted here:
   inactive/dark state.** Convert the requested state to a forced-inactive
   state inside `atomic_check`, so the software state honestly reflects "off"
   rather than pretending the requested mode is live. Advantage: software
-  state stays truthful -- no divergence between what `drm_atomic_state`
-  claims and what silicon is doing. Problem: even the hardware-off sequence
+  state stays truthful, so what `drm_atomic_state` claims matches what
+  silicon is doing. Problem: even the hardware-off sequence
   (disabling a CRTC, tearing down PLL/timing) may itself touch registers the
   park containment forbids touching on a wedged MC client arbiter; "turn it
   off safely" is not proven free of the same host-lockup risk as "turn it on."
@@ -177,8 +177,9 @@ host-only until it is run:
 flip} x {event present, event absent} x {out-fence present, out-fence absent}
 x {park before `atomic_check`, park between `atomic_check` and commit, park
 during an outstanding commit}. State plainly: the parked-GPU problem is a
-complete atomic-transaction terminal state -- every point in that matrix needs
-a defined, tested outcome -- not the location of one conditional. This gate
+complete atomic-transaction terminal state: every point in that matrix needs a
+defined, tested outcome, and the gate is that matrix rather than the location
+of one conditional. This gate
 must also continue to hold `rdev->exclusive_lock` the way
 `radeon_flip_work_func` does today (`radeon_display.c:419`), because the
 parked state is published under that rw_semaphore and `needs_reset`/
@@ -254,7 +255,7 @@ replaces the hand-tuned `radeon_crtc_page_flip_target` completion path with the
 helper commit model. Any drift in when the flip-done event is emitted is a
 direct TearFree regression. This path is hardware-validated today, and the
 609/609 count in `MEMORY.md` is the gradient rendercheck result, not TearFree
-timing -- it does not stand in for TearFree evidence. The actual TearFree
+timing, and it does not stand in for TearFree evidence. The actual TearFree
 evidence set is: categorical camera-recorded tear elimination (off/on), a
 flip rate of 59.19 of a 59.94 Hz target, a VT-switch pass, a DPMS pass, a
 300-second soak pass, and a mode change that survives with two nonfatal
@@ -262,7 +263,7 @@ flip rate of 59.19 of a 59.94 Hz target, a VT-switch pass, a DPMS pass, a
 requirement against that evidence set is: no visible tearing, flip rate within
 baseline tolerance, no increase in flip-completion failures, VT-switch and
 DPMS green, no new kernel reset or fault lines, and the mode-change diagnostic
-no worse than baseline -- preferably the vblank-counter EE (Section 4,
+no worse than baseline; preferably the vblank-counter EE (Section 4,
 RADEON-DISPLAY-VBLANK-01) is attributed and fixed before the switch, so the
 post-conversion acceptance criterion is zero errors rather than "no worse."
 This is the highest-value regression to guard.
@@ -290,7 +291,7 @@ reference-diff safety net.
 ## 5. Staged plan, and why the atomic-UAPI boundary forces one indivisible switch
 
 The indivisible unit is narrower than "the driver": it is the atomic-UAPI
-boundary specifically -- `DRIVER_ATOMIC` advertisement, `mode_config`
+boundary specifically: `DRIVER_ATOMIC` advertisement, `mode_config`
 `atomic_check`/`atomic_commit`, CRTC atomic state plus atomic callbacks,
 primary-plane atomic state plus atomic callbacks, connector state, the commit
 sequencing that walks them together, and the legacy-ioctl-to-atomic-state
@@ -298,7 +299,7 @@ translation (`drm_atomic_helper_set_config`/`_page_flip`). Once `DRIVER_ATOMIC`
 is set and the core drives modesets through `drm_atomic_helper_commit`, that
 walk touches every CRTC, plane, and connector in the commit as a single
 `drm_atomic_state`, and an object missing atomic state/funcs cannot
-participate -- there is no supported "half-atomic" driver at that boundary.
+participate, and the boundary supports no "half-atomic" driver.
 The historical *transitional* helpers that let a driver keep legacy
 `.mode_set` while using atomic state internally were removed from the core
 years ago; they are not a landing target.
@@ -341,8 +342,8 @@ primary-plane atomic callbacks must be complete and correct (not stubs), and
 connector state and commit sequencing must all agree, because the core's
 single `drm_atomic_state` walk does not tolerate a partially-wired object
 inside a live atomic ioctl. (The distinct legacy-ioctl helpers
-`drm_atomic_helper_set_config`/`_page_flip` remain permanently -- those are how
-legacy userspace keeps working *after* conversion, not a partial-conversion
+`drm_atomic_helper_set_config`/`_page_flip` remain permanently, since those are
+how legacy userspace keeps working *after* conversion, not a partial-conversion
 mode.)
 
 Staged plan:
@@ -363,8 +364,8 @@ Staged plan:
    helper's legacy-encoder bridge (docs.kernel.org drm-kms-helpers) to keep
    unconverted siblings functional during the port. This is staging work, not
    the boundary crossing, as long as `DRIVER_ATOMIC` stays unset.
-4. **Park-gate design closure (still legacy, currently unresolved -- see
-   Section 4).** The `gpu_parked` containment relocation is not yet a design
+4. **Park-gate design closure, still legacy and unresolved; see
+   Section 4.** The `gpu_parked` containment relocation is not yet a design
    decision; it is three candidate designs with unresolved tradeoffs and a
    required state-machine test matrix. This must close, with an attributed
    choice and a passing test matrix, before step 5.
@@ -420,8 +421,8 @@ drops, or if TearFree tears.
 `drm_plane` is validated only after Milestone 1 passes, and carries its own
 documented warning: userspace must not mix explicit cursor-plane atomic-style
 ops with the legacy cursor ioctls (`DRM_IOCTL_MODE_CURSOR`/`_CURSOR2`) in the
-same session -- the two paths drive the same hardware cursor register set and
-an interleaving is unspecified. Test order: legacy Xorg cursor behavior first
+same session: the two paths drive the same hardware cursor register set and an
+interleaving is unspecified. Test order: legacy Xorg cursor behavior first
 (confirm no regression from Milestone 1), then explicit cursor-plane ops on
 an isolated VT (not concurrent with the legacy Xorg session), then
 cursor-only plane updates tested separately from flip-carrying commits so a
@@ -433,8 +434,8 @@ Each milestone's pass/fail is a gate: Milestone 1 must pass before Milestone
 closes and step 5's `DRIVER_ATOMIC` switch (Section 5) is attempted.
 
 **VRR does not reopen.** Atomic conversion, if completed, provides property
-*architecture* -- the `vrr_capable`/`VRR_ENABLED` connector and CRTC
-properties become expressible in the object model. It provides neither panel
+*architecture*: the `vrr_capable`/`VRR_ENABLED` connector and CRTC properties
+become expressible in the object model. It provides neither panel
 timing range, nor sink support, nor RS482 display-engine capability for
 variable refresh. The live RS482 feasibility gate (see Motivation, above)
 already found no `vrr_capable` property, no `VRR_ENABLED` property, and a

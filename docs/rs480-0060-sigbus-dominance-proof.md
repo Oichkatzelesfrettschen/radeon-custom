@@ -13,7 +13,7 @@ that can sleep into teardown, any TTM driver callback, any GART/aperture
 operation, and any register access; and the park path zaps existing CPU PTEs so
 every later access refaults through that gate.
 
-## Half 1 -- the gate dominates the fault handler
+## Half 1: the gate dominates the fault handler
 
 `radeon_gem_fault` (radeon_gem.c) in patched order:
 
@@ -38,7 +38,7 @@ after `ttm_bo_vm_reserve`, so placement is read under a stable reserved view, an
 `radeon_bo_fault_reserve_notify` and `ttm_bo_vm_fault_reserved`. On that path no
 GART/aperture map and no register access is reached before the SIGBUS return.
 
-## Half 2 -- the park path forces every VRAM mapping to refault into the gate
+## Half 2: the park path forces every VRAM mapping to refault into the gate
 
 The park path (radeon_device.c) zaps the userspace GEM mappings:
 
@@ -52,25 +52,26 @@ unmap_mapping_range(rdev_to_drm(rdev)->anon_inode->i_mapping, 0, 0, 1);
 - **Does it cover every GEM mmap offset, or a subset:** every one. The args are
   `holebegin = 0`, `holelen = 0` (which `unmap_mapping_range` treats as "to the
   end of the address space"), `even_cows = 1`. So all PTEs in the device GEM
-  address space are torn down, COW pages included -- not a subset.
+  address space are torn down, COW pages included, and the zap covers every
+  entry rather than a subset.
 - **Can a pre-existing CPU PTE survive the zap:** no. The zap removes every PTE
   mapping that address_space, so the next userspace touch takes a fresh fault.
   And because `gpu_parked` is already set when the zap runs, that refault hits
-  the gate (Half 1) and returns SIGBUS before any VRAM PTE can be re-established
-  -- no VRAM mapping can exist past the park point.
+  the gate (Half 1) and returns SIGBUS before any VRAM PTE can be
+  re-established, so no VRAM mapping survives past the park point.
 
 ## The explicit questions
 
 - **Does `radeon_gem_fault` inspect placement before any hardware or lock path?**
-  Yes -- the `mem_type == TTM_PL_VRAM` test is at :74, before the first lock
+  Yes: the `mem_type == TTM_PL_VRAM` test is at :74, before the first lock
   (:80) and every hardware/reservation path (:82/:86/:90).
 - **GTT / system-memory BOs:** the gate is `TTM_PL_VRAM`-only, so a GTT
-  (`TTM_PL_TT`) or system BO falls through and faults normally -- its pages are
+  (`TTM_PL_TT`) or system BO falls through and faults normally; its pages are
   plain system RAM, no aperture read. They do NOT SIGBUS merely because the GPU
   is parked; only VRAM does. Correct by the placement predicate.
 - **Non-fault paths (`mmap` setup, `ioctl`, `read`, `write`):** `mmap(2)` setup
   (`drm_gem_mmap`) only builds the vma; it establishes no PTE and touches no
-  VRAM -- the first access faults lazily into `radeon_gem_fault` (gated). A
+  VRAM, so the first access faults lazily into `radeon_gem_fault` (gated). A
   `read`/`write` against a GEM CPU mapping faults the same way (gated). GEM
   `ioctl`s are a different surface (not the VRAM mmap aperture) and are out of
   0060's scope; their hardware paths are covered by other parked gates
@@ -84,7 +85,7 @@ The placement read `bo->resource->mem_type` at :74 is unlocked. Under
 `gpu_parked` the GPU is terminal: acceleration is off and no BO migration runs,
 so a VRAM BO's `mem_type` is stable at `TTM_PL_VRAM` for the life of the parked
 state. If a migration could race it to a non-VRAM value the fallthrough would
-take the locks and map the aperture -- but no migration occurs post-park, so the
+take the locks and map the aperture, but no migration occurs post-park, so the
 read is stable. A `NULL bo->resource` (nothing placed) also falls through, which
 is safe because there is no VRAM page to touch.
 

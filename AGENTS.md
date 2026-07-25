@@ -26,9 +26,10 @@ them.
 Seven principles generate every rule here. A case no rule names resolves by the
 nearest principle.
 
-1. Durable mechanism identity: every durable artifact -- name, comment, claim,
-   citation -- carries mechanism or content identity; chronology, actors, and
-   process ride in commits, PR descriptions, and registry metadata.
+1. Durable mechanism identity: every durable artifact carries mechanism or
+   content identity, whether it is a name, a comment, a claim, or a citation;
+   chronology, actors, and process ride in commits, PR descriptions, and
+   registry metadata.
 2. Indicative voice: rules, comments, and reports state what an artifact is and
    does, present tense, artifact as subject. A boundary takes its positive dual:
    the restriction (`root-only read-only debugfs`), the named home (`hardware
@@ -437,6 +438,16 @@ direct positive-declarative statements. Emphasis comes from the claim, not from
 typography. Tables appear only when the columns carry independent comparison
 value; simple lists stay bullets. A sentence whose removal leaves the rule
 unchanged is removed.
+
+Project-authored prose carries no dash construction. An em-dash, an en-dash, and
+the ASCII `--` stand-in all mark a clause the sentence structure states more
+precisely on its own: a colon introduces the expansion, a semicolon joins the
+independent clause, a comma carries the apposition, and a period separates the
+distinct fact. Recast the sentence rather than substituting one dash character
+for another. Command flags such as `git diff --staged` and `--show-toplevel` are
+code, and they keep their exact spelling. This rule governs project-authored
+Markdown, comments, and commit prose; upstream text and checked-in patch bodies
+keep their bytes, since the packaging sha256sums verify those exact bytes.
 
 ## Validation expectations
 

@@ -4,7 +4,7 @@ This audit enforces one invariant across the radeon-custom patch series: after
 `rdev->gpu_parked` is set on a failed RS480 reset, no reachable path may perform
 a GPU MMIO read, an MC-indirect read, a GART flush readback, an AtomBIOS register
 access, a modeset register access, or a debugfs register read. Every post-wedge
-channel must instead terminate in a safe terminus -- skip, return disconnected,
+channel must instead terminate in a safe terminus: skip, return disconnected,
 return error, force-complete, leak until reboot, SIGBUS, no-op, or leave the
 display parked. The reasoning is over `patches/rs480/*.patch` and the DKMS build
 order in `packaging/arch/radeon-unified-dkms/dkms.conf`, cross-referenced against
@@ -47,7 +47,7 @@ These edges were classified as open at the time of the original audit table.
 Several are now closed by later patches (0061, 0062, 0071). Remaining residuals
 are listed after the covered subsections.
 
-### 1. RE debugfs register readers (patches 0001-0042) -- COVERED by 0061
+### 1. RE debugfs register readers (patches 0001-0042), covered by 0061
 
 The RE readers (`0001` safe-regs, `0004` candidate-regs, `0005` firmware-read,
 `0010` mc-benign, `0011` gart-status, `0018` sclk-cntl-pll, `0019` pll-indirect +
@@ -67,14 +67,14 @@ Static verification (over the DKMS-order reconstructed tree): every debugfs
 reader entry point reads hardware only behind a parked guard. Three functions
 read hardware without an in-body guard and are classified out-of-scope, not
 regressions: `rs480_cp_me_ram_inject_one` (helper reachable only via the guarded
-inject write), `rs480_wedged_3d_reset` (the reset mechanism -- it must run on the
-first unparked fire; its debugfs callers are guarded), and `rs400_startup` (the
+inject write), `rs480_wedged_3d_reset` (the reset mechanism, which must run on
+the first unparked fire; its debugfs callers are guarded), and `rs400_startup` (the
 upstream init/resume path, gated by the resume-side patches 0046/0048, not a
 debugfs edge). Compile verified through the real DKMS build (`dkms build`
-applied the full series and built radeon.ko clean -- `makepkg` only packages the
-source, the compile gate is `dkms build`); no fire.
+applied the full series and built radeon.ko clean; `makepkg` only packages the
+source, so the compile gate is `dkms build`); no fire.
 
-### 2. Module unload of a parked radeon -- COVERED by 0062
+### 2. Module unload of a parked radeon, covered by 0062
 
 `radeon_pci_shutdown` and the module_exit/.remove path
 (`radeon_driver_unload_kms` -> `radeon_modeset_fini` / `radeon_device_fini`)
@@ -83,7 +83,7 @@ an error, so the rule is no-hardware, not refuse.
 
 Closed by **0062-rs480-parked-gpu-module-unload-no-hardware.patch**:
 `radeon_driver_unload_kms` drops to the software free (`done_free`) under
-`gpu_parked` on `CHIP_RS400`/`CHIP_RS480`, skipping the hardware fini -- the same
+`gpu_parked` on `CHIP_RS400`/`CHIP_RS480`, skipping the hardware fini, the same
 shape as the existing `rmmio == NULL` early-out and the leak-by-design park
 path; reboot reclaims the leaked structures. `radeon_pci_shutdown` guards its
 lone hardware call (a PPC64/Loongson-only `radeon_suspend_kms`; on x86 the block
@@ -94,7 +94,7 @@ build (not makepkg, which only packages): `dkms build` applied 0001-0062 and
 built + signed radeon.ko clean, pkgrel 77. Runtime not exercised because a
 parked-module unload is not a campaign path (the box reboots). No fire.
 
-### 3. Userspace VRAM mmap SIGBUS gate (0060) -- COVERED by static dominance proof
+### 3. Userspace VRAM mmap SIGBUS gate (0060), covered by static dominance proof
 
 0060 zaps userspace GEM PTEs (`unmap_mapping_range`) and returns `VM_FAULT_SIGBUS`
 for VRAM-placed BOs in `radeon_gem_fault`. Fire 28 proved host survival but no

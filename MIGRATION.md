@@ -38,8 +38,7 @@ The RS480 series contains several distinct mechanism classes:
 Patch presence is not a recovery verdict. The reconciled retained result is:
 
 - host-survival containment is achieved for the Fire 28 acceptance property;
-- GPU recovery is not achieved—the GA-rooted wedge remains and the GPU is
-  parked;
+- GPU recovery stays open: the GA-rooted wedge holds and the GPU stays parked;
 - display recovery is not achieved and requires reboot;
 - the 0060 SIGBUS gate is installed but was not shown firing;
 - non-baseline 0063-0068 reset masks are installed but have not been fired.
@@ -66,5 +65,6 @@ GPU recovery. The current evidence verdict is owned by
 - Retain one manifest and one owner for every patch/package identity.
 - Run each non-baseline reset-mask candidate only under a separately authorized,
   attended hardware campaign with off-box capture and the current preflight.
-- Promote a reset claim only after the acceptance property—host, GPU, display,
-  or isolation gate—is named and evidenced explicitly.
+- Promote a reset claim only after the acceptance property is named and
+  evidenced explicitly, whether that property is host survival, GPU recovery,
+  display recovery, or the isolation gate.
