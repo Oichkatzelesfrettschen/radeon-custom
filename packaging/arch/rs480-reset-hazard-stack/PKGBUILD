@@ -1,4 +1,4 @@
-# rs480-reset-hazard-stack -- meta-package for the RS480 failed-reset
+# rs480-reset-hazard-stack: meta-package for the RS480 failed-reset
 # hazardous-fire safety set on cachyos-vostro1000.
 #
 # Mechanism name (was rad05-rs480-hazard-stack; provides/replaces the old name so
@@ -25,7 +25,7 @@
 
 pkgname=rs480-reset-hazard-stack
 pkgver=0.2
-pkgrel=3
+pkgrel=4
 pkgdesc='RS480 failed-reset hazardous-fire safety stack: radeon-under-test + SB600 watchdog + runtime preflight'
 arch=('any')
 url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
@@ -34,7 +34,7 @@ license=('GPL-2.0-only')
 # fired-latch fix. sp5100-tco-ioapic-dkms>=0.4-4 guarantees the warm-boot latch
 # clear that keeps a watchdog-fired reboot from immediately retriggering reset.
 depends=('radeon-unified-dkms' 'sp5100-tco-ioapic-dkms>=0.4-4')
-optdepends=('rs480-wd-feeder: compiled watchdog arming tool for SB600 research only -- RETIRED for RAD-05 fire timing (the reset is not deferrable via WDIOC_SETTIMEOUT/WDIOC_KEEPALIVE/magic close); not a dead-man feeder for wedge fires'
+optdepends=('rs480-wd-feeder: compiled watchdog arming tool for SB600 research only, RETIRED for RAD-05 fire timing (the reset is not deferrable via WDIOC_SETTIMEOUT/WDIOC_KEEPALIVE/magic close); not a dead-man feeder for wedge fires'
             'socat: workstation-side netconsole listener for off-box capture')
 # Mechanism-name migration: supersede the old rad05-* package cleanly.
 provides=('rad05-rs480-hazard-stack')
@@ -42,7 +42,7 @@ replaces=('rad05-rs480-hazard-stack')
 conflicts=('rad05-rs480-hazard-stack')
 install=rs480-reset-hazard-stack.install
 source=('rs480-reset-hazard-preflight.sh')
-sha256sums=('0e74efad44c353884e0eae7ae1186d7255925f4fe92ae7981891123dc0379d31')
+sha256sums=('5c2f6425ccd9feac2e9d9b9a6500f25ac6b843fc0d8967fa49367a31b2414a62')
 
 package() {
     # Canonical mechanism-named entry point.

@@ -90,7 +90,7 @@ python3 "$fragment_generator" \
 # Patch-apply dry-run.  A file hash can be self-consistent yet still be a
 # malformed unified diff: commit cc22d3029 expanded a hunk body in 0016 without
 # updating the hunk count, producing a patch that GNU patch rejects with
-# "malformed patch" -- which the hash check above could not see.  Replicate the
+# "malformed patch", which the hash check above could not see.  Replicate the
 # DKMS build's apply path (the canonical tarball already carries 0001; dkms.conf
 # PATCH[] applies the rest with patch -p1) so a malformed hunk cannot ship a
 # source tree that fails to build.  The tarball is the known-good base; a stale

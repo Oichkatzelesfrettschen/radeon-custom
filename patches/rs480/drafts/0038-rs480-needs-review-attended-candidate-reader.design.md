@@ -4,7 +4,8 @@ Design for the radeon DKMS read-table extension that the attended needs_review
 sweep would use. It is a design artifact, not a patch in the applied series: the
 real patch is generated against the post-0037 rs400.c at attended-build time so it
 applies cleanly and does not break the DKMS build. What is under review here is
-the content -- which registers, which reader, which guard -- not line offsets.
+the content: which registers, which reader, which guard, rather than line
+offsets.
 
 ## What it adds (radeon/rs400.c, modelled on 0004-rs480-candidate-regs-debugfs)
 
@@ -66,7 +67,7 @@ DEFINE_SHOW_ATTRIBUTE(rs480_candidate_attended_regs);
    0038-rs480-needs-review-attended-candidate-reader.patch; bump the
    radeon-unified DKMS pkgrel and update the dkms.conf sha256 in the PKGBUILD.
 2. Build + install the DKMS package; reboot to load the module.
-3. With kernel.panic=10 / hardlockup_panic active (CPU-lockup recovery only -- a
+3. With kernel.panic=10 / hardlockup_panic active (CPU-lockup recovery only; a
    deep NB stall is NOT recoverable and needs a physical cold-cycle), arm
    rs480_hazard_readers_armed=1 and read radeon_rs480_candidate_attended_regs
    once, boot_id-guarded, with a reboot-persistent synced log.
@@ -82,6 +83,6 @@ tier2 only (display/memory config on an always-on clock). tier3_care (BIOS, low
 system) and tier3_defer (command-processor/ring, IDCT) are NOT in this reader;
 IDCT clock-gates and FORCE_IDCT does not de-risk it, and CP/ring registers carry
 FIFO/ring semantics. The 0x2200-0x2504 range and index/data/port names are
-excluded entirely. No read in this design is known-safe -- needs_review means
-unproven -- so the sweep is attended, one-shot, boot-guarded, with cold-cycle
+excluded entirely. No read in this design is known-safe: needs_review means
+unproven, so the sweep is attended, one-shot, boot-guarded, with cold-cycle
 recovery available.

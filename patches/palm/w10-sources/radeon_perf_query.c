@@ -1,5 +1,5 @@
 /*
- * radeon_perf_query.c -- DRM_RADEON_PERF_QUERY ioctl handler.
+ * radeon_perf_query.c: DRM_RADEON_PERF_QUERY ioctl handler.
  *
  * Exposes the closed allowlist in perf_register_whitelist.h as a
  * read-only batch MMIO sample to unprivileged userspace through the

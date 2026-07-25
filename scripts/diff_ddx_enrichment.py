@@ -5,7 +5,7 @@ X.Org DDX radeon_reg.h decodes.
 The kernel/DKMS radeon_reg.h names every RS480 legacy MMIO register but leaves
 many of them offset-only (no bitfield decode).  The X.Org xf86-video-ati
 radeon_reg.h is a machine-readable superset (ATI Technologies / VA Linux, MIT)
-that decodes more of the R300-family 3D pipe -- and RS480 is an R300-derived
+that decodes more of the R300-family 3D pipe, and RS480 is an R300-derived
 IGP, so those R300_* field decodes apply.  Cross-referencing the two
 authoritative headers recovers real, sourced field geometry without fabricating
 anything and without OCR-ing AMD PDFs.
@@ -16,7 +16,7 @@ emits the fields that satisfy ALL of:
     (confirmed to respond on silicon during the BAR0 readout burn-down),
   * the field is present in the DDX clean harvest and absent from the DKMS one,
   * the owning register's name does not carry a post-RS480 chip prefix
-    (AVIVO_/R500_/R600_/.. -- those are later-silicon aliases of the same
+    (AVIVO_/R500_/R600_/.., which are later-silicon aliases of the same
     offset, not RS480 semantics).
 
 Offset 0x0000 is excluded: the DDX places its bare value-0 enum constants

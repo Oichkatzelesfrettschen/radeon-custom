@@ -221,7 +221,7 @@ then complete events. This gives the fdo-#24611 invariant one canonical,
 atomic-checked home instead of a scattered set of manual blank calls.
 
 **Prerequisite: a real dual-CRTC test configuration.** The invariant modeled
-above governs sibling-CRTC interaction, and LVDS-only cannot exercise it --
+above governs sibling-CRTC interaction, and LVDS-only cannot exercise it;
 there is only one active CRTC in that configuration, so no test run against
 LVDS alone can prove or falsify the global-modeset invariant. A real
 second-output configuration (external VGA on the Vostro, or an equivalent

@@ -3,7 +3,7 @@
  *
  * Read-only GUI_DEBUG read-diff: detect whether GUI_DEBUG0..4 are dynamic
  * (free-running counters / activity status) or static (candidate config/control).
- * Maps resource2 (the 64KiB radeon register MMIO BAR) with PROT_READ ONLY -- the
+ * Maps resource2 (the 64KiB radeon register MMIO BAR) with PROT_READ ONLY, so the
  * binary has no write path, so it cannot perturb any register.  Consent-gated.
  * All five offsets read-completed in the deep inventory (no wedge).
  */

@@ -129,7 +129,7 @@ def analyze() -> list[list[str]]:
         ordered = sorted(shifts, key=lambda item: item[1])
         starts = [start for _, start in ordered]
         if len(set(starts)) != len(starts) or starts != sorted(starts):
-            # Not a strictly-increasing distinct position sequence -- the values
+            # Not a strictly-increasing distinct position sequence; the values
             # are not field starts (an enum group or constants), so refuse it.
             continue
         gaps = {b - a for a, b in zip(starts, starts[1:])}
@@ -139,7 +139,7 @@ def analyze() -> list[list[str]]:
                 stop = ordered[index + 1][1] - 1
             elif uniform_last is not None:
                 # Every gap is identical, so the last field carries that same
-                # width -- the regular array completes itself (TEX_7_COMP_CNT).
+                # width: the regular array completes itself (TEX_7_COMP_CNT).
                 stop = start + uniform_last - 1
             elif DOCUMENTED_SINGLE_BIT_LAST_FIELDS.get((register, field)) == start:
                 # Mesa gives the bare field start, and the retained R5xx

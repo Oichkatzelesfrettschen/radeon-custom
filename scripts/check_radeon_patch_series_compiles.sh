@@ -4,7 +4,7 @@
 #
 # Why this exists: the PKGBUILD sha256 check (check_pkgbuild_sha256sums.sh)
 # proves each patch file matches its declared checksum, but a patch can match its
-# checksum and still carry a malformed hunk -- a zero-context insert whose target
+# checksum and still carry a malformed hunk: a zero-context insert whose target
 # line has drifted fuzz-misplaces into an unrelated statement, producing a tree
 # that applies "successfully" yet does not compile. A sha check cannot see that;
 # only applying the series and compiling the touched units can. This guard closes

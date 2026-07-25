@@ -149,13 +149,13 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=89
+pkgrel=90
 pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
 license=('GPL-2.0-only')
 # depends stays 'dkms' only: this package must remain buildable and loadable as a
-# normal diagnostic DKMS module. Do NOT hard-depend on the SB600 watchdog here --
+# normal diagnostic DKMS module. Do NOT hard-depend on the SB600 watchdog here;
 # that conflates "the radeon module loads" with "this machine is safe to run
 # destructive RAD-05 fires", which a pacman dependency cannot prove (watchdog
 # substrate visible, fired latch cleared, netconsole live, srcversion match).
@@ -165,8 +165,8 @@ license=('GPL-2.0-only')
 # the hard safety chain lives in the rs480-reset-hazard-stack meta-package, gated
 # by a runtime preflight, not by package presence.
 depends=('dkms')
-optdepends=('sp5100-tco-ioapic-dkms>=0.4-4: SB600 hardware watchdog substrate -- REQUIRED on cachyos-vostro1000 for RAD-05 hazardous reset campaigns (enables /dev/watchdog via the IOAPIC-page fallback); package presence does not validate the watchdog feeder, hazardous runs must still pass the runtime preflight'
-            'rs480-reset-hazard-stack: full RS480 failed-reset hazard stack (radeon + SB600 watchdog + runtime preflight) -- install this instead when running destructive reset experiments')
+optdepends=('sp5100-tco-ioapic-dkms>=0.4-4: SB600 hardware watchdog substrate, REQUIRED on cachyos-vostro1000 for RAD-05 hazardous reset campaigns (enables /dev/watchdog via the IOAPIC-page fallback); package presence does not validate the watchdog feeder, hazardous runs must still pass the runtime preflight'
+            'rs480-reset-hazard-stack: full RS480 failed-reset hazard stack (radeon + SB600 watchdog + runtime preflight); install this instead when running destructive reset experiments')
 provides=("radeon-unified=${pkgver}-${pkgrel}" 'radeon-rs480-safe-regs=0.2-9' 'radeon-palm-gate=1.0')
 conflicts=('radeon-rs480-safe-regs-dkms' 'radeon-rs480-safe-regs-dkms-git' 'radeon-palm-gate-dkms')
 replaces=('radeon-rs480-safe-regs-dkms' 'radeon-palm-gate-dkms')

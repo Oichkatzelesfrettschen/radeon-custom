@@ -129,7 +129,7 @@ indirection in r300's six draw cases.  r100/r200 parse paths call
    VTX_SIZE=12): expect acceptance and byte-identical retirement, as on
    the pre-patch kernel.
 4. Regression sweep: a normal SWTCL GL workload (glxgears, deqp-gles2
-   smoke) on RS482 -- every mesa swtcl draw writes identity PSC EXT and
+   smoke) on RS482, since every mesa swtcl draw writes identity PSC EXT and
    consistent VTX_SIZE, so zero new rejections expected.  A HW-TCL
    r300-class run (PVS draws) must also show zero rejections since
    TCL_BYPASS is clear.
