@@ -78,15 +78,19 @@ recovery.
 
 ## Repository layout
 
-- `patches/` -- ordered kernel changes and generated patch material.
-- `sources/` -- canonical source snapshots used to construct the DKMS tree.
-- `scripts/` -- source generation, validation, and packaging helpers.
-- `packaging/arch/radeon-unified-dkms/` -- active Arch DKMS package.
-- `packaging/arch/rs480-reset-hazard-stack/` -- hazardous-run meta-package and
-  preflight.
-- `packaging/debian/` -- Debian-family packaging adapters.
-- `docs/` -- package/readiness documentation; hardware run verdicts remain in
-  `steinmarder-r300`.
+- `patches/` holds ordered kernel changes and generated patch material.
+- `sources/` holds the canonical source snapshots used to construct the DKMS tree.
+- `scripts/` holds source generation, validation, and packaging helpers.
+- `packaging/arch/radeon-unified-dkms/` is the active Arch DKMS package.
+- `packaging/arch/rs480-reset-hazard-stack/` is the hazardous-run meta-package
+  and preflight.
+- `packaging/debian/` holds the Debian-family packaging adapters.
+- `docs/` holds package and readiness documentation; hardware run verdicts
+  remain in `steinmarder-r300`.
+  `docs/rs480-containment-architecture-and-evidence-decomposition.md` is the
+  entry point: it decomposes the silicon substrate, the containment ladder, the
+  register evidence partition, and the reproducible quantitative spine, and it
+  states the evidence class and falsifier for each claim.
 
 ## Build and validation
 

@@ -1,8 +1,8 @@
 # RAD-06 analysis: TCL-bypass VAP_VTX_SIZE vs VAP_OUT_VTX_FMT cross-check
 
 Companion to the tracked draft
-`rad06-tcl-bypass-vtx-output-crosscheck.draft.patch` at the repo root
-(not yet wired into the DKMS series).  Paths below are relative to the
+`patches/rs480/drafts/rad06-tcl-bypass-vtx-output-crosscheck.draft.patch`,
+which stands outside the DKMS series until `dkms.conf` wires it in.  Paths below are relative to the
 unpacked DKMS source tree
 `packaging/arch/radeon-unified-dkms/pkg/radeon-unified-dkms/usr/src/radeon-unified-0.3/`.
 
