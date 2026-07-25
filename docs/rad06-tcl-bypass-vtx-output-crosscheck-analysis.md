@@ -177,3 +177,79 @@ kernel series wiring (still a draft):
 - Whether to also require PRIM_WALK != 3 (immediate draws embed vertex
   data in the IB; the GA starvation shape may differ).  The draft
   applies the check to all six draw opcodes.
+
+## Which table protects which path
+
+The two `reg_srcs` edits in this draft protect different paths, and the binder
+in `patches/rs480/0021-rs480-cs-checker-r400-us-allowlist.patch` decides which
+one an RS482 part reaches. That patch adds `rs480_reg_safe.h` to the mkregtable
+targets, binds `rs400.o` to it, and selects it only under an explicit gate:
+
+```c
+if (rdev->family == CHIP_RS480 && radeon_rs480_r400_us_cs == 1) {
+```
+
+RS482 therefore receives `r300_reg_safe_bm` on the ordinary path and reaches
+`rs480_reg_safe_bm` only when `rs480_r400_us_cs=1` is set at module load for an
+attended run. Removing the tracked registers from `reg_srcs/r300` protects the
+ordinary RS482 path, and removing them from `reg_srcs/rs480` protects the
+explicitly armed R400-US path. Editing one table alone leaves the other path
+unprotected.
+
+## Blockers before the draft is wired
+
+Two unresolved semantic questions in this analysis affect runtime rejection
+behavior rather than wording, so each one gates integration.
+
+The kernel `FMT_0` defines above the position bit are marked `GUESS`, and the
+draft nonetheless assigns colors and point size concrete tuple widths. A CS
+checker that rejects on a guessed field width rejects valid command streams.
+The first integrated version declines whenever `FMT_0` carries a color or
+point-size field and enforces only the witnessed shape, which is the position
+plus texcoord component counts. Color and point-size widths enter after a
+positive and a negative hardware replay pin them.
+
+Immediate-mode semantics stay unresolved while the draft applies the check to
+all six draw opcodes. `r100_cs_track_check` uses `vtx_size` only in the
+`PRIM_WALK == 3` branch, and the GA starvation shape may differ there. The
+first integrated version either declines when `PRIM_WALK == 3` or carries a
+targeted immediate-mode positive control plus a malformed negative control.
+Applying a rejection rule to an unresolved draw mode contradicts the draft's
+own false-negative-over-false-positive posture.
+
+## Claim boundary
+
+The check is submission-local. Its tracking structure zeroes for each CS, and
+it declines whenever relevant state may have been inherited from a previous
+submission. The claim this work can earn is therefore bounded:
+
+> Rejects the proven, fully witnessed, same-CS TCL-bypass vertex-underfeed
+> shape.
+
+A userspace stream that splits state across submissions makes the checker
+decline by design, so the work does not support the broader claim of preventing
+every TCL-bypass GA-starvation command stream. The bounded claim is a defense
+against the reproduced mesa failure rather than validation against arbitrary or
+hostile command streams.
+
+## Integration acceptance contract
+
+Wiring the draft into the DKMS series is complete when every gate below holds.
+The natural integration position is the series tail, because the draft was
+regenerated against a post-series tree and the 0021 dependency only establishes
+when `reg_srcs/rs480` begins to exist. The filename names the mechanism rather
+than the task identifier.
+
+| Gate | Required result |
+|---|---|
+| Strict application | The draft applies at its final series position with no recount, fuzz, offset, or reject |
+| Packaging integrity | `PKGBUILD` source and sha256sums arrays align, the new checksum verifies, and pkgrel advances |
+| Source verification | 71 DKMS patches apply cleanly after integration |
+| Compilation | The touched units compile against the selected kernel headers with zero warnings, through `check_radeon_patch_series_compiles.sh --require-compile` so no skip can read as a pass |
+| Translation-unit accounting | Expected to stay 13, since the draft adds no newly touched `.c` beyond `r300.c`; verify rather than assume |
+| Generated bitmaps | `mkregtable` output shows the tracked bits are no longer safe in `r300`, `rs480`, `r420`, `rv515`, and `rs600` |
+| Negative replay | The archived 8-dword input against a 12-dword output tuple returns `-EINVAL` with no GA latch and no ring stall |
+| Positive replay | The corrected 12-dword stream stays accepted and retires identically |
+| Decline controls | Inherited state, partial EXT coverage, nonidentity EXT, unresolved `FMT_0` shapes, and immediate mode remain accepted through explicit decline |
+| Regression | Ordinary RS482 SWTCL, hardware TCL, indexed draws, and representative non-RS480 R300-family paths show no new rejection |
+| Promotion | A clean build earns `compile-verified` only; `hardware-pass` requires retained replay and regression bundles |
