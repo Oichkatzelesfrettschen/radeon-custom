@@ -122,11 +122,15 @@ GOOD_FIXTURES = [
     ("good_code.sh", "#!/bin/sh\nprintf '%s\\n' -- \"$x\"\ngrep -- \"$pat\" file\n"),
 ]
 
+# The dash token is composed rather than written, so this gate stays clean
+# against its own scan while the fixtures still carry a real dash at runtime.
+_D = "-" * 2
+
 BAD_FIXTURES = [
-    ("bad_prose.md", "The reader hard-returns -- it never touches MMIO.\n"),
-    ("bad_trailing.md", "Two arming domains exist --\nand the third differs.\n"),
-    ("bad_comment.sh", "#!/bin/sh\n# a zero-context insert -- whose target drifts\ntrue\n"),
-    ("bad_pkgbuild", "optdepends=('foo: SB600 substrate -- REQUIRED for campaigns')\n"),
+    ("bad_prose.md", f"The reader hard-returns {_D} it never touches MMIO.\n"),
+    ("bad_trailing.md", f"Two arming domains exist {_D}\nand the third differs.\n"),
+    ("bad_comment.sh", f"#!/bin/sh\n# a zero-context insert {_D} whose target drifts\ntrue\n"),
+    ("bad_pkgbuild", f"optdepends=('foo: SB600 substrate {_D} REQUIRED')\n"),
 ]
 
 
