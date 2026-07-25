@@ -7,7 +7,6 @@ import argparse
 import json
 import re
 import sys
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +15,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from generate_rs480_debugfs_fragments import RegisterRow, read_tsv
+# The sibling generator resolves through SCRIPT_DIR, so this import follows the
+# sys.path insert above rather than sitting with the standard-library imports.
+from generate_rs480_debugfs_fragments import RegisterRow, read_tsv  # noqa: E402
 
 
 OBSERVED_ROW_RE = re.compile(
