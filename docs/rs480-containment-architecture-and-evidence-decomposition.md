@@ -150,7 +150,21 @@ verifier's schema, or in which a decoded address fails to round-trip.
 
 The hazard surface is parameterized rather than open, which is what makes the
 package a laboratory instrument instead of a driver with dangerous defaults. The
-module exposes 18 parameters, and every hazardous one is closed at zero.
+series declares 18 module parameters, and the defaults separate the read-only
+evidence surface from the arming surface.
+
+`radeon_rs480_safe_regs` and `radeon_rs480_candidate_regs` default to `1`. Both
+expose read-only debugfs snapshots whose rows carry the evidence classification
+above, so the open default costs a read of already-classified registers.
+
+Every selector that arms a one-at-a-time hazardous read defaults to `-1`, a
+no-selection sentinel: `radeon_rs480_force_clock_index`,
+`radeon_rs480_force_clock_3d_index`, `radeon_rs480_frontier_index`,
+`radeon_rs480_gated_read_index`, `radeon_rs480_hazard_index`, and
+`radeon_rs480_vertex_index`. The reset-mask selector `rs480_reset_mask` defaults
+to `RS480_RESET_MASK_BASELINE` rather than to an experimental mask. A hazardous
+path therefore opens on a deliberate index or mask write, and the closed state
+is a sentinel rather than a zero.
 
 The reset-mask candidates (patches 0063 through 0067) form a named table with
 one-shot consume semantics: `cmpxchg` prevents a concurrent parameter write from
@@ -193,10 +207,10 @@ bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 | Patch files held for the Palm lane | 9 | `patches/palm/*.patch` |
 | Translation units the series touches | 13 | `check_radeon_patch_series_compiles.sh` |
 | Safe-register rows | 82 | `rs480-safe-regs.tsv` |
-| Candidate rows accepted | 24 | `verify_radeon_unified_dkms_sources.sh` |
-| Candidate rows skipped, design-only attended | 6 | `verify_radeon_unified_dkms_sources.sh` |
+| Candidate rows accepted | 24 | `generate_rs480_debugfs_fragments.py` via the source verifier |
+| Candidate rows skipped, design-only attended | 6 | `generate_rs480_debugfs_fragments.py` via the source verifier |
 | Candidate rows held in total | 30 | `rs480-candidate-regs.tsv` |
-| Module parameters exposed | 18 | `module_param` sites across the series |
+| Module parameters declared | 18 | `module_param` sites across the series |
 | GART reader output paths | 10 | `verify_rs400_gart_reader_schema.py` |
 | GART reader schema fields | 20 | `verify_rs400_gart_reader_schema.py` |
 | GART hardware entries bounded per read | 64 | GART reader patch |
