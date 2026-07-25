@@ -10,9 +10,28 @@
 # only applying the series and compiling the touched units can. This guard closes
 # that gap.
 #
+# The default run reports NOT RUN and exits 0 when the host carries no matching
+# kernel build dir, so the apply check still stands on a host that cannot
+# compile. --require-compile turns that skip into exit 5, which is the mode a
+# CI job uses: a green status then means the units compiled rather than that
+# the compile step was absent.
+#
 # Exit: 0 pass (or compile skipped when no kernel build dir is present),
-#       2 missing inputs, 3 patch reject, 4 compile failure.
+#       2 missing inputs, 3 patch reject, 4 compile failure,
+#       5 compile required but no kernel build dir.
 set -eu
+
+require_compile=0
+for arg in "$@"; do
+  case "$arg" in
+    --require-compile) require_compile=1 ;;
+    -h|--help)
+      echo "usage: $0 [--require-compile]"
+      exit 0
+      ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
 
 repo_root=$(git rev-parse --show-toplevel) || { echo "not inside a git repo" >&2; exit 2; }
 # Standalone radeon-custom layout: package, patches, and sources live at the
@@ -53,6 +72,10 @@ echo "patch-touched translation units:"; echo "$touched" | sed 's/^/  /'
 KB="/lib/modules/$(uname -r)/build"
 if [ ! -d "$KB" ]; then
   echo "NOT RUN: no kernel build dir at $KB; apply check passed, compile skipped"
+  [ "$require_compile" -eq 0 ] || {
+    echo "--require-compile given: a compile verdict needs a kernel build dir" >&2
+    exit 5
+  }
   exit 0
 fi
 
