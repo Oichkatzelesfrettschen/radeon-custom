@@ -1,10 +1,10 @@
 /*
- * perf_register_whitelist.h -- closed allowlist of Evergreen / TeraScale-2
+ * perf_register_whitelist.h: closed allowlist of Evergreen / TeraScale-2
  * performance-counter MMIO offsets the DRM_RADEON_PERF_QUERY ioctl will
  * accept.
  *
  * Each entry cites the public AMD reference where the register is
- * documented.  Internal-repo extracts are intentionally NOT cited here --
+ * documented.  Internal-repo extracts stay uncited here, since
  * the surface is meant to be reviewable from the public docs alone.
  *
  * Macros (R_NNNNNN_NAME) follow the radeon in-tree convention used by
@@ -99,7 +99,7 @@
 /*
  * Allowlist table.  Lookup is linear; the table is small (12 entries)
  * and the ioctl is not hot-path.  Lookup happens once per regs_ptr
- * element so total cost is O(reg_count * 12) -- bounded by reg_count <= 64.
+ * element so total cost is O(reg_count * 12), bounded by reg_count <= 64.
  */
 struct radeon_perf_reg_entry {
     u32 offset;

@@ -342,14 +342,14 @@ def decode_register(reg, off, items, clean, enums, flagged, synthesized, reconst
     # no _SHIFT annotation fixes.  Headers like Mesa r300_reg.h define such fields
     # only as enum-member groups (e.g. R300_GA_POLY_MODE_FRONT_PTYPE_TRI (2 << 4)),
     # so the field's low bit is the shift but its width is INFERRED from the
-    # maximum enum value -- a lower bound, since a wider reserved field reads the
+    # maximum enum value, a lower bound, since a wider reserved field reads the
     # same.  These go to the synthesized tier, never the clean fields, so the
     # no-false-clean invariant holds and a consumer can treat the width as
     # provisional.
     shift_only = {sh for base, sh in shifts.items() if base not in raw_masks}
     # Field names already taken in this register (clean fields + earlier
     # syntheses), so a common-prefix that collapses two distinct shifts to the
-    # same name does not emit duplicate (register, field) rows -- the colliding
+    # same name does not emit duplicate (register, field) rows; the colliding
     # one is suffixed with its low bit (_B<start>), keeping each row uniquely
     # named with its geometry intact.
     used_names = {row[2] for row in clean if row[0] == reg and row[1] == off}

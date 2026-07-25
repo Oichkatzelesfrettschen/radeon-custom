@@ -1,5 +1,5 @@
 /*
- * radeon_palm_cs_observer.c -- read-only CS validator observer for
+ * radeon_palm_cs_observer.c: read-only CS validator observer for
  * the radeon-palm-gate DKMS package.
  *
  * Components:
@@ -19,7 +19,7 @@
  *      in the hot path (slab allocations under GFP_ATOMIC + bounded
  *      retry where unavoidable).
  *   2. DISABLED BY DEFAULT: every emit checks palm_cs_observer_enabled
- *      first via READ_ONCE -- ZERO overhead beyond a load+branch when
+ *      first via READ_ONCE, for zero overhead beyond a load+branch when
  *      the observer is off.
  *   3. COMM-FILTERED: when enabled, current->comm must equal
  *      palm_cs_observer_comm verbatim; otherwise emit short-circuits.
@@ -281,7 +281,7 @@ static const struct file_operations palm_cs_observer_events_fops = {
 static struct dentry *palm_cs_observer_events_file;
 
 /* Module parameters: gate (bool, default 0), comm filter (charp,
- * default empty -- empty filter matches no task), per-CS byte cap
+ * default empty, where an empty filter matches no task), per-CS byte cap
  * (uint, default 4096), per-process event cap (uint, default 100).
  * The bool gate carries an explicit setter callback so 0 -> 1
  * transitions reset both the per-tgid event-counter table and the
@@ -363,7 +363,7 @@ MODULE_PARM_DESC(palm_cs_observer_max_events,
 
 static struct dentry *palm_cs_observer_debugfs_root;
 
-/* Public enable check.  Inlined at every emit callsite -- the body
+/* Public enable check.  Inlined at every emit callsite, so the body
  * is one READ_ONCE so the disabled-path overhead is a single load
  * + branch.  No string compare here; comm filtering runs inside the
  * emit bodies on the enabled fast-path only.
@@ -565,7 +565,7 @@ static bool palm_cs_observer_enabled_and_filtered(void)
  * position; we never hit the spinlock unless enabled-and-matching.
  * Single-row emit callsites should call this once; multi-row hooks
  * should call enabled_and_filtered() at the top and tgid_admit
- * inside the loop -- see emit_ib_chunk_pre_parse +
+ * inside the loop; see emit_ib_chunk_pre_parse +
  * emit_ib_post_validate for the multi-row pattern.
  */
 bool radeon_palm_cs_observer_should_emit(void)

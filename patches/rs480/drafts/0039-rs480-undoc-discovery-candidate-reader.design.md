@@ -10,7 +10,7 @@ interior gaps remain, all read 0x0 at rest.
 
 This reader is therefore NOT a novel-discovery mechanism. It is the durable
 driver-guarded path for two things: a regression re-read (confirm the 88 still
-read 0x0) and the L3 rung -- a re-read under a clocking workload, since a
+read 0x0) and the L3 rung, a re-read under a clocking workload, since a
 clocked-empty 0x0 at rest cannot distinguish a decoded-but-unprogrammed register
 from undecoded space. The genuine novel frontier is 0x3000-0x3FFF and
 0x6000-0xFFFF, a separate page-base-triage patch, not this reader.

@@ -10,10 +10,18 @@ ladder. `steinmarder-r300:src/re/r300/findings/rs480-reset-recovery-patch-status
 is the source of record for retained RS482 hardware verdicts. This document
 cites both and duplicates neither.
 
-Each load-bearing claim below carries four things: the claim, a named primary
-source, an evidence class from the promotion ladder, and a falsifier for
-anything standing below `hardware-pass`. A claim with no rank-1 through rank-4
-source by name is marked hypothesis.
+Each load-bearing claim below carries four things: the claim, its source, an
+evidence class from the promotion ladder, and a falsifier for anything standing
+below `hardware-pass`. A claim with no rank-1 through rank-4 source by name is
+marked hypothesis.
+
+A hardware claim carries two source lines rather than one, because
+`AGENTS.md` ranks retained silicon output at rank 1 and ranks findings and
+manifests in `steinmarder-r300` at rank 5. The patch status table is a
+canonical verdict index: it is the source of record for which verdict holds,
+and it points onward to the retained bundle that is the rank-1 evidence. Citing
+the index alone would present a rank-5 synthesis as primary evidence, so each
+claim names the index and the bundle separately.
 
 ## Silicon and host substrate
 
@@ -41,10 +49,12 @@ soft-reset ladder, and `RBBM_STATUS` walks `0x8411C100` to `0x8401C100` to
 `0x8400C100`: VAP clears while GA holds. Force clock plus the implemented
 soft-reset ladder executes fully and does not recover the GPU.
 
-Source: `steinmarder-r300` patch status table, "Settled mechanism facts" and the
-0043 row. Evidence class: hardware-run, partial. Falsifier: an attended run in
-which GA clears from `RBBM_STATUS` after the 0043 ladder, or in which a host
-survives a confirmed non-posted read against a wedged block.
+Canonical verdict: `steinmarder-r300` patch status table, "Settled mechanism
+facts" and the 0043 row. Primary evidence: the Fire 3 run that row cites, which
+carries the `RBBM_STATUS` walk. Evidence class: hardware-run, partial.
+Falsifier: an attended run in which GA clears from `RBBM_STATUS` after the 0043
+ladder, or in which a host survives a confirmed non-posted read against a
+wedged block.
 
 ## Containment architecture
 
@@ -75,10 +85,16 @@ quiet-window actor, and patch 0058 gates that path. Fire 28 completed the full
 sequence of trigger, failed reset, park, mapping zap, quiet-window survival,
 client freeze and thaw, and postclose, with `boot_id` stable and SSH answering.
 
-Source: `steinmarder-r300` patch status table, rows 0056 through 0060. Evidence
-class: hardware-pass for host survival under the Fire 28 procedure. Falsifier:
-an attended repeat of the Fire 28 procedure in which `boot_id` changes or SSH
-stops answering.
+Canonical verdict: `steinmarder-r300` patch status table, rows 0056 through
+0060. Primary evidence: the retained bundles those rows name, including
+`results/cachyos_vostro1000_rs480_0057_verdict_fire_post_quiesce_quiet_window_death_20260708T0257Z`
+for the refuted drain set,
+`results/cachyos_vostro1000_rs480_0058_output_poll_gate_quiet_window_survival_20260708T0340Z`
+for the quiet-window survival, and
+`results/cachyos_vostro1000_rs480_0060_parked_gpu_full_host_survival_no_fuse_20260708T1153Z`
+for the Fire 28 host-survival pass. Evidence class: hardware-pass for host
+survival under the Fire 28 procedure. Falsifier: an attended repeat of the Fire
+28 procedure in which `boot_id` changes or SSH stops answering.
 
 The achieved property is host survival alone. GPU recovery, display recovery,
 and a demonstrated SIGBUS firing line each remain open, and Fire 28 does not
@@ -94,18 +110,33 @@ each row carries its own provenance rather than inheriting a blanket claim.
 
 `rs480-safe-regs.tsv` holds 82 rows. A row qualifies as safe when it has no
 documented write side-effect on read and a retained bundle shows the read
-completing. Rows attribute to seven source classes, and the distribution shows
-which evidence actually carries the table:
+completing.
 
-| Source class | Rows | What the code asserts |
+The two tables reuse the same letters for different sources, so a code is read
+against the legend of its own file. In the safe table `RM` is retained
+`radeontool regmatch all` output and `SP` is a symbol in `rs400d.h` or
+`radeon.h`. In the candidate table `RM` is public register-manual text and `SP`
+is a public xorg `radeon_reg.h` symbol. Written as `safe.RM` and
+`candidate.RM`, the two carry opposite evidence weight: one is retained tool
+observation, the other is documentation. Prose below namespaces every code.
+
+The 82 rows partition into eight exact source tuples:
+
+| Tuple | Rows | What the tuple asserts |
 |---|---|---|
-| `RM,SP` and `SP,BU` and related symbol pairings | 23, 23, 3 | Public kernel or xorg symbol plus a register-manual or blind-read confirmation |
-| `RT,RM,SP` | 23 | `radeontool` output, regmatch, and a public symbol agree |
+| `RM,SP` | 23 | Retained regmatch output plus a kernel-header symbol |
+| `RT,RM,SP` | 23 | `radeontool` regs output, regmatch, and a kernel-header symbol agree |
 | `SP,HR` | 22 | Symbol plus hazard-read observation, all 22 reads completed with no core wedge |
-| `SP,FO` | 3 | Symbol plus attended frontier-probe read with heartbeat advancing |
+| `RM` | 4 | Retained regmatch output alone, on the PCI config shadow registers |
 | `SP,CO` | 3 | Symbol plus candidate-node observation at `hazard_count=0` with `boot_id` stable |
-| `RM` alone | 4 | Register-manual text only |
-| `RT,RM` | 1 | Tool output plus manual, no public symbol |
+| `SP,FO` | 3 | Symbol plus attended frontier-probe read with heartbeat advancing |
+| `SP,BU` | 3 | Symbol plus blind userspace `resource2` mmap readout |
+| `RT,RM` | 1 | Tool output plus regmatch, no kernel-header symbol |
+
+Every row therefore carries at least one retained observation code, and the
+safe table holds no documentation-only row. The four `RM`-only rows are
+`COMMAND`, `STATUS`, `CACHE_LINE`, and `CAPABILITIES_ID`, the PCI config
+shadows, and retained regmatch output is what places them.
 
 Every source class names a retained bundle in the file header, including
 `rs480_0019_pll_hazard_live_read_20260609T172724Z` for the hazard-read class and
@@ -116,16 +147,18 @@ quarantine and a stable `boot_id`.
 `rs480-candidate-regs.tsv` holds 30 rows that are explicitly not safe: 28 reached
 through BAR0 MMIO offsets with `RREG32()`, and 2 through the RS400/RS480 MC
 indirect index with `RREG32_MC()`. They are bounded candidates for one-at-a-time
-live read validation. The source verifier promotes 24 of them and skips 6 that
-sit in design-only attended cohorts, which is the mechanism that keeps an
-unvalidated candidate out of the safe path.
+live read validation. The generator promotes 24 of them and skips 6 that sit in
+design-only attended cohorts, which is the mechanism that keeps an unvalidated
+candidate out of the safe path.
 
 Source: the two TSV files and their header legends;
-`scripts/verify_radeon_unified_dkms_sources.sh` emits the accepted and skipped
-counts. Evidence class: hardware-run for rows carrying `RT`, `HR`, `FO`, `CO`,
-or `BU`; documentation-only for rows carrying `RM` or `SP` alone. Falsifier: an
-attended read of any `RM`-only row that wedges a core establishes that
-register-manual text alone does not license the safe classification.
+`scripts/generate_rs480_debugfs_fragments.py` computes the accepted and skipped
+split that `scripts/verify_radeon_unified_dkms_sources.sh` reports. Evidence
+class: retained hardware observation for every safe row, since each carries at
+least one of `RT`, `safe.RM`, `HR`, `FO`, `CO`, or `BU`; documentation plus
+symbol for candidate rows resting on `candidate.RM` or `SP` alone. Falsifier: an
+attended read of any safe row that wedges a core establishes that the retained
+observation behind its tuple does not generalize to the running configuration.
 
 ## Bounded GART page-table reader
 
@@ -161,10 +194,16 @@ Every selector that arms a one-at-a-time hazardous read defaults to `-1`, a
 no-selection sentinel: `radeon_rs480_force_clock_index`,
 `radeon_rs480_force_clock_3d_index`, `radeon_rs480_frontier_index`,
 `radeon_rs480_gated_read_index`, `radeon_rs480_hazard_index`, and
-`radeon_rs480_vertex_index`. The reset-mask selector `rs480_reset_mask` defaults
-to `RS480_RESET_MASK_BASELINE` rather than to an experimental mask. A hazardous
-path therefore opens on a deliberate index or mask write, and the closed state
-is a sentinel rather than a zero.
+`radeon_rs480_vertex_index`. The guard reads
+`idx < 0 || idx >= ARRAY_SIZE(...)`, so an index of `0` selects the first entry
+and performs the read; only a negative value is inert.
+
+The reset-mask selector resolves to a mask rather than to nothing.
+`RS480_RESET_MASK_BASELINE` is `0`, so `rs480_reset_mask=0` selects the baseline
+mask, named nonzero values select experimental masks, and an out-of-range value
+collapses to baseline. A hazardous path therefore opens on a deliberate index or
+mask write, and the closed state is whatever each declaration makes inert rather
+than zero across the board.
 
 The reset-mask candidates (patches 0063 through 0067) form a named table with
 one-shot consume semantics: `cmpxchg` prevents a concurrent parameter write from
@@ -236,8 +275,9 @@ Five properties remain unproven, and each names what would close it.
 - Attribution of the Fire 28 survival. The run changed both the 0060 gate and
   the client freeze and thaw procedure. Closing it requires a single-factor
   repeat.
-- Every non-baseline reset-mask verdict for 0063 through 0068. All are installed
-  and none has fired.
+- Every named nonbaseline reset-mask candidate introduced by 0063 and hardened
+  through 0067. All are installed and none has fired. Patch 0068 carries a
+  comment correction with no code delta, so it holds no mask verdict.
 
 Until each closes, `radeon.lockup_timeout=0` stays the safe default and the
 package is not an automatic reset-recovery driver.

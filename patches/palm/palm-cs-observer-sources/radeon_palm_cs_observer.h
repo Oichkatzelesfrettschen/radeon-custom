@@ -1,5 +1,5 @@
 /*
- * radeon_palm_cs_observer.h -- read-only CS validator observer for
+ * radeon_palm_cs_observer.h: read-only CS validator observer for
  * the radeon-palm-gate DKMS package.
  *
  * Public hook surface called from radeon_cs.c with an
@@ -105,10 +105,10 @@ void radeon_palm_cs_observer_emit_ib_chunk_pre_parse(
  * validates the entire IB.  Walks the post-validator IB once and
  * emits two event classes:
  *
- *   1. packet_decode -- one row per filtered PKT3 packet
+ *   1. packet_decode: one row per filtered PKT3 packet
  *      (SET_RESOURCE / SET_SAMPLER / SET_CONFIG_REG /
  *      SET_CONTEXT_REG with texture-pipe register filter).
- *   2. ib_post_validate -- one summary row with full-IB crc32_le
+ *   2. ib_post_validate: one summary row with full-IB crc32_le
  *      + total packet count + filtered-packet slot list.
  *
  * The original design separated these into two callsites

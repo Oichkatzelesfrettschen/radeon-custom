@@ -15,7 +15,7 @@
 #            proof, with return codes)
 #   dmesg -wT follow (the 0003 crash-shim register dump lands here)
 #   journald is persistent on this host, a second copy across reboot
-#   heartbeat (0.5s) -- last timestamp before a freeze = freeze time
+#   heartbeat (0.5s): last timestamp before a freeze = freeze time
 #   register snapshots before/after via the rs480 debugfs candidate nodes
 #   optional byte-exact 256-word CP-ME overlay compare (needs cp_me_ram_dump=1)
 #
@@ -246,7 +246,7 @@ if [ -f "$OUTDIR/cpme_before.txt" ]; then
   if diff -q "$OUTDIR/cpme_before.txt" "$OUTDIR/cpme_after.txt" >/dev/null 2>&1; then
     log "CP-ME overlay byte-exact identical before/after (256-word compare PASS)"
   else
-    log "CP-ME overlay DIFFERS before/after -- inspect cpme_before/after.txt"
+    log "CP-ME overlay DIFFERS before/after; inspect cpme_before/after.txt"
   fi
 fi
 

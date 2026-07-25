@@ -7,7 +7,7 @@
 # hardlockup detector is off, and a software timer (softdog) cannot run while the
 # cores are stalled in the bus transaction.  The only recovery is an attended
 # power-cycle, gated further by the BIOS/disk password.  So this harness does not
-# try to PREVENT a freeze -- it makes each freeze ATTRIBUTABLE to one register
+# try to PREVENT a freeze; it makes each freeze ATTRIBUTABLE to one register
 # and RESUMABLE across the forced reboot:
 #
 #   * one register per step, selected by the radeon_rs480_frontier_index module
@@ -17,7 +17,7 @@
 #     build_frontier_probe_index_map.py keeps byte-identical to the deployed
 #     kernel array.  The kernel groups the low-hazard tier ahead of the high tier,
 #     so index 3 is 0x1c18 PP_FOG_COLOR (low), NOT the offset-sorted manifest's
-#     0x0958 CAP0_CONFIG (high) -- consuming the wrong ordering would arm an
+#     0x0958 CAP0_CONFIG (high), so consuming the wrong ordering would arm an
 #     unrecoverable read on a register believed safe;
 #   * a per-line fsync'd /var/tmp journal (ext4; survives the reboot a /tmp tmpfs
 #     would lose) records the register-under-read BEFORE the read issues, so after
@@ -26,7 +26,7 @@
 #   * a passive forensic bundle (dmesg follow + safe-regs snapshots) is captured
 #     alongside.  This harness does NOT arm the GPU-reset capture: that addresses
 #     a recoverable engine hang, a different hazard class, and arming it would
-#     TRIGGER a reset -- it cannot help the unrecoverable northbridge stall.
+#     TRIGGER a reset; it cannot help the unrecoverable northbridge stall.
 #
 # Pre-arm safety gates (--arm only): the loaded radeon srcversion must equal the
 # on-disk built module, the operator must pin the expected DKMS package release,
@@ -116,8 +116,8 @@ PY
 # maps from JOURNAL_PATH, honoring an entry ONLY when its recorded name and offset
 # match the current index map at that index (MAP_NAME / MAP_OFFSET), and setting
 # STALE_JOURNAL=1 if any entry mismatches.  The frontier index map is renumbered
-# when the probe set changes -- the high-hazard CAP/IDCT tier moved from indices
-# 7..13 down to 0..6 when the low tier was promoted to safe-regs -- so a journal
+# when the probe set changes: the high-hazard CAP/IDCT tier moved from indices
+# 7..13 down to 0..6 when the low tier was promoted to safe-regs, so a journal
 # written against the old numbering still holds DONE lines for indices that now
 # address a different, possibly hazardous register.  Keying the skip on the index
 # number alone would silently skip a never-read hazardous register because a
@@ -148,7 +148,7 @@ resume_state_from_journal() {
 
 # ---- selftest: prove the breadcrumb is fsync'd before the next step and
 # survives process death, visible to a fresh reader.  This simulates the freeze
-# (SIGKILL) without causing one.  It does NOT prove power-loss durability -- that
+# (SIGKILL) without causing one.  It does NOT prove power-loss durability; that
 # rests on fsync's ext4 contract, and /var/tmp is ext4 on this host.
 if [ "$MODE" = selftest ]; then
   jf="$JOURNAL_DIR/rs480_frontier_probe_selftest.tsv"
@@ -234,7 +234,7 @@ done
 
 # Default: probe only the low-hazard tier.  --all or an explicit --max-index
 # extends into the high-hazard CAP/IDCT tier.  When the frontier carries no
-# low-hazard tier at all -- every remaining register is high-hazard CAP/IDCT --
+# low-hazard tier at all, since every remaining register is high-hazard CAP/IDCT,
 # there is no safe default sweep: reaching any register is an explicit
 # hard-lock-risk decision.  Refuse a bare invocation here, before the integer
 # validation below, so a future change to LOW_TIER_MAX cannot silently turn the
@@ -251,7 +251,7 @@ fi
 # --index N probes exactly one register (START==MAX==N), the right shape for an
 # IDCT-specific read: --max-index N would walk indices 0..N (the CAP registers)
 # first.  It is an explicit per-index opt-in, mutually exclusive with --max-index
-# and --all, and -- like them -- still requires --arm + RS480_FRONTIER_PROBE_
+# and --all, and like them still requires --arm + RS480_FRONTIER_PROBE_
 # ATTENDED=1 for a live read.
 if [ -n "$ONE_INDEX" ]; then
   if [ -n "$MAX_INDEX" ] || [ "$WANT_ALL" -eq 1 ]; then
@@ -443,7 +443,7 @@ if [ "${STALE_JOURNAL:-0}" -ne 0 ]; then
 fi
 if [ -f "$JOURNAL" ]; then
   # Trailing unmatched START = a read that issued but never reached a terminal
-  # record: it wedged the machine.  Identity-gate it -- only a START whose
+  # record: it wedged the machine.  Identity-gate it, so only a START whose
   # name/offset match the current map is a wedge of a current register, and only
   # a terminal record for that same (index,name,offset) clears it.
   if read -r last_started last_name last_offset < <(
@@ -523,7 +523,7 @@ for idx in $(seq "$START_INDEX" "$MAX_INDEX"); do
   echo "-1" | sudo -n tee "$PARAM" >/dev/null 2>&1 || true
 
   # Post-read echo cross-check.  The read already fired, so this is not pre-read
-  # safety for THIS index -- but aborting the sweep here makes it pre-read safety
+  # safety for THIS index, but aborting the sweep here makes it pre-read safety
   # for every index after a detected drift.
   echo_idx=$(printf '%s' "$line" | sed -n 's/^index \([0-9]\+\):.*/\1/p')
   echo_name=$(printf '%s' "$line" | sed -n 's/^index [0-9]\+: \([A-Za-z0-9_]\+\) .*/\1/p')

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rs480-reset-hazard-preflight -- runtime safety gate for RS480 RAD-05 hazardous reset fires.
+# rs480-reset-hazard-preflight: runtime safety gate for RS480 RAD-05 hazardous reset fires.
 #
 # Package presence cannot prove machine safety: the SB600 watchdog module may not
 # be loaded, /dev/watchdog may be absent, the fired latch may not have been

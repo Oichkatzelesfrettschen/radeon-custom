@@ -6,7 +6,7 @@ radeon_reg.h: per-family headers (r300d.h, rs400d.h in the pinned corpus)
 that define every register as `R_OFFSET_NAME` and every field as a
 `S_OFFSET_FIELD(x) (((x) & MASK) << SHIFT)` setter macro.  The radeon_reg.h
 harvesters cannot see this geometry, which is why RBBM_STATUS carried only
-two decoded fields while r300d.h documents twenty-two -- including the
+two decoded fields while r300d.h documents twenty-two, including the
 per-block engine-busy bits.  The harvest is mechanical: the offset embeds in
 the macro name, the start bit is the shift, the width is the contiguous mask
 length, and the register identity comes from the R_ macro at the same
