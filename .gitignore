@@ -2,3 +2,7 @@ pkg/
 src/
 *.pkg.tar*
 *.log
+
+# Python and lint caches
+__pycache__/
+.ruff_cache/
