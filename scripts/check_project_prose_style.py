@@ -32,6 +32,11 @@ from pathlib import Path
 # letters; the end-of-options separator is caught by the code rules below.
 DASH = re.compile(r"(?:(?<=\s)|^)--(?=\s|$)")
 
+# AGENTS.md forbids the em dash, the en dash, and the ASCII `--` stand-in alike,
+# so the gate recognizes all three. The two code points are built by ordinal
+# because this file is checked-in text and stays plain ASCII.
+UNICODE_DASH = re.compile(f"[{chr(0x2013)}{chr(0x2014)}]")
+
 # POSIX end-of-options separator: the token that stops option parsing. These are
 # code, and they appear in every careful shell script in this tree.
 END_OF_OPTIONS = re.compile(
@@ -40,14 +45,23 @@ END_OF_OPTIONS = re.compile(
     r"(?:-[A-Za-z]+\s+)*--(?=\s|$)"
 )
 
-# ASCII diagram branches: `|--`, `+--`, `\--`, and continuation rows.
-DIAGRAM = re.compile(r"^\s*[|+\\`]")
+# ASCII diagram branches: a run of drawing characters followed by a branch token
+# such as `|--`, `+--`, `\--`, or a backtick corner. Matching the branch token
+# rather than the first character keeps Markdown table rows, `+` list items, and
+# prose opening with inline code inside the gate's judgment.
+DIAGRAM = re.compile(r"^[\s|+\\`]*[|+\\`]--")
 
 # Shell and Python comment openers, so script scanning reads comments only.
 SHELL_COMMENT = re.compile(r"(?:^|\s)#")
 
 SKIP_DIRS = {".git", "pkg", "src", "__pycache__", ".ruff_cache", "sources"}
 SKIP_SUFFIXES = {".patch", ".diff", ".tar", ".xz", ".gz", ".tsv"}
+
+# Project-authored prose that lives inside an otherwise-excluded directory. The
+# directory exclusions hold vendored and generated content out of the corpus,
+# and a repository-authored file sitting beside that content is still governed
+# by the rule, so it is admitted by exact repository-relative path.
+ADMIT_PATHS = {"sources/PROVENANCE.md"}
 
 
 def tracked_files(root: Path) -> list[Path]:
@@ -63,6 +77,8 @@ def tracked_files(root: Path) -> list[Path]:
 
 def is_scannable(path: Path, root: Path) -> bool:
     rel = path.relative_to(root)
+    if rel.as_posix() in ADMIT_PATHS:
+        return True
     if any(part in SKIP_DIRS for part in rel.parts):
         return False
     if path.suffix in SKIP_SUFFIXES:
@@ -105,6 +121,9 @@ def findings(root: Path, paths: list[Path]) -> list[tuple[Path, int, str]]:
         except (UnicodeDecodeError, OSError):
             continue
         for lineno, line in prose_lines(path, text):
+            if UNICODE_DASH.search(line):
+                out.append((path.relative_to(root), lineno, line.strip()))
+                continue
             if DIAGRAM.match(line):
                 continue
             masked = END_OF_OPTIONS.sub("", line)
@@ -118,24 +137,48 @@ GOOD_FIXTURES = [
     ("good_flag.md", "Run `git diff --staged` before every commit.\n"),
     ("good_fence.md", "Text.\n\n```sh\ncd -- \"$dir\"\necho a -- b\n```\n"),
     ("good_diagram.md", "Layout:\n\n|-- patches/\n|   |-- rs480/\n"),
+    ("good_table.md", "| Gate | Status |\n| --- | --- |\n| apply | clean |\n"),
     ("good_eoo.sh", "#!/bin/sh\ncd -- \"$(dirname -- \"$0\")\" || exit 1\nset -- LLVM=1\n"),
     ("good_code.sh", "#!/bin/sh\nprintf '%s\\n' -- \"$x\"\ngrep -- \"$pat\" file\n"),
 ]
 
-# The dash token is composed rather than written, so this gate stays clean
-# against its own scan while the fixtures still carry a real dash at runtime.
+# The dash tokens are composed rather than written, so this gate stays clean
+# against its own scan while the fixtures still carry real dashes at runtime.
 _D = "-" * 2
+_EN = chr(0x2013)
+_EM = chr(0x2014)
 
 BAD_FIXTURES = [
     ("bad_prose.md", f"The reader hard-returns {_D} it never touches MMIO.\n"),
     ("bad_trailing.md", f"Two arming domains exist {_D}\nand the third differs.\n"),
     ("bad_comment.sh", f"#!/bin/sh\n# a zero-context insert {_D} whose target drifts\ntrue\n"),
     ("bad_pkgbuild", f"optdepends=('foo: SB600 substrate {_D} REQUIRED')\n"),
+    # A table cell is prose. The diagram exemption matches branch tokens, so a
+    # row opening with a pipe stays inside the gate's judgment.
+    ("bad_table.md", f"| Gate | Meaning |\n| --- | --- |\n| apply | clean {_D} no fuzz |\n"),
+    ("bad_en_dash.md", f"The GA block holds {_EN} the VAP clears first.\n"),
+    ("bad_em_dash.md", f"The GA block holds {_EM} the VAP clears first.\n"),
+]
+
+# Corpus selection: (repository-relative path, admitted). The detector proves
+# it judges an admitted file; these prove which files reach it at all, which is
+# the half a fixture-only calibration leaves unexercised.
+CORPUS_FIXTURES = [
+    ("README.md", True),
+    ("docs/rs480-parked-access-audit.md", True),
+    ("scripts/check_project_prose_style.py", True),
+    ("packaging/arch/radeon-unified-dkms/PKGBUILD", True),
+    # Project-authored prose inside an excluded directory, admitted by path.
+    ("sources/PROVENANCE.md", True),
+    # Vendored and generated content beside it stays out.
+    ("sources/xorg_ddx_radeon_reg.h", False),
+    ("patches/rs480/0001-example.patch", False),
+    ("pkg/generated/notes.md", False),
 ]
 
 
 def self_test(tmp: Path) -> int:
-    """Calibrate: every good fixture stays silent, every bad fixture reports."""
+    """Calibrate detection inside a file and selection of the corpus itself."""
     failures = 0
     for name, body in GOOD_FIXTURES:
         p = tmp / name
@@ -151,12 +194,19 @@ def self_test(tmp: Path) -> int:
         if not hits:
             print(f"CALIBRATION FAIL: {name} is known-bad and went unreported")
             failures += 1
+    for rel, admitted in CORPUS_FIXTURES:
+        got = is_scannable(tmp / rel, tmp)
+        if got != admitted:
+            state = "admitted" if admitted else "excluded"
+            print(f"CALIBRATION FAIL: {rel} belongs {state} and selection said {got}")
+            failures += 1
     if failures:
         print(f"prose-style calibration: FAIL ({failures})")
         return 1
     print(
         f"prose-style calibration: {len(GOOD_FIXTURES)} known-good silent, "
-        f"{len(BAD_FIXTURES)} known-bad reported"
+        f"{len(BAD_FIXTURES)} known-bad reported, "
+        f"{len(CORPUS_FIXTURES)} corpus-selection cases correct"
     )
     return 0
 
