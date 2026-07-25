@@ -50,8 +50,12 @@ soft-reset ladder, and `RBBM_STATUS` walks `0x8411C100` to `0x8401C100` to
 soft-reset ladder executes fully and does not recover the GPU.
 
 Canonical verdict: `steinmarder-r300` patch status table, "Settled mechanism
-facts" and the 0043 row. Primary evidence: the Fire 3 run that row cites, which
-carries the `RBBM_STATUS` walk. Evidence class: hardware-run, partial.
+facts" and the 0043 row. Primary evidence:
+`steinmarder-r300:src/re/r300/results/cachyos_vostro1000_rs480_wd3b_netconsole_lock_precedes_reset_body_20260707T0623Z/netconsole_capture_rung3.log`,
+which carries the walk against the reset-path source lines that emit it:
+`r300_asic_reset:449` reports `0x8411C100`, `r300_asic_reset:474` reports
+`0x8401C100`, `r300_asic_reset:490` reports `0x8400C100`, and the ladder ends in
+`failed to reset GPU`. Evidence class: hardware-run, partial.
 Falsifier: an attended run in which GA clears from `RBBM_STATUS` after the 0043
 ladder, or in which a host survives a confirmed non-posted read against a
 wedged block.
