@@ -16,7 +16,7 @@ in `mesa-26-gororoba`; retained RS482 probes, logs, result bundles, and hardware
 verdicts live in `steinmarder-r300`. Historical Steinmarder package trees remain
 provenance, not active build inputs.
 
-## What this repository proves—and what it does not
+## What this repository proves and what it does not
 
 The live package manifest proves which mechanisms are present in the built
 module. It does not by itself prove those mechanisms worked on silicon.
@@ -78,14 +78,14 @@ recovery.
 
 ## Repository layout
 
-- `patches/` — ordered kernel changes and generated patch material.
-- `sources/` — canonical source snapshots used to construct the DKMS tree.
-- `scripts/` — source generation, validation, and packaging helpers.
-- `packaging/arch/radeon-unified-dkms/` — active Arch DKMS package.
-- `packaging/arch/rs480-reset-hazard-stack/` — hazardous-run meta-package and
+- `patches/` -- ordered kernel changes and generated patch material.
+- `sources/` -- canonical source snapshots used to construct the DKMS tree.
+- `scripts/` -- source generation, validation, and packaging helpers.
+- `packaging/arch/radeon-unified-dkms/` -- active Arch DKMS package.
+- `packaging/arch/rs480-reset-hazard-stack/` -- hazardous-run meta-package and
   preflight.
-- `packaging/debian/` — Debian-family packaging adapters.
-- `docs/` — package/readiness documentation; hardware run verdicts remain in
+- `packaging/debian/` -- Debian-family packaging adapters.
+- `docs/` -- package/readiness documentation; hardware run verdicts remain in
   `steinmarder-r300`.
 
 ## Build and validation
