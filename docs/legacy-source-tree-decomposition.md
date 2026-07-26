@@ -5,6 +5,12 @@ a stored one. This document records what the constructed tree contains today,
 measured rather than asserted, so the replacement can be proven by comparing
 manifests rather than by compiling both and finding neither broken.
 
+The constructed tree is the historical payload oracle rather than the target
+shape. It carries build products a source repository declines to track and
+omits a generator input a source repository restores, so the acceptance rule is
+equality against a normalized reference plus equality of regenerated outputs.
+`linux-radeon-gororoba` carries that contract in `source-closure.toml`.
+
 The reference tree is produced by `scripts/materialize_legacy_radeon_tree.sh`,
 which extracts `sources/radeon-unified-0.3-source.tar.xz` and applies the
 anchored `PATCH[]` entries from `dkms.conf` in declared order, exactly as the
