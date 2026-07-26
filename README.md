@@ -16,6 +16,14 @@ in `mesa-26-gororoba`; retained RS482 probes, logs, result bundles, and hardware
 verdicts live in `steinmarder-r300`. Historical Steinmarder package trees remain
 provenance, not active build inputs.
 
+Kernel source moves to `linux-radeon-gororoba`, and authority moves with it at
+the source-pin cutover. Until that cutover this repository remains the
+deployable authority and the source repository is a reconstruction candidate,
+so deployment consumes what is built here. After cutover this repository owns
+the Arch and CachyOS package, DKMS glue, compiler policy, initramfs and modprobe
+policy, hazard preflight, the source pin, and package verification, while the
+kernel source and its register policy tables answer to the source repository.
+
 ## What this repository proves and what it does not
 
 The live package manifest proves which mechanisms are present in the built
@@ -84,7 +92,12 @@ recovery.
 - `packaging/arch/radeon-unified-dkms/` is the active Arch DKMS package.
 - `packaging/arch/rs480-reset-hazard-stack/` is the hazardous-run meta-package
   and preflight.
-- `packaging/debian/` holds the Debian-family packaging adapters.
+- `packaging/debian/` holds Debian-family packaging adapters that are retired.
+  Packaging targets Arch and CachyOS alone, so the Debian adapters take no
+  further work and are removed at the source-pin cutover rather than now. They
+  carry the only constructor for the Palm perf-query and CS-observer material,
+  which the Arch source and its patch chain never held, so deleting them ahead
+  of that material's reconstruction would lose it.
 - `docs/` holds package and readiness documentation; hardware run verdicts
   remain in `steinmarder-r300`.
   `docs/rs480-containment-architecture-and-evidence-decomposition.md` is the

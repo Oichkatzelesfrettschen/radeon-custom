@@ -1,12 +1,23 @@
 #!/bin/sh
 # Materialize the legacy Radeon source tree and record its content manifest.
 #
-# The tree this produces is the migration reference: the exact source the Arch
-# DKMS path builds today, formed by extracting the canonical tarball and
-# applying the anchored PATCH[] entries from dkms.conf in declared order. A
-# source repository replaces that construction, and the replacement is proven
-# by exporting one commit and comparing its manifest against this one. Compile
-# equality is a weaker claim than tree equality and does not substitute for it.
+# The tree this produces is the historical payload oracle: the exact source the
+# Arch DKMS path builds today, formed by extracting the canonical tarball and
+# applying the anchored PATCH[] entries from dkms.conf in declared order.
+#
+# A source repository export does not equal this tree, and equality here is the
+# wrong acceptance rule. This tree carries ten pre-generated *_reg_safe.h
+# headers and a prebuilt mkregtable executable, which are build products a
+# source repository declines to track, and it omits reg_srcs/evergreen, which a
+# source repository restores so the SMX_DC_CTL0 acceptance has a generator
+# input. Demanding raw equality would fail the clean source precisely because
+# it removed those artifacts.
+#
+# The acceptance rule is two statements: an export equals the normalized source
+# reference, which is this tree with those exclusions and that restoration
+# applied, and regenerating from the export reproduces the generated outputs
+# this tree shipped. Compile equality is weaker than either and substitutes for
+# neither.
 #
 # The manifest records path, mode, size, and SHA-256 for every regular file, so
 # a comparison detects content drift, mode drift, and file-set drift alike.
