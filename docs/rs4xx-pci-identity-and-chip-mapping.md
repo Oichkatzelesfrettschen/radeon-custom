@@ -54,6 +54,77 @@ Code and comments in this repository therefore identify parts by PCI ID and
 name the marketing string as secondary. A claim that a result applies to "RS485"
 names the ID it was observed on.
 
+## Identity of the target machine
+
+The target is a Dell Vostro 1000. Retained captures in `steinmarder-r300` and
+the platform decomposition in the `vostro1000-re` bill of materials give four
+identifiers across three devices, and the RS485 name enters through the
+chipset rather than through the GPU.
+
+| Device | PCI ID | Name | Note |
+| --- | --- | --- | --- |
+| Host bridge, 00:00.0 | `1002:5950` | RS480/RS482/RS485 Host Bridge | DMI string reads `ATI RS485M` |
+| Internal graphics bridge, 00:01.0 | `1002:5a3f` | RC4xx/RS4xx PCI Bridge [int gfx] | forwards bus 0 to bus 01 |
+| Integrated GPU, 01:05.0 | `1002:5974` | RS482/RS485 [Radeon Xpress 1100/1150] | subsystem Dell `1028:022a` |
+
+The GPU carries no local VRAM and takes 128 MiB through UMA and the GART.
+
+An older `pci.ids` renders `1002:5974` as `ATI Radeon XPRESS 200M`, so a
+retained capture may name the same silicon four ways: RS482, RS485, Xpress
+1100/1150, and Xpress 200M. All four describe `1002:5974`.
+
+This resolves where the RS485 name legitimately applies on this machine. The
+chipset identifies as RS485M through DMI, and the GPU device ID `1002:5974`
+covers the RS482 and RS485 IGP variants together. Neither fact makes
+`1002:5975` an RS485 part, so the claim in
+`0001-rs480-safe-regs-debugfs.patch` that RS485 is `1002:5975` does not follow
+from the machine and conflicts with `pci.ids`.
+
+## Terminology for kernel-side work
+
+Kernel-side text in this repository uses three levels and keeps them distinct.
+
+`CHIP_RS480` names the family constant and covers all four RS480-class IDs. A
+statement about the family uses it, and it is the correct subject for any
+`rdev->family` guard.
+
+`RS482 (1002:5974)` names the part under test. Every hardware claim from
+retained evidence binds to this form, because the evidence comes from one
+device ID and the family constant cannot express that scope.
+
+`RS485M` names the chipset of the target machine, sourced from DMI and the
+`1002:5950` host bridge. It describes the platform rather than the GPU, so it
+stays out of GPU register and reset claims.
+
+The marketing strings `Radeon Xpress 1100/1150` and `Radeon Xpress 200M`
+appear when quoting a capture and carry the PCI ID alongside.
+
+## Whether this silicon warrants its own chip constant
+
+The retained evidence does not support adding a `CHIP_RS482` constant, and it
+does support finer-grained gating below the family level.
+
+A new family constant asserts that the part diverges from its siblings at a
+level the driver must branch on for correctness. Establishing that requires the
+same probe run on the sibling IDs and a divergent result. Every retained bundle
+in `steinmarder-r300` comes from one device, `1002:5974` on one machine, so the
+comparison that would justify the constant has not been run. The GA-rooted
+reset wedge is characterized on RS482 and unmeasured on `1002:5954`,
+`1002:5955`, and `1002:5975`, which leaves it equally consistent with a
+family-wide RS480 property and with a part-specific one.
+
+The mechanisms this lane needs are already expressible without a constant. A
+part-specific quirk tests the device ID directly, since `rdev->pdev->device`
+carries what the family constant discards, and a board-specific quirk tests the
+subsystem ID. Behavior that a maintainer must be able to disable rides a module
+parameter, which is how the existing gates work.
+
+The falsifier is explicit: running an existing probe on `1002:5954`,
+`1002:5955`, or `1002:5975` and recording a result that diverges from the RS482
+result promotes the case for a constant. Until such a bundle exists, part-level
+work uses device-ID gating and module parameters, and `CHIP_RS480` stays the
+one family constant for this silicon.
+
 ## Applying the RS4xx class in code
 
 A guard for this silicon tests `rdev->family`, which selects the whole class:
