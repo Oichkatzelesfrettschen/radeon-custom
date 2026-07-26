@@ -91,6 +91,10 @@ recovery.
   entry point: it decomposes the silicon substrate, the containment ladder, the
   register evidence partition, and the reproducible quantitative spine, and it
   states the evidence class and falsifier for each claim.
+  `docs/legacy-source-tree-decomposition.md` measures the constructed source
+  tree that a dedicated source repository replaces, and
+  `docs/legacy-tree-a-manifest.tsv` is the per-file reference the replacement is
+  proven against.
 
 ## Build and validation
 
