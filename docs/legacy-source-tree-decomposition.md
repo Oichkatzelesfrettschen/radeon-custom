@@ -72,35 +72,77 @@ and the gate's own header names this failure mode.
 A stored source tree removes this class outright: source held as source has no
 context to match and no fuzz to absorb.
 
-## Palm content in the constructed tree
-
-The base tarball adds no Palm-specific file, and the series adds none. A file
-named for the Palm CS observer is absent from both, so the Palm perf-query and
-CS-observer material is manufactured by the Debian `PRE_BUILD` path rather than
-carried in the Arch source or its patch chain.
-
-This settles the added-file half of the question. Palm changes modified into
-existing upstream files inside the base snapshot remain unresolved, because
-detecting them requires a diff against an identified upstream base.
-
 ## Upstream base identity
 
-The base is unidentified. `build_radeon_unified_source_tarball.sh` starts from
-`sources/radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz`, normalizes
-permissions, drops patch backups, and repacks; it names no upstream Linux
-object. `radeon_drv.c` in the base declares `KMS_DRIVER_MINOR 51`, and the
-snapshot filename names a CachyOS 6.18 to 7.0 range, which bounds a candidate
-set without selecting from it.
+The base is upstream Linux v6.18. Discriminator files the visible series leaves
+untouched match `torvalds/linux` at `v6.18` and differ at `v6.17` and `v7.0`,
+and a full comparison against `drivers/gpu/drm/radeon/` at that tag resolves
+the snapshot:
 
-The source verifier states that the base already contains patch `0001`, so the
-constructed tree is an opaque snapshot plus a baked first patch plus 70 replayed
-patches. Establishing the base requires comparing the 223-file tree against
-`drivers/gpu/drm/radeon/` at candidate upstream tags, which needs an upstream
-fetch this decomposition has not performed.
+| Class | Count |
+| --- | --- |
+| Common files identical to upstream v6.18 | 196 |
+| Common files the snapshot modified | 15 |
+| Present only in the snapshot | 11 |
+| Present only upstream | 2 |
 
-Identifying the base blocks the upstream-equivalence claim. It blocks neither
-the reference tree, nor the source repository, nor the closure enumeration, all
-of which rest on the constructed tree as it stands.
+The 15 modified files are `rs400.c` (112 changed lines), `evergreen.c` (61),
+`radeon_drv.c` (41), `radeon_kms.c` (39), `radeon_ttm.c` (14), `radeon_fbdev.c`
+(8), `radeon_device.c` (8), `radeon_mode.h` (4), `radeon_legacy_crtc.c` (4),
+`radeon_irq_kms.c` (4), `radeon.h` (4), `radeon_gem.c` (4), `atombios_crtc.c`
+(4), `pptable.h` (2), and `radeon_asic.h` (1).
+
+Two baked change sets account for them. `0001-rs480-safe-regs-debugfs.patch`
+sits in `patches/rs480/` and appears in no `PATCH[]` entry, and its mechanisms
+are present in the snapshot: `rs400.c` carries
+`rs480_safe_regs_debugfs_init` and the pinned safe-register table, and
+`radeon_drv.c` declares `radeon_rs480_safe_regs`. The Palm lane accounts for
+the rest.
+
+## Palm content in the constructed tree
+
+Deployable Palm changes live inside the base snapshot as modifications to
+existing upstream files. `evergreen.c` carries
+`evergreen_gpu_pci_config_reset_safe`, which refuses a PCI-config reset on
+`CHIP_PALM` because the reset propagates a link-training stall across the
+shared PCIe root complex, and `radeon_drv.c` declares the
+`radeon_palm_pci_reset_unsafe` override that gates it. Neither the snapshot nor
+the series adds a Palm-specific file, so the Palm perf-query and CS-observer
+material stays manufactured by the Debian `PRE_BUILD` path.
+
+## Generated register tables ship pre-generated
+
+The snapshot carries all ten `*_reg_safe.h` headers as files. Upstream
+generates them during the build: `Makefile` declares `hostprogs := mkregtable`
+and derives each header from its `reg_srcs/` input. The snapshot also omits
+`reg_srcs/evergreen`, so the rule that would regenerate
+`evergreen_reg_safe.h` cannot fire and the shipped header stands as source.
+
+That shipped header carries a one-bit edit. Rebuilding `mkregtable` from
+upstream `mkregtable.c` and running it against upstream `reg_srcs/evergreen`
+reproduces `r300_reg_safe.h` byte-identically, which calibrates the method, and
+produces an `evergreen_reg_safe.h` differing from the shipped one at exactly one
+array entry: index 320 bit 8, `0xFFFFFFFF` against `0xFFFFFEFF`. That bit is
+register offset `0xA020`, `SMX_DC_CTL0` in `evergreend.h`, and clearing it moves
+the register from rejected to accepted in the command-stream checker. The Debian
+lane reaches the same result by editing `reg_srcs/evergreen` directly, so the
+two lanes deliver one change through different mechanisms.
+
+The snapshot also carries `mkregtable` as a stripped x86-64 ELF executable
+beside its own `mkregtable.c`. The build declares that name as a host program
+and runs `$(obj)/mkregtable` to generate each safe-register header, so a
+prebuilt binary of unrecorded provenance occupies the path the build invokes.
+The source repository carries `mkregtable.c` and leaves the binary out.
+
+## Source closure
+
+The closure is upstream `drivers/gpu/drm/radeon/` at v6.18 plus the deltas
+above. It reaches outside that directory nowhere: every file in the
+materialized tree maps to a path under it, and the two upstream files the
+snapshot omits are `.gitignore` and `reg_srcs/evergreen`. A source repository
+preserving the upstream path therefore carries the whole closure, and the
+generated `*_reg_safe.h` headers become build products again once
+`reg_srcs/evergreen` returns carrying the `SMX_DC_CTL0` change as source.
 
 ## What this licenses
 
