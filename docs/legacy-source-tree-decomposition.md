@@ -92,12 +92,46 @@ The 15 modified files are `rs400.c` (112 changed lines), `evergreen.c` (61),
 `radeon_irq_kms.c` (4), `radeon.h` (4), `radeon_gem.c` (4), `atombios_crtc.c`
 (4), `pptable.h` (2), and `radeon_asic.h` (1).
 
-Two baked change sets account for them. `0001-rs480-safe-regs-debugfs.patch`
-sits in `patches/rs480/` and appears in no `PATCH[]` entry, and its mechanisms
-are present in the snapshot: `rs400.c` carries
-`rs480_safe_regs_debugfs_init` and the pinned safe-register table, and
-`radeon_drv.c` declares `radeon_rs480_safe_regs`. The Palm lane accounts for
-the rest.
+Three baked change classes account for them.
+
+The RS480 safe-register reader is one. `0001-rs480-safe-regs-debugfs.patch`
+sits in `patches/rs480/` and appears in no `PATCH[]` entry, and `rs400.c`
+carries its `rs480_safe_regs_debugfs_init` and pinned safe-register table. That
+patch touches `rs400.c` alone, so the `radeon_rs480_safe_regs` declaration in
+`radeon_drv.c` reaches the snapshot by another route.
+
+The Palm lane is the second and the widest. `evergreen.c` carries
+`evergreen_gpu_pci_config_reset_safe`, `radeon_drv.c` declares the
+`radeon_palm_pci_reset_unsafe` override, and `radeon_kms.c` adds a debugfs
+trigger that invokes the safe reset on demand under that same refuse-by-default
+gate.
+
+Kernel-version portability is the third. `radeon_ttm.c` selects its
+`ttm_device_init` call on `LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)`,
+passing allocation flags on the newer signature. The snapshot therefore carries
+compatibility logic that lets one source build against both the 6.18 LTS line
+and the 7.x mainline line, which no patch in the series supplies.
+
+## Series portability to pristine upstream
+
+The series does not apply to an unmodified upstream radeon directory, at either
+kernel target. Replaying `0001` and then the 70 declared entries onto pristine
+`drivers/gpu/drm/radeon/` gives 17 rejecting patches at v6.18 and more at v7.1.
+The first rejection is `0004-rs480-candidate-regs-debugfs.patch`, and rejections
+after it are downstream of a tree that already diverged, so the count measures
+cascade rather than that many independent incompatibilities.
+
+The replay also exposes inconsistent path depth in the series.
+`0001-rs480-safe-regs-debugfs.patch` carries full kernel paths
+(`b/drivers/gpu/drm/radeon/rs400.c`), and the 70 declared entries carry
+subdirectory paths (`b/radeon/...`), so no single `-p` level applies the whole
+series against one layout.
+
+Both facts have one cause: the series is written against the baked snapshot
+rather than against upstream, and the snapshot content it depends on is not
+expressed as patches. A source repository holding the tree as source removes the
+dependency, and the version-compat class above is what lets that one tree serve
+both kernel targets.
 
 ## Palm content in the constructed tree
 
