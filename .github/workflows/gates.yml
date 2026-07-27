@@ -1,0 +1,73 @@
+# Packaging-repository gates, enforced on the self-hosted CachyOS compile host.
+#
+# GitHub-hosted runners cannot serve this repository: the compile verdict needs
+# a CachyOS kernel build tree, and the checks that do not need one are cheaper
+# to keep beside those that do. A self-hosted runner supplies both.
+#
+# The runner label set names what a job requires rather than which machine runs
+# it, so compile-host selects any host carrying kernel headers and target-host
+# selects the RS482 machine.
+name: gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: [self-hosted, linux, cachyos]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Each verdict-producing gate proves itself on known-good and known-bad
+      # inputs before its tree verdict is trusted.
+      - name: Prose gate calibration
+        run: python3 scripts/check_project_prose_style.py --self-test
+
+      - name: Prose gate
+        run: python3 scripts/check_project_prose_style.py
+
+      - name: Patch-series gate calibration
+        run: sh scripts/check_radeon_patch_series_compiles.sh --self-test
+
+      - name: ruff
+        run: ruff check scripts/
+
+      - name: shellcheck
+        run: shellcheck -S error scripts/*.sh packaging/arch/radeon-unified-dkms/*.sh
+
+      - name: ASCII only
+        run: |
+          # Checked-in text is plain ASCII. Tab is permitted; the patch and
+          # generated-source classes keep their own bytes.
+          hits=$(git ls-files '*.md' '*.sh' '*.py' '*.conf' 'PKGBUILD*' \
+                 | xargs grep -lP '[^\x09\x20-\x7e]' 2>/dev/null || true)
+          [ -z "$hits" ] || { echo "non-ASCII in: $hits" >&2; exit 1; }
+          echo "checked-in text is plain ASCII"
+
+  package:
+    runs-on: [self-hosted, linux, cachyos, compile-host]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PKGBUILD sha256sums
+        run: bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
+
+      - name: DKMS source hashes and patch chain
+        run: bash scripts/verify_radeon_unified_dkms_sources.sh
+
+      # Strict mode: a missing kernel build dir exits 5 rather than reporting a
+      # skip as success, so a green job means the units reached the compiler.
+      - name: Patch series applies and compiles
+        run: sh scripts/check_radeon_patch_series_compiles.sh --require-compile
+
+      - name: Legacy tree manifest reproduces
+        run: |
+          sh scripts/materialize_legacy_radeon_tree.sh --manifest /tmp/treeA.tsv
+          cmp /tmp/treeA.tsv docs/legacy-tree-a-manifest.tsv
+          echo "legacy tree manifest reproduces byte-identically"
