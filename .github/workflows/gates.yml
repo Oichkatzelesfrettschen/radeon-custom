@@ -71,3 +71,25 @@ jobs:
           sh scripts/materialize_legacy_radeon_tree.sh --manifest /tmp/treeA.tsv
           cmp /tmp/treeA.tsv docs/legacy-tree-a-manifest.tsv
           echo "legacy tree manifest reproduces byte-identically"
+
+  # The RS482 machine compiles the series against its own kernel, so a header
+  # change that builds on the workstation and breaks on the target is caught
+  # where it matters. This job compiles and verifies only: it loads no module,
+  # arms no hazard gate, and performs no register access. Hardware operation
+  # stays an attended run with a recorded preflight, and its verdicts live in
+  # steinmarder-r300.
+  target-kernel:
+    runs-on: [self-hosted, linux, cachyos, target-host]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record the target identity
+        run: |
+          echo "kernel: $(uname -r)"
+          # The GPU is named for the record. Reading PCI identity through
+          # lspci touches config space that the kernel already enumerated at
+          # boot; it drives no register on the device.
+          lspci -nn 2>/dev/null | grep -iE '1002:5974' || echo "RS482 not enumerated"
+
+      - name: Patch series applies and compiles on the target kernel
+        run: sh scripts/check_radeon_patch_series_compiles.sh --require-compile
