@@ -1,0 +1,84 @@
+# Post-merge qualification on the RS482 machine.
+#
+# This workflow runs on the target host, so it never triggers on pull_request:
+# a PR carries unmerged repository-controlled code, and the target machine is
+# the one piece of hardware this project cannot replace. Merged main and an
+# explicit dispatch against a ref already reachable from main are the only
+# entry points.
+#
+# The job compiles and verifies. It loads no module, arms no hazard gate, and
+# performs no register access. Reading PCI identity from sysfs reports the
+# enumeration the kernel already performed at boot and drives nothing on the
+# device. Hardware operation stays an attended run with a recorded preflight,
+# and its verdicts live in steinmarder-r300.
+name: target-kernel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  target-kernel:
+    runs-on: [self-hosted, linux, cachyos-target, target-host]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      # A dispatch may name any ref, so the ref is checked against main rather
+      # than trusted. A commit not reachable from origin/main has not passed
+      # the pull-request gates and does not run here.
+      - name: Ref is reachable from main
+        run: |
+          git fetch --quiet origin main
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "$GITHUB_SHA is reachable from origin/main"
+          else
+            echo "$GITHUB_SHA is not reachable from origin/main" >&2
+            echo "  the target host runs merged code only" >&2
+            exit 1
+          fi
+
+      # Fail closed. A mislabeled runner, a replaced GPU, or a machine without
+      # the part must not produce a green target verdict, so every load-bearing
+      # identity is asserted rather than reported. sysfs is read instead of
+      # lspci prose because these files are stable identifiers rather than
+      # localized text.
+      - name: Target identity is the RS482 machine
+        run: |
+          assert_id() {
+            path=$1 field=$2 want=$3
+            [ -r "$path/$field" ] || {
+              echo "cannot read $path/$field" >&2; exit 1; }
+            got=$(cat "$path/$field")
+            [ "$got" = "$want" ] || {
+              echo "$path/$field is $got, expected $want" >&2; exit 1; }
+            echo "  $path/$field = $got"
+          }
+
+          # The integrated GPU: the part every retained hardware claim binds to.
+          gpu=/sys/bus/pci/devices/0000:01:05.0
+          assert_id "$gpu" vendor 0x1002
+          assert_id "$gpu" device 0x5974
+          assert_id "$gpu" subsystem_vendor 0x1028
+          assert_id "$gpu" subsystem_device 0x022a
+
+          # The host bridge: the RS485M chipset that names the platform.
+          host=/sys/bus/pci/devices/0000:00:00.0
+          assert_id "$host" vendor 0x1002
+          assert_id "$host" device 0x5950
+
+          echo "target identity confirmed: RS482 1002:5974 on an RS485M platform"
+          echo "kernel: $(uname -r)"
+
+      - name: Patch series applies and compiles on the target kernel
+        run: |
+          mkdir -p "$HOME/.cache/gororoba-ci"
+          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            sh scripts/check_radeon_patch_series_compiles.sh --require-compile

@@ -1,12 +1,14 @@
-# Packaging-repository gates, enforced on the self-hosted CachyOS compile host.
+# Packaging-repository gates, enforced on the self-hosted CachyOS workstation.
 #
 # GitHub-hosted runners cannot serve this repository: the compile verdict needs
-# a CachyOS kernel build tree, and the checks that do not need one are cheaper
-# to keep beside those that do. A self-hosted runner supplies both.
+# a CachyOS kernel build tree, and no hosted image carries one.
 #
-# The runner label set names what a job requires rather than which machine runs
-# it, so compile-host selects any host carrying kernel headers and target-host
-# selects the RS482 machine.
+# Job placement is a security boundary rather than a convenience. These jobs
+# run on pull_request, so they execute repository-controlled code from an
+# unmerged branch, and they therefore select the workstation by an exclusive
+# label. The RS482 target host carries no label any job here requests, so
+# unmerged code cannot reach it. Target-kernel compilation is a post-merge
+# qualification and lives in target-kernel.yml.
 name: gates
 
 on:
@@ -20,9 +22,13 @@ permissions:
 
 jobs:
   static:
-    runs-on: [self-hosted, linux, cachyos]
+    runs-on: [self-hosted, linux, cachyos, workstation-host]
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          clean: true
 
       # Each verdict-producing gate proves itself on known-good and known-bad
       # inputs before its tree verdict is trusted.
@@ -51,9 +57,13 @@ jobs:
           echo "checked-in text is plain ASCII"
 
   package:
-    runs-on: [self-hosted, linux, cachyos, compile-host]
+    runs-on: [self-hosted, linux, cachyos, primary-compile-host]
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          clean: true
 
       - name: PKGBUILD sha256sums
         run: bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
@@ -61,35 +71,24 @@ jobs:
       - name: DKMS source hashes and patch chain
         run: bash scripts/verify_radeon_unified_dkms_sources.sh
 
+      # One lock per physical host. Each repository serializes its own jobs,
+      # and two runner services share this machine, so the lock is what keeps a
+      # source build and a packaging build off the same cores and page cache.
       # Strict mode: a missing kernel build dir exits 5 rather than reporting a
-      # skip as success, so a green job means the units reached the compiler.
+      # skip as success.
       - name: Patch series applies and compiles
-        run: sh scripts/check_radeon_patch_series_compiles.sh --require-compile
+        run: |
+          mkdir -p "$HOME/.cache/gororoba-ci"
+          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            sh scripts/check_radeon_patch_series_compiles.sh --require-compile
 
       - name: Legacy tree manifest reproduces
         run: |
-          sh scripts/materialize_legacy_radeon_tree.sh --manifest /tmp/treeA.tsv
-          cmp /tmp/treeA.tsv docs/legacy-tree-a-manifest.tsv
+          # RUNNER_TEMP is per-job, so a cancelled run leaves nothing a later
+          # verdict could read.
+          work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/treeA.XXXXXX")
+          trap 'rm -rf "$work"' EXIT
+          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            sh scripts/materialize_legacy_radeon_tree.sh --manifest "$work/treeA.tsv"
+          cmp "$work/treeA.tsv" docs/legacy-tree-a-manifest.tsv
           echo "legacy tree manifest reproduces byte-identically"
-
-  # The RS482 machine compiles the series against its own kernel, so a header
-  # change that builds on the workstation and breaks on the target is caught
-  # where it matters. This job compiles and verifies only: it loads no module,
-  # arms no hazard gate, and performs no register access. Hardware operation
-  # stays an attended run with a recorded preflight, and its verdicts live in
-  # steinmarder-r300.
-  target-kernel:
-    runs-on: [self-hosted, linux, cachyos, target-host]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Record the target identity
-        run: |
-          echo "kernel: $(uname -r)"
-          # The GPU is named for the record. Reading PCI identity through
-          # lspci touches config space that the kernel already enumerated at
-          # boot; it drives no register on the device.
-          lspci -nn 2>/dev/null | grep -iE '1002:5974' || echo "RS482 not enumerated"
-
-      - name: Patch series applies and compiles on the target kernel
-        run: sh scripts/check_radeon_patch_series_compiles.sh --require-compile
