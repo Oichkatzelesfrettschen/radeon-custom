@@ -160,7 +160,7 @@ python3 scripts/check_project_prose_style.py --self-test
 # 4 mode encodings correct, 6 manifest drift classes detected
 sh scripts/emit_source_tree_manifest.sh --self-test
 
-# 2 decomposition properties, 1 closing map, 5 failure classes
+# 6 decomposition properties, 2 closing maps, 24 failure classes
 python3 scripts/check_base_delta_map_closure.py --self-test
 ```
 

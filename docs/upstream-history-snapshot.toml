@@ -1,0 +1,67 @@
+# The upstream-history search universe the base-delta origin map searches.
+#
+# A negative history result carries evidence only when the searched corpus is
+# named. "The added text appears nowhere in upstream" is a claim about a corpus,
+# so this file identifies the corpus: which mirror, at which tip, holding how
+# many objects, verified connected on which date. A row in
+# docs/base-delta-map.tsv that records a negative upstream result cites this
+# snapshot, and a later re-fetch that moves the tip re-opens those rows rather
+# than inheriting their verdicts.
+#
+# The mirror is a full bare clone rather than the depth-1 blobless import.
+# scripts/import-upstream-radeon.sh fetches --depth 1 --filter=blob:none, which
+# is the right shape for reproducing one subtree and serves no `git log -S`:
+# the pickaxe needs commit history and blob content, and neither is present.
+#
+# The local path of the mirror is a workspace fact and lives in ci/README.md
+# alongside the other roots.
+
+schema = 1
+
+[mirror]
+remote = "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+kind = "bare full clone"
+head = "62cc90241548d5570ee68e01aaba6506964e9811"
+head_subject = "Merge tag 'mm-hotfixes-stable-2026-07-27-14-18'"
+show_ref_sha256 = "c3a2b0a7bf0e068f521081624f19ac1f57814f02acae39f0808c99fc611d9ae1"
+objects_in_pack = 11691152
+packs = 1
+fetched = "2026-07-28"
+# git fsck --connectivity-only reported no error and exited 0. Connectivity is
+# the property a pickaxe rests on: an unreachable or missing object would make a
+# negative result an artifact of the clone rather than a fact about upstream.
+fsck = "connectivity-only, clean"
+fsck_date = "2026-07-28"
+
+# The base oracle's upstream side. radeon_subtree_tree is the constant the
+# closure checker binds every hunk_id to, and it agrees with the subtree_tree in
+# linux-radeon-gororoba's UPSTREAM_BASE.toml, which is that value's one home.
+# Agreement between an independent full clone and the recorded pin is what
+# raises the pin from declared to confirmed.
+[base]
+tag = "v6.18"
+tag_object = "f7b88edb52c8dd01b7e576390d658ae6eef0e134"
+commit = "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
+radeon_subtree_tree = "06a00c78fc5be13ed90c2a2c6973f272d993b6a3"
+
+# The upper bound of the bounded search range. A kernel-version compatibility
+# adaptation bridging v6.18 and 7.x has its highest prior in v6.18..v7.1, so
+# that range is searched before full path history.
+[target]
+tag = "v7.1"
+tag_object = "b3f94b2b3f3e51ab880a51fc6510e1dafba654ed"
+commit = "8cd9520d35a6c38db6567e97dd93b1f11f185dc6"
+radeon_subtree_tree = "0424c540fe93a2551dc79e4f9cbded9542be3212"
+
+# Every query is path-scoped. An unscoped --all pickaxe over 11.7 million
+# objects exceeded 120 seconds and was killed, and a killed query is an absence
+# of evidence rather than evidence of absence, so no verdict rests on one. A
+# path-scoped query over drivers/gpu/drm/radeon returns in about three seconds
+# and its negative result is citable.
+[search]
+path_scope = "drivers/gpu/drm/radeon"
+bounded_range = "v6.18..v7.1"
+exact = "git log --reverse -S'<changed line>' <range> -- <path>"
+semantic = "git log --reverse -G'<symbol or expression>' <range> -- <path>"
+full = "git log --all --full-history -S'<needle>' -- <path>"
+compare = "git diff <commit>^ <commit> -- <path>"
