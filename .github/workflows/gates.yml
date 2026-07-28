@@ -244,7 +244,20 @@ jobs:
           ( cd "$KERNEL_BUILD_ROOT" && sha256sum -c \
               "$GITHUB_WORKSPACE/ci/kernel-build-roots/6.18.38-2-cachyos-lts.sha256" )
 
-          echo "retained compatibility tree: $release, LINUX_VERSION_CODE=$code"
+          # Byte completeness: every file in the retained tree hashes against
+          # the full manifest, and the count equality rejects files the
+          # manifest never listed, so a root with injected or replaced content
+          # fails rather than passing on its six identity files alone.
+          ( cd "$KERNEL_BUILD_ROOT" && sha256sum -c --quiet \
+              "$GITHUB_WORKSPACE/ci/kernel-build-roots/6.18.38-2-cachyos-lts.full.sha256" )
+          tree_files=$(find "$KERNEL_BUILD_ROOT" -type f | wc -l)
+          manifest_files=$(wc -l < ci/kernel-build-roots/6.18.38-2-cachyos-lts.full.sha256)
+          [ "$tree_files" -eq "$manifest_files" ] || {
+            echo "retained tree carries $tree_files files, manifest lists $manifest_files" >&2
+            exit 1
+          }
+
+          echo "retained compatibility tree: $release, LINUX_VERSION_CODE=$code, $tree_files files byte-verified"
 
       # The proof is the pair: the gate resolves a pre-7.0 root, and
       # radeon_gem.o reaches the compiler under it. Both sides of the split live

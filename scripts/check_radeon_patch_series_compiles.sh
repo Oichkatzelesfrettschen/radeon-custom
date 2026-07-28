@@ -113,6 +113,22 @@ expect_not_exit() {
   return 1
 }
 
+# The retained pre-7.0 root was compiled by its kernel package's own clang, so
+# the host compiler drifts ahead of it between package updates and Kbuild
+# reports the difference. That notice is the one explained diagnostic; every
+# other warning in a compile log is a defect until explained, so the scan
+# fails on it.
+scan_compile_warnings() {
+  unexpected=$(grep -n 'warning' "$1" |
+    grep -v 'the compiler differs from the one used to build the kernel' || true)
+  if [ -n "$unexpected" ]; then
+    echo "COMPILE WARNINGS: the log carries warnings outside the allowlist" >&2
+    printf '%s\n' "$unexpected" | sed 's/^/  /' >&2
+    return 1
+  fi
+  return 0
+}
+
 if [ "$self_test" -eq 1 ]; then
   SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
   TMP=$(mktemp -d)
@@ -178,11 +194,25 @@ PATCH[0]="0001-fixture.patch"' \
     fails=$((fails + 1))
   fi
 
+  # Warning-scan calibration: a clean log and the allowlisted compiler-differs
+  # notice pass; any other warning fails.
+  printf 'CC [M] radeon_gem.o\nLD [M] radeon.ko\n' > "$TMP/clean.log"
+  printf 'warning: the compiler differs from the one used to build the kernel\nCC [M] radeon_gem.o\n' > "$TMP/allowed.log"
+  printf 'rs400.c:12:5: warning: unused variable [-Wunused-variable]\n' > "$TMP/bad.log"
+  if scan_compile_warnings "$TMP/clean.log" && \
+     scan_compile_warnings "$TMP/allowed.log" 2>/dev/null && \
+     ! scan_compile_warnings "$TMP/bad.log" 2>/dev/null; then
+    echo "  ok: warning scan passes clean and allowlisted logs, fails on any other warning"
+  else
+    echo "  CALIBRATION FAIL: warning scan verdicts" >&2
+    fails=$((fails + 1))
+  fi
+
   if [ "$fails" -gt 0 ]; then
     echo "patch-series gate calibration: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "patch-series gate calibration: 5 known-bad rejected, 2 known-good cleared"
+  echo "patch-series gate calibration: 6 known-bad rejected, 4 known-good cleared"
   exit 0
 fi
 
@@ -290,10 +320,18 @@ else
 fi
 objs=$(echo "$touched" | sed -E 's/\.c$/.o/' | tr '\n' ' ')
 echo "compiling touched units against $kernel_release: $objs"
+compile_log="$WORK/compile.log"
 # shellcheck disable=SC2086
-if ! ( cd "$WORK/radeon" && make "$@" EXTRA_CFLAGS='-O2 -pipe' -C "$KB" M="$PWD" $objs ); then
+compile_status=0
+( cd "$WORK/radeon" && make "$@" EXTRA_CFLAGS='-O2 -pipe' -C "$KB" M="$PWD" $objs ) \
+  >"$compile_log" 2>&1 || compile_status=$?
+cat "$compile_log"
+if [ "$compile_status" -ne 0 ]; then
   echo "COMPILE FAIL: a patch-touched translation unit did not compile" >&2
   echo "  a hunk likely fuzz-misplaced; a sha256 match does not catch this" >&2
+  exit 4
+fi
+if ! scan_compile_warnings "$compile_log"; then
   exit 4
 fi
 echo "radeon patch-series compile check: PASS"

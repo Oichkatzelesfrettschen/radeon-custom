@@ -27,7 +27,7 @@ about a tree the repository never described.
 
 | Variable | Content | Checked against |
 | --- | --- | --- |
-| `RADEON_KERNEL_BUILD_ROOT_618` | retained pre-7.0 kernel build tree | `ci/kernel-build-roots/6.18.38-2-cachyos-lts.sha256` |
+| `RADEON_KERNEL_BUILD_ROOT_618` | retained pre-7.0 kernel build tree | `ci/kernel-build-roots/6.18.38-2-cachyos-lts.sha256`, then the full-tree `*.full.sha256` with a file-count equality |
 | `RADEON_UPSTREAM_RADEON_TREE` | pristine upstream `drivers/gpu/drm/radeon/` | the subtree object in `linux-radeon-gororoba/UPSTREAM_BASE.toml`, then `docs/upstream-radeon-v6.18-manifest.tsv` |
 
 `RADEON_UPSTREAM_RADEON_TREE` points into a `linux-radeon-gororoba` checkout on
