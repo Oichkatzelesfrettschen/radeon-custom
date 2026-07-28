@@ -120,6 +120,31 @@ jobs:
           cmp "$work/effects.tsv" docs/legacy-patch-effects.tsv
           echo "legacy patch effects reproduce: 70 rows under exact-context apply"
 
+      # The transition ledger bonds each patch to the tree mutation it
+      # produces: both exact engines run per patch, a both-accept pair must
+      # yield identical trees, and the walked end state must reproduce the
+      # exact-context payload manifest. Git tree IDs depend only on content,
+      # so the committed ledger reproduces byte-identically.
+      - name: Legacy patch-transition ledger reproduces
+        run: |
+          set -euo pipefail
+          python3 scripts/emit_legacy_patch_transitions.py --self-test
+          work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/transitions.XXXXXX")
+          trap 'rm -rf "$work"' EXIT
+          mkdir -p "$work/tree"
+          tar xJf sources/radeon-unified-0.3-source.tar.xz -C "$work/tree"
+          python3 scripts/emit_legacy_patch_transitions.py \
+            --tree "$work/tree" \
+            --dkms-conf packaging/arch/radeon-unified-dkms/dkms.conf \
+            --patches-dir patches/rs480 \
+            --out "$work/transitions.tsv" \
+            --final-tree-out "$work/final"
+          cmp "$work/transitions.tsv" docs/legacy-patch-transitions.tsv
+          sh scripts/emit_source_tree_manifest.sh --tree "$work/final" \
+            --out "$work/final.tsv"
+          cmp "$work/final.tsv" docs/legacy-payload-0.3-91-exact-context-manifest.tsv
+          echo "transition ledger reproduces and the walked tree matches the payload manifest"
+
       # Both normalized oracles derive from pristine upstream, so the upstream
       # tree is content-checked before it is used. A path repointed at a
       # different revision fails against the committed upstream manifest instead

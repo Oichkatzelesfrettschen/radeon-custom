@@ -1,7 +1,8 @@
+diff --git a/radeon/radeon_device.c b/radeon/radeon_device.c
+index 0f392b1..a718b67 100644
 --- a/radeon/radeon_device.c
 +++ b/radeon/radeon_device.c
-@@ -46,7 +46,81 @@
- #include "radeon_reg.h"
+@@ -48,6 +48,80 @@
  #include "radeon.h"
  #include "r300d.h"
  #include "atom.h"
@@ -82,9 +83,15 @@
  
  static const char radeon_family_name[][16] = {
  	"R100",
-@@ -1491,0 +1565,1 @@
+@@ -1490,6 +1564,7 @@ int radeon_device_init(struct radeon_device *rdev,
+ 		if (r)
+ 			goto failed;
+ 	}
 +	radeon_rs480_panic_register(rdev);
-@@ -1512,6 +1587,7 @@
+ 
+ 	radeon_audio_component_init(rdev);
+ 
+@@ -1553,6 +1628,7 @@ void radeon_device_fini(struct radeon_device *rdev)
  {
  	DRM_INFO("radeon: finishing device.\n");
  	rdev->shutdown = true;

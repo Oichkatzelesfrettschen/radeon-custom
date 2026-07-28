@@ -14,9 +14,14 @@ touching CP_ME_RAM.
 
 Assisted-by: Codex
 ---
+diff --git a/radeon/rs400.c b/radeon/rs400.c
+index 558716a..514b542 100644
 --- a/radeon/rs400.c
 +++ b/radeon/rs400.c
-@@ -1168,3 +1168,4 @@
+@@ -1165,9 +1165,10 @@ static const struct file_operations rs480_cp_me_ram_dump_fops = {
+  * port and its restore.  The engine loads R300_cp.bin through CP_ME_RAM_ADDR
+  * (write pointer, auto-incrementing past DATAL), so one microword is written by
+  * ADDR, then the (DATAH, DATAL) pair.  To inject one word and undo it without
 - * ever running it: save the original via the RADDR read pointer, stop the
 - * command queue with CP_CSQ_CNTL=CSQ_PRIDIS_INDDIS (the microcode stays loaded
 - * -- r100_cp_disable()/r100_cp_init() would reload R300_cp.bin and clobber the
@@ -24,7 +29,13 @@ Assisted-by: Codex
 + * original via the RADDR read pointer, stop the command queue with
 + * CP_CSQ_CNTL=CSQ_PRIDIS_INDDIS (the microcode stays loaded --
 + * r100_cp_disable()/r100_cp_init() would reload R300_cp.bin and clobber the
-@@ -1197,0 +1198,19 @@
+  * write), write the modified word, read it straight back through RADDR to prove
+  * the write took, then restore the original word and re-read it to prove the
+  * restore took before re-enabling the queue.  The modified word is never live,
+@@ -1195,6 +1196,25 @@ struct rs480_cp_me_inject_ctx {
+ 	char result[160];
+ };
+ 
 +static int rs480_cp_me_ram_inject_wait_idle(struct radeon_device *rdev)
 +{
 +	int ret = 0;
@@ -44,7 +55,13 @@ Assisted-by: Codex
 +	return ret;
 +}
 +
-@@ -1276,0 +1296,10 @@
+ static int rs480_cp_me_ram_inject_one(struct radeon_device *rdev, u32 addr,
+ 				      u32 new_h, u32 new_l,
+ 				      u32 *rb_h, u32 *rb_l,
+@@ -1274,6 +1294,16 @@ static ssize_t rs480_cp_me_ram_inject_write(struct file *file,
+ 		return -ERANGE;
+ 
+ 	mutex_lock(&ctx->lock);
 +	ret = rs480_cp_me_ram_inject_wait_idle(rdev);
 +	if (ret) {
 +		snprintf(ctx->result, sizeof(ctx->result),
@@ -55,3 +72,6 @@ Assisted-by: Codex
 +				     addr, ret);
 +		return ret;
 +	}
+ 	ret = rs480_cp_me_ram_inject_one(rdev, addr, new_h, new_l,
+ 					 &rb_h, &rb_l, &rs_h, &rs_l);
+ 	snprintf(ctx->result, sizeof(ctx->result),
