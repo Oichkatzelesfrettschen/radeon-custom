@@ -14,8 +14,45 @@ equality against a normalized reference plus equality of regenerated outputs.
 The reference tree is produced by `scripts/materialize_legacy_radeon_tree.sh`,
 which extracts `sources/radeon-unified-0.3-source.tar.xz` and applies the
 anchored `PATCH[]` entries from `dkms.conf` in declared order, exactly as the
-Arch DKMS path does. Its manifest is `docs/legacy-tree-a-manifest.tsv`,
-recording path, mode, size, and SHA-256 for every regular file.
+Arch DKMS path does. Its manifest is `docs/legacy-tree-a-manifest.tsv`.
+
+Four manifests describe this material, all emitted by
+`scripts/emit_source_tree_manifest.sh` in the `gororoba-source-tree-v1` schema,
+which records path, git mode, size, and SHA-256 per entry. One schema across
+every constructor here and in `linux-radeon-gororoba` is what lets an export be
+compared against a reference by `cmp`.
+
+| Manifest | Entries | Content |
+| --- | --- | --- |
+| `docs/upstream-radeon-v6.18-manifest.tsv` | 213 | pristine upstream `drivers/gpu/drm/radeon/` at v6.18 |
+| `docs/legacy-base-source-manifest.tsv` | 212 | normalized base, the tarball before any patch |
+| `docs/legacy-tree-a-source-manifest.tsv` | 213 | normalized final, the tarball after all 70 patches |
+| `docs/legacy-tree-a-manifest.tsv` | 223 | raw historical payload, generated headers and prebuilt binary included |
+
+The upstream manifest counts `.gitignore`, which is upstream repository
+metadata; the closure declaration in `linux-radeon-gororoba` marks it
+`repository_only`, so the manifest that repository emits for the same tree
+holds 212 entries.
+
+`scripts/materialize_legacy_radeon_base.sh` builds the base oracle by extracting
+the tarball, applying no `PATCH[]` entry, and handing the result to
+`scripts/normalize_legacy_source_tree.sh --legacy-tree`, so both normalized
+oracles pass through one transformation. The base oracle is what the origin map
+diffs against: the final oracle answers what the package builds and answers
+nothing about where a hunk came from.
+
+The two normalized oracles differ by exactly `reg_srcs/rs480`, the generator
+input the series adds:
+
+```text
+222 base tarball files
+ -10 generated *_reg_safe.h build products
+ -1  prebuilt mkregtable
+ +1  restored reg_srcs/evergreen
+=212 normalized base
+ +1  reg_srcs/rs480 added by the series
+=213 normalized final
+```
 
 ## Tree shape and series footprint
 
