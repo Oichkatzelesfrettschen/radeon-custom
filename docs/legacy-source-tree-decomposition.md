@@ -14,9 +14,15 @@ equality against a normalized reference plus equality of regenerated outputs.
 The reference tree is produced by `scripts/materialize_legacy_radeon_tree.sh`,
 which extracts `sources/radeon-unified-0.3-source.tar.xz` and applies the
 anchored `PATCH[]` entries from `dkms.conf` in declared order, exactly as the
-Arch DKMS path does. Its manifest is `docs/legacy-tree-a-manifest.tsv`.
+Arch DKMS path does. Its manifest is
+`docs/legacy-payload-0.3-91-exact-context-manifest.tsv`. The pre-correction
+constructor applied the series under GNU `patch` default fuzz, and
+`docs/legacy-payload-0.3-90-default-fuzz-manifest.tsv` preserves what that
+constructor actually produced, including the misplaced `0072` mutex effects
+recorded in `docs/legacy-patch-context-drift.tsv`. The two payloads are
+different source objects, so each keeps a named manifest.
 
-Four manifests describe this material, all emitted by
+Five manifests describe this material, all emitted by
 `scripts/emit_source_tree_manifest.sh` in the `gororoba-source-tree-v1` schema,
 which records path, git mode, size, and SHA-256 per entry. One schema across
 every constructor here and in `linux-radeon-gororoba` is what lets an export be
@@ -26,8 +32,9 @@ compared against a reference by `cmp`.
 | --- | --- | --- |
 | `docs/upstream-radeon-v6.18-manifest.tsv` | 213 | pristine upstream `drivers/gpu/drm/radeon/` at v6.18 |
 | `docs/legacy-base-source-manifest.tsv` | 212 | normalized base, the tarball before any patch |
-| `docs/legacy-tree-a-source-manifest.tsv` | 213 | normalized final, the tarball after all 70 patches |
-| `docs/legacy-tree-a-manifest.tsv` | 223 | raw historical payload, generated headers and prebuilt binary included |
+| `docs/migration-oracle-0.3-91-exact-context-manifest.tsv` | 213 | normalized final, the tarball after all 70 patches under exact context; the migration oracle the source repository reproduces |
+| `docs/legacy-payload-0.3-91-exact-context-manifest.tsv` | 223 | raw exact-context payload, generated headers and prebuilt binary included |
+| `docs/legacy-payload-0.3-90-default-fuzz-manifest.tsv` | 223 | raw historical payload the default-fuzz constructor produced before the exact-context correction |
 
 The upstream manifest counts `.gitignore`, which is upstream repository
 metadata; the closure declaration in `linux-radeon-gororoba` marks it
@@ -81,13 +88,17 @@ snapshot alone, and the visible patch series says nothing about it.
 
 ## Series application fidelity
 
-The series does not apply exactly. GNU `patch` defaults to
-`--backup-if-mismatch`, so a `.orig` file appearing during application is the
-fingerprint of a hunk that did not match its recorded context. Four such
-backups appear: `rs400.c.orig`, `radeon.h.orig`, `radeon_device.c.orig`, and
-`radeon_drv.c.orig`.
+The pkgrel-91 series applies under exact context: every patch is accepted at
+zero fuzz by `git apply` or GNU `patch --fuzz=0`, which
+`scripts/capture_legacy_patch_effects.py` enforces on every run.
 
-Measured across all 70 patches:
+At pkgrel 90, before the exact-context correction, the series did not apply
+exactly. GNU `patch` defaults to `--backup-if-mismatch`, so a `.orig` file
+appearing during application is the fingerprint of a hunk that did not match
+its recorded context. Four such backups appeared: `rs400.c.orig`,
+`radeon.h.orig`, `radeon_device.c.orig`, and `radeon_drv.c.orig`.
+
+Measured across all 70 patches at pkgrel 90:
 
 | Application class | Patches |
 | --- | --- |
@@ -103,17 +114,22 @@ unrebased series rather than a misplacement. The largest offsets sit in
 `0072-rs480-gart-page-table-readonly-debugfs.patch` at 889 lines, both
 consistent with accumulated insertions ahead of them.
 
-Fuzz is the risk class. A fuzzed hunk applies after `patch` discards context
+Fuzz was the risk class. A fuzzed hunk applies after `patch` discards context
 lines that failed to match, so placement rests on the remaining context rather
-than on the recorded anchor. Eight patches apply with fuzz:
+than on the recorded anchor. Eight patches applied with fuzz at pkgrel 90:
 `0010`, `0012`, `0019`, `0021`, `0022`, `0025`, `0027`, and `0072`. The compile
-gate passes on the resulting tree, which establishes that the fuzzed placements
+gate passed on the resulting tree, which establishes that the fuzzed placements
 produce compilable code and establishes nothing about whether each hunk landed
-where its author intended. Compile equality is weaker than placement equality,
-and the gate's own header names this failure mode.
+where its author intended. Fuzz placement in `0072` in fact contradicted the
+author's stated mechanism, moving a `mutex_lock` past the closing brace of
+`rs400_gart_fini` and leaving its `mutex_unlock` as dead code in
+`rs400_gart_get_page_entry`.
 
-A stored source tree removes this class outright: source held as source has no
-context to match and no fuzz to absorb.
+The pkgrel-91 correction regenerated the eight drifted patches with current
+context and restored the `0072` mutex pair to the stated placement.
+`docs/legacy-patch-context-drift.tsv` carries each old hash, old placement,
+failure, and corrected hash. A stored source tree removes this class outright:
+source held as source has no context to match and no fuzz to absorb.
 
 ## Upstream base identity
 
@@ -149,11 +165,18 @@ The Palm lane is the second and the widest. `evergreen.c` carries
 trigger that invokes the safe reset on demand under that same refuse-by-default
 gate.
 
-Kernel-version portability is the third. `radeon_ttm.c` selects its
-`ttm_device_init` call on `LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)`,
-passing allocation flags on the newer signature. The snapshot therefore carries
-compatibility logic that lets one source build against both the 6.18 LTS line
-and the 7.x mainline line, which no patch in the series supplies.
+Kernel-version portability is the third, and its surface is fourteen
+`LINUX_VERSION_CODE` splits at `KERNEL_VERSION(7, 0, 0)` across eight files:
+`radeon_ttm.c` selects `ttm_device_init` with allocation flags on the newer
+signature, `radeon_gem.c` selects `ttm_bo_fini` over `ttm_bo_put` in the GEM
+free path (the split that patches `0052` and `0053` anchor as context),
+`radeon_irq_kms.c` guards `msi_addr_mask`, and `radeon_device.c`,
+`radeon_mode.h`, `atombios_crtc.c`, `radeon_fbdev.c`, and
+`radeon_legacy_crtc.c` carry the remaining splits.
+`docs/base-delta-map.tsv` binds each split to the upstream API transition it
+bridges. The snapshot therefore carries compatibility logic that lets one
+source build against both the 6.18 LTS line and the 7.x mainline line, which
+no patch in the series supplies.
 
 ## Series portability to pristine upstream
 

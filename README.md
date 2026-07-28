@@ -31,12 +31,13 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Unified DKMS package builds and installs on the recorded CachyOS kernels | compile-verified and installed |
+| Unified DKMS package 0.3-91 (exact-context series) builds on 6.18.38 and the current 7.x compile roots | compile-verified; no retained target install or load of this revision |
+| Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
 | RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
 | Display scanout recovers without reboot | not achieved |
 | 0060 SIGBUS isolation gate fires | unverified; installed but not exercised in the retained pass |
-| 0063-0068 non-baseline reset masks | implemented, compile-verified, installed, and not fired |
+| 0063-0067 non-baseline reset masks (0068 is a comment-only grammar fix) | implemented, compile-verified, installed in earlier revisions, and not fired |
 | Bounded RS480 GART page-table reader | source-verified; exact-target rows require a retained Vostro capture |
 
 Therefore `radeon.lockup_timeout=0` remains the safe default. Do not describe the
@@ -106,8 +107,10 @@ recovery.
   states the evidence class and falsifier for each claim.
   `docs/legacy-source-tree-decomposition.md` measures the constructed source
   tree that a dedicated source repository replaces, and
-  `docs/legacy-tree-a-manifest.tsv` is the per-file reference the replacement is
-  proven against. Every manifest under `docs/` uses the
+  `docs/migration-oracle-0.3-91-exact-context-manifest.tsv` is the per-file
+  reference the replacement is proven against, while
+  `docs/legacy-payload-0.3-90-default-fuzz-manifest.tsv` preserves what the
+  default-fuzz constructor produced before the exact-context correction. Every manifest under `docs/` uses the
   `gororoba-source-tree-v1` schema that `scripts/emit_source_tree_manifest.sh`
   emits and that `linux-radeon-gororoba` shares.
 - `ci/kernel-build-roots/` identifies each retained kernel build tree by its
