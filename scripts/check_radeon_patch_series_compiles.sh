@@ -23,6 +23,13 @@
 # repositories, which is the calibration AGENTS.md requires of a
 # verdict-producing script.
 #
+# The series carries a LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) split in
+# radeon_gem.c, so the running kernel selects which side of it compiles.
+# --kernel-build-root names a prepared tree explicitly, which is how the pre-7.0
+# side reaches a compiler on a host running 7.x. Resolution order is
+# --kernel-build-root, then R300_RS480_KERNEL_BUILD_ROOT, then the running
+# kernel at /lib/modules/$(uname -r)/build.
+#
 # Exit: 0 pass (or compile skipped when no kernel build dir is present),
 #       2 missing or unparseable inputs, 3 patch reject, 4 compile failure,
 #       5 compile required but no kernel build dir.
@@ -30,15 +37,20 @@ set -eu
 
 require_compile=0
 self_test=0
-for arg in "$@"; do
-  case "$arg" in
-    --require-compile) require_compile=1 ;;
-    --self-test) self_test=1 ;;
+kernel_build_root=${R300_RS480_KERNEL_BUILD_ROOT:-}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --require-compile) require_compile=1; shift ;;
+    --self-test) self_test=1; shift ;;
+    --kernel-build-root)
+      [ "$#" -ge 2 ] || { echo "--kernel-build-root requires a directory" >&2; exit 2; }
+      kernel_build_root=$2; shift 2
+      ;;
     -h|--help)
-      echo "usage: $0 [--require-compile] [--self-test]"
+      echo "usage: $0 [--require-compile] [--self-test] [--kernel-build-root DIR]"
       exit 0
       ;;
-    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
@@ -70,10 +82,14 @@ make_fixture_repo() {
   fi
 }
 
+# Every calibration case runs the gate under test as a child process and reads
+# its exit status, so the guards are exercised through the same entry point a CI
+# job uses. Trailing arguments after the fixture reach that child.
 expect_exit() {
   want=$1 label=$2 fx=$3
+  shift 3
   got=0
-  ( cd "$fx" && sh "$SELF" --require-compile ) >"$fx/out.log" 2>&1 || got=$?
+  ( cd "$fx" && sh "$SELF" "$@" ) >"$fx/out.log" 2>&1 || got=$?
   if [ "$got" -eq "$want" ]; then
     echo "  ok: $label exits $got"
     return 0
@@ -85,8 +101,9 @@ expect_exit() {
 
 expect_not_exit() {
   unwanted=$1 label=$2 fx=$3
+  shift 3
   got=0
-  ( cd "$fx" && sh "$SELF" --require-compile ) >"$fx/out.log" 2>&1 || got=$?
+  ( cd "$fx" && sh "$SELF" "$@" ) >"$fx/out.log" 2>&1 || got=$?
   if [ "$got" -ne "$unwanted" ]; then
     echo "  ok: $label clears the parse guards (exit $got)"
     return 0
@@ -108,7 +125,8 @@ if [ "$self_test" -eq 1 ]; then
     'PACKAGE_NAME="radeon-unified"
 # PATCH[0]="0001-fixture.patch"' \
     "foo.c"
-  expect_exit 2 "unparseable PATCH[] array" "$TMP/no_patch_entries" || fails=$((fails + 1))
+  expect_exit 2 "unparseable PATCH[] array" "$TMP/no_patch_entries" \
+    --require-compile || fails=$((fails + 1))
 
   # Known-bad: the series applies, and it touches no C translation unit, so the
   # compile step would have run against an empty object list.
@@ -116,7 +134,8 @@ if [ "$self_test" -eq 1 ]; then
     'PACKAGE_NAME="radeon-unified"
 PATCH[0]="0001-fixture.patch"' \
     "notes.txt"
-  expect_exit 2 "series touching no C translation unit" "$TMP/no_touched_units" || fails=$((fails + 1))
+  expect_exit 2 "series touching no C translation unit" "$TMP/no_touched_units" \
+    --require-compile || fails=$((fails + 1))
 
   # Known-good shape: a series that applies and touches a C unit clears both
   # parse guards and reaches the compile stage.
@@ -124,13 +143,46 @@ PATCH[0]="0001-fixture.patch"' \
     'PACKAGE_NAME="radeon-unified"
 PATCH[0]="0001-fixture.patch"' \
     "foo.c"
-  expect_not_exit 2 "series touching a C translation unit" "$TMP/well_formed" || fails=$((fails + 1))
+  expect_not_exit 2 "series touching a C translation unit" "$TMP/well_formed" \
+    --require-compile || fails=$((fails + 1))
+
+  # Build-root resolution. Each case names a way the root can be wrong, and the
+  # gate distinguishes them: an option carrying no value is a usage error, an
+  # absent root is a missing prerequisite the strict mode refuses to skip, and a
+  # directory lacking the Kbuild surface is an invalid root rather than an
+  # absent one.
+  expect_exit 2 "--kernel-build-root without an argument" "$TMP/well_formed" \
+    --require-compile --kernel-build-root || fails=$((fails + 1))
+
+  expect_exit 5 "explicit nonexistent root under --require-compile" "$TMP/well_formed" \
+    --require-compile --kernel-build-root "$TMP/absent" || fails=$((fails + 1))
+
+  # A directory that exists and carries none of the Kbuild surface. The gate
+  # reports the first missing file rather than entering make.
+  mkdir -p "$TMP/stub_root"
+  expect_exit 2 "existing directory missing the prepared-kernel surface" "$TMP/well_formed" \
+    --require-compile --kernel-build-root "$TMP/stub_root" || fails=$((fails + 1))
+
+  # The environment path resolves the same way the option does, and without
+  # --require-compile an absent root reports NOT RUN and exits 0 so the apply
+  # check still stands on a host that cannot compile. The running-kernel
+  # fallback is the default every ordinary run exercises.
+  got=0
+  ( cd "$TMP/well_formed" && R300_RS480_KERNEL_BUILD_ROOT="$TMP/absent" sh "$SELF" ) \
+    >"$TMP/well_formed/env.log" 2>&1 || got=$?
+  if [ "$got" -eq 0 ] && grep -q '^NOT RUN: ' "$TMP/well_formed/env.log"; then
+    echo "  ok: absent environment root without strict mode reports NOT RUN and exits 0"
+  else
+    echo "  CALIBRATION FAIL: absent environment root without strict mode" >&2
+    sed 's/^/    /' "$TMP/well_formed/env.log" >&2
+    fails=$((fails + 1))
+  fi
 
   if [ "$fails" -gt 0 ]; then
     echo "patch-series gate calibration: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "patch-series gate calibration: 2 known-bad rejected, 1 known-good cleared"
+  echo "patch-series gate calibration: 5 known-bad rejected, 2 known-good cleared"
   exit 0
 fi
 
@@ -181,7 +233,11 @@ touched=$(while IFS= read -r p; do
 [ -n "$touched" ] || { echo "no patch-touched C translation units parsed" >&2; exit 2; }
 echo "patch-touched translation units:"; echo "$touched" | sed 's/^/  /'
 
-KB="/lib/modules/$(uname -r)/build"
+if [ -n "$kernel_build_root" ]; then
+  KB=$kernel_build_root
+else
+  KB="/lib/modules/$(uname -r)/build"
+fi
 if [ ! -d "$KB" ]; then
   echo "NOT RUN: no kernel build dir at $KB; apply check passed, compile skipped"
   [ "$require_compile" -eq 0 ] || {
@@ -190,15 +246,50 @@ if [ ! -d "$KB" ]; then
   }
   exit 0
 fi
+KB=$(CDPATH= cd -- "$KB" && pwd -P)
+
+# A directory alone is not a prepared kernel tree. Kbuild for an external module
+# needs the top Makefile, the exported symbol table, and the generated
+# configuration headers, and a tree missing any of them fails deep inside make
+# with a message that reads as a source defect. Naming the missing file here
+# keeps a stub headers directory from being diagnosed as a patch problem.
+for required in \
+  Makefile \
+  Module.symvers \
+  include/config/kernel.release \
+  include/generated/autoconf.h \
+  include/generated/compile.h \
+  include/generated/uapi/linux/version.h
+do
+  [ -r "$KB/$required" ] || {
+    echo "invalid kernel build root: missing $KB/$required" >&2
+    exit 2
+  }
+done
+
+kernel_release=$(cat "$KB/include/config/kernel.release")
+version_code=$(awk '$1 == "#define" && $2 == "LINUX_VERSION_CODE" { print $3 }' \
+                 "$KB/include/generated/uapi/linux/version.h")
+[ -n "$version_code" ] || { echo "cannot resolve LINUX_VERSION_CODE from $KB" >&2; exit 2; }
+
+# The version code decides which side of the radeon_gem.c split compiles, so it
+# is reported rather than inferred from the directory name.
+echo "kernel build root: $KB"
+echo "kernel release: $kernel_release"
+echo "LINUX_VERSION_CODE: $version_code"
 
 # Clang-built kernels reject GCC-only flags; match the kernel's compiler.
-if grep -qi clang "$KB/include/generated/compile.h" 2>/dev/null; then
+# CONFIG_CC_IS_CLANG is the recorded configuration, and compile.h carries the
+# version banner, so the configuration answers first and the banner covers a
+# tree shipped without auto.conf.
+if grep -q '^CONFIG_CC_IS_CLANG=y' "$KB/include/config/auto.conf" 2>/dev/null ||
+   grep -qi clang "$KB/include/generated/compile.h" 2>/dev/null; then
   set -- LLVM=1
 else
   set --
 fi
 objs=$(echo "$touched" | sed -E 's/\.c$/.o/' | tr '\n' ' ')
-echo "compiling touched units against $(basename "$KB"): $objs"
+echo "compiling touched units against $kernel_release: $objs"
 # shellcheck disable=SC2086
 if ! ( cd "$WORK/radeon" && make "$@" EXTRA_CFLAGS='-O2 -pipe' -C "$KB" M="$PWD" $objs ); then
   echo "COMPILE FAIL: a patch-touched translation unit did not compile" >&2

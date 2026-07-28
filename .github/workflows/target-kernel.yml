@@ -2,9 +2,9 @@
 #
 # This workflow runs on the target host, so it never triggers on pull_request:
 # a PR carries unmerged repository-controlled code, and the target machine is
-# the one piece of hardware this project cannot replace. Merged main and an
-# explicit dispatch against a ref already reachable from main are the only
-# entry points.
+# the one piece of hardware this project cannot replace. The single admitted
+# ref is refs/heads/main, asserted in the job below; a dispatch against any
+# other branch or tag fails closed.
 #
 # The job compiles and verifies. It loads no module, arms no hazard gate, and
 # performs no register access. Reading PCI identity from sysfs reports the

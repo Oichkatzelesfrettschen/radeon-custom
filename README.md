@@ -108,6 +108,10 @@ recovery.
   tree that a dedicated source repository replaces, and
   `docs/legacy-tree-a-manifest.tsv` is the per-file reference the replacement is
   proven against.
+- `ci/kernel-build-roots/` identifies each retained kernel build tree by its
+  key-file hashes and records the release, originating package, and compiler
+  each root carries. The local path of a root is a workspace fact and lives in
+  an Actions repository variable.
 
 ## Build and validation
 
@@ -127,6 +131,12 @@ sh scripts/check_radeon_patch_series_compiles.sh
 # exit 5, so a green status means the touched units reached the compiler
 sh scripts/check_radeon_patch_series_compiles.sh --require-compile
 
+# Compile the pre-7.0 side of the radeon_gem.c LINUX_VERSION_CODE split against
+# a retained 6.18 kernel build tree; ci/kernel-build-roots/README.md records
+# how a root is prepared and which release this repository pins
+sh scripts/check_radeon_patch_series_compiles.sh --require-compile \
+  --kernel-build-root /path/to/6.18-build-root
+
 # Unified DKMS source tree hashes and patch-chain apply dry-run
 bash scripts/verify_radeon_unified_dkms_sources.sh
 
@@ -139,7 +149,7 @@ before it is trusted to judge the tree. Run the calibration when changing a
 gate:
 
 ```bash
-# 2 known-bad series rejected, 1 known-good series cleared
+# 5 known-bad inputs rejected, 2 known-good inputs cleared
 sh scripts/check_radeon_patch_series_compiles.sh --self-test
 
 # known-good prose silent, known-bad prose reported, corpus selection correct
