@@ -107,7 +107,9 @@ recovery.
   `docs/legacy-source-tree-decomposition.md` measures the constructed source
   tree that a dedicated source repository replaces, and
   `docs/legacy-tree-a-manifest.tsv` is the per-file reference the replacement is
-  proven against.
+  proven against. Every manifest under `docs/` uses the
+  `gororoba-source-tree-v1` schema that `scripts/emit_source_tree_manifest.sh`
+  emits and that `linux-radeon-gororoba` shares.
 - `ci/kernel-build-roots/` identifies each retained kernel build tree by its
   key-file hashes and records the release, originating package, and compiler
   each root carries. The local path of a root is a workspace fact and lives in
@@ -154,6 +156,9 @@ sh scripts/check_radeon_patch_series_compiles.sh --self-test
 
 # known-good prose silent, known-bad prose reported, corpus selection correct
 python3 scripts/check_project_prose_style.py --self-test
+
+# 4 mode encodings correct, 6 manifest drift classes detected
+sh scripts/emit_source_tree_manifest.sh --self-test
 ```
 
 Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with

@@ -25,6 +25,7 @@ usage() {
 usage: normalize_legacy_source_tree.sh --upstream DIR [options]
 
   --upstream DIR       pristine upstream radeon directory at the recorded base
+  --legacy-tree DIR    normalize this tree (default: the full 70-patch tree)
   --out DIR            keep the normalized tree here (default: a temp dir)
   --manifest FILE      write the normalized source manifest here
   --normalization FILE write the per-path transformation record here
@@ -32,10 +33,11 @@ usage: normalize_legacy_source_tree.sh --upstream DIR [options]
 EOF
 }
 
-upstream=""; out_dir=""; manifest=""; normalization=""; prove=0
+upstream=""; legacy_tree=""; out_dir=""; manifest=""; normalization=""; prove=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --upstream) upstream=${2:?--upstream needs a directory}; shift 2 ;;
+    --legacy-tree) legacy_tree=${2:?--legacy-tree needs a directory}; shift 2 ;;
     --out) out_dir=${2:?--out needs a directory}; shift 2 ;;
     --manifest) manifest=${2:?--manifest needs a path}; shift 2 ;;
     --normalization) normalization=${2:?--normalization needs a path}; shift 2 ;;
@@ -52,12 +54,26 @@ repo_root=$(git rev-parse --show-toplevel) || { echo "not inside a git repo" >&2
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
-sh "$repo_root/scripts/materialize_legacy_radeon_tree.sh" --out "$WORK/legacy" \
-  --manifest "$WORK/legacy.tsv" >/dev/null 2>&1 || {
-  echo "legacy materialization failed" >&2; exit 2; }
-LEG="$WORK/legacy/radeon"
+
+# One normalization implementation serves every oracle. The base oracle and the
+# final oracle differ in which tree they hand in, so --legacy-tree names it and
+# a second transformation never appears.
+if [ -n "$legacy_tree" ]; then
+  [ -d "$legacy_tree" ] || { echo "not a directory: $legacy_tree" >&2; exit 2; }
+  LEG=$(CDPATH= cd -- "$legacy_tree" && pwd -P)
+else
+  sh "$repo_root/scripts/materialize_legacy_radeon_tree.sh" --out "$WORK/legacy" \
+    --manifest "$WORK/legacy.tsv" >/dev/null 2>&1 || {
+    echo "legacy materialization failed" >&2; exit 2; }
+  LEG="$WORK/legacy/radeon"
+fi
 
 if [ -n "$out_dir" ]; then
+  if [ -e "$out_dir" ] && [ -n "$(ls -A "$out_dir" 2>/dev/null)" ]; then
+    echo "destination is not empty: $out_dir" >&2
+    echo "  a residual file would enter the normalized reference as source" >&2
+    exit 2
+  fi
   mkdir -p "$out_dir"; NORM=$(CDPATH= cd -- "$out_dir" && pwd)
 else
   NORM="$WORK/normalized"; mkdir -p "$NORM"
@@ -98,8 +114,14 @@ awk '
 printf 'reg_srcs/evergreen\trestored\tadd from upstream with 0x0000A020 SMX_DC_CTL0\tgenerator input for evergreen_reg_safe.h\n' \
   >> "$WORK/norm.tsv"
 
-printf 'reg_srcs/rs480\tretained\tpreserve\tgenerator input added by the patch series\n' \
-  >> "$WORK/norm.tsv"
+# The patch series adds this generator input, so it exists in the final tree and
+# is absent from the base tree. The row follows the tree rather than the
+# transformation, which keeps the base record from claiming a path the base
+# oracle asserts absent.
+if [ -f "$NORM/reg_srcs/rs480" ]; then
+  printf 'reg_srcs/rs480\tretained\tpreserve\tgenerator input added by the patch series\n' \
+    >> "$WORK/norm.tsv"
+fi
 
 if [ "$prove" -eq 1 ]; then
   gcc -O2 -o "$WORK/mkregtable" "$upstream/mkregtable.c" 2>/dev/null || {
@@ -121,19 +143,9 @@ fi
 
 [ -n "$normalization" ] && cp "$WORK/norm.tsv" "$normalization"
 
-emit_manifest() {
-  printf 'path\tmode\tsize\tsha256\n'
-  ( cd "$NORM" && find . -type f -print ) | sed 's#^\./##' | LC_ALL=C sort \
-    | while IFS= read -r rel; do
-        f="$NORM/$rel"
-        printf '%s\t%s\t%s\t%s\n' "$rel" "$(stat -c '%a' "$f")" \
-          "$(stat -c '%s' "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
-      done
-}
 if [ -n "$manifest" ]; then
-  emit_manifest > "$manifest"
-  echo "normalized source manifest: $manifest ($(($(wc -l < "$manifest") - 1)) files)" >&2
+  sh "$repo_root/scripts/emit_source_tree_manifest.sh" --tree "$NORM" --out "$manifest"
 else
-  emit_manifest
+  sh "$repo_root/scripts/emit_source_tree_manifest.sh" --tree "$NORM"
 fi
 exit 0

@@ -93,6 +93,57 @@ jobs:
           cmp "$work/treeA.tsv" docs/legacy-tree-a-manifest.tsv
           echo "legacy tree manifest reproduces byte-identically"
 
+      - name: Manifest emitter calibration
+        run: sh scripts/emit_source_tree_manifest.sh --self-test
+
+      # Both normalized oracles derive from pristine upstream, so the upstream
+      # tree is content-checked before it is used. A path repointed at a
+      # different revision fails against the committed upstream manifest instead
+      # of producing oracles that silently describe another base.
+      - name: Normalized source oracles reproduce
+        env:
+          UPSTREAM_RADEON_TREE: ${{ vars.RADEON_UPSTREAM_RADEON_TREE }}
+        run: |
+          set -euo pipefail
+          : "${UPSTREAM_RADEON_TREE:?RADEON_UPSTREAM_RADEON_TREE is unset}"
+          work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/oracles.XXXXXX")
+          trap 'rm -rf "$work"' EXIT
+
+          sh scripts/emit_source_tree_manifest.sh --tree "$UPSTREAM_RADEON_TREE" \
+            --out "$work/upstream.tsv"
+          cmp "$work/upstream.tsv" docs/upstream-radeon-v6.18-manifest.tsv
+          echo "upstream radeon subtree matches the recorded v6.18 manifest"
+
+          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            sh scripts/materialize_legacy_radeon_base.sh \
+              --upstream "$UPSTREAM_RADEON_TREE" \
+              --manifest "$work/base.tsv" \
+              --normalization "$work/base-norm.tsv" \
+              --prove-generated
+          cmp "$work/base.tsv" docs/legacy-base-source-manifest.tsv
+          cmp "$work/base-norm.tsv" docs/legacy-base-source-normalization.tsv
+
+          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            sh scripts/normalize_legacy_source_tree.sh \
+              --upstream "$UPSTREAM_RADEON_TREE" \
+              --manifest "$work/final.tsv" \
+              --normalization "$work/final-norm.tsv" \
+              --prove-generated
+          cmp "$work/final.tsv" docs/legacy-tree-a-source-manifest.tsv
+          cmp "$work/final-norm.tsv" docs/legacy-tree-a-source-normalization.tsv
+
+          # The two oracles differ by exactly the generator input the series
+          # adds, which is the arithmetic the base-delta map depends on.
+          only=$(diff <(awk -F'\t' '!/^#/ && NR > 2 { print $1 }' "$work/base.tsv") \
+                      <(awk -F'\t' '!/^#/ && NR > 2 { print $1 }' "$work/final.tsv") \
+                 | grep '^[<>]' || true)
+          [ "$only" = "> reg_srcs/rs480" ] || {
+            echo "base and final oracles differ by more than reg_srcs/rs480:" >&2
+            printf '%s\n' "$only" >&2
+            exit 1
+          }
+          echo "normalized oracles reproduce: 212 base, 213 final, reg_srcs/rs480 apart"
+
   # radeon_gem.c carries a LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) split,
   # and both runners run 7.x, so every other compile job takes the 7.x side and
   # leaves the pre-7.0 side unbuilt. This job points the same gate at a retained

@@ -19,8 +19,9 @@
 # this tree shipped. Compile equality is weaker than either and substitutes for
 # neither.
 #
-# The manifest records path, mode, size, and SHA-256 for every regular file, so
-# a comparison detects content drift, mode drift, and file-set drift alike.
+# emit_source_tree_manifest.sh writes the manifest, in the schema every
+# constructor here and in linux-radeon-gororoba shares, so a comparison detects
+# content drift, mode drift, and file-set drift alike.
 #
 # Exit: 0 tree materialized, 2 missing or unparseable inputs, 3 patch reject.
 set -eu
@@ -52,6 +53,12 @@ BASE="$repo_root/sources/radeon-unified-0.3-source.tar.xz"
 [ -f "$DKMSDIR/dkms.conf" ] || { echo "missing dkms.conf" >&2; exit 2; }
 
 if [ -n "$out_dir" ]; then
+  # A residual file under --out would enter the manifest and be attributed to
+  # the legacy payload, so the destination starts empty or the run stops.
+  if [ -e "$out_dir" ] && [ -n "$(ls -A "$out_dir" 2>/dev/null)" ]; then
+    echo "destination is not empty: $out_dir" >&2
+    exit 2
+  fi
   mkdir -p "$out_dir"
   WORK=$(CDPATH= cd -- "$out_dir" && pwd)
 else
@@ -85,23 +92,11 @@ find "$WORK/radeon" -name '*.orig' -o -name '*.rej' | while IFS= read -r f; do
   echo "construction artifact present: ${f#"$WORK/"}" >&2
 done
 
-emit_manifest() {
-  printf 'path\tmode\tsize\tsha256\n'
-  ( cd "$WORK/radeon" && find . -type f ! -name '*.orig' ! -name '*.rej' -print ) \
-    | sed 's#^\./##' | LC_ALL=C sort | while IFS= read -r rel; do
-      f="$WORK/radeon/$rel"
-      mode=$(stat -c '%a' "$f")
-      size=$(stat -c '%s' "$f")
-      sum=$(sha256sum "$f" | cut -d' ' -f1)
-      printf '%s\t%s\t%s\t%s\n' "$rel" "$mode" "$size" "$sum"
-    done
-}
-
 if [ -n "$manifest" ]; then
-  emit_manifest > "$manifest"
-  echo "manifest: $manifest ($(($(wc -l < "$manifest") - 1)) files)" >&2
+  sh "$repo_root/scripts/emit_source_tree_manifest.sh" --tree "$WORK/radeon" \
+    --out "$manifest"
 else
-  emit_manifest
+  sh "$repo_root/scripts/emit_source_tree_manifest.sh" --tree "$WORK/radeon"
 fi
 
 [ -n "$out_dir" ] && echo "tree: $WORK/radeon" >&2
