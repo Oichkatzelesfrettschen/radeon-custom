@@ -109,6 +109,25 @@ jobs:
           work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/oracles.XXXXXX")
           trap 'rm -rf "$work"' EXIT
 
+          # The manifest was emitted from this path, so comparing the path back
+          # against it detects working-tree drift and a repointed variable and
+          # says nothing about which upstream revision the manifest describes.
+          # The tree object closes that: linux-radeon-gororoba's
+          # UPSTREAM_BASE.toml is the one home for the recorded subtree, and git
+          # object IDs are content addresses, so a checkout at another revision
+          # fails here rather than supplying a wrong left side to the origin map.
+          sibling=$(git -C "$UPSTREAM_RADEON_TREE" rev-parse --show-toplevel)
+          recorded=$(sed -n '/^\[/q;s/^subtree_tree[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
+                       "$sibling/UPSTREAM_BASE.toml" | head -1)
+          [ -n "$recorded" ] || {
+            echo "UPSTREAM_BASE.toml declares no subtree_tree" >&2; exit 1; }
+          actual=$(git -C "$sibling" rev-parse HEAD:drivers/gpu/drm/radeon)
+          [ "$actual" = "$recorded" ] || {
+            echo "upstream subtree is $actual, and the pin records $recorded" >&2
+            exit 1
+          }
+          echo "upstream subtree object $actual matches the recorded pin"
+
           sh scripts/emit_source_tree_manifest.sh --tree "$UPSTREAM_RADEON_TREE" \
             --out "$work/upstream.tsv"
           cmp "$work/upstream.tsv" docs/upstream-radeon-v6.18-manifest.tsv

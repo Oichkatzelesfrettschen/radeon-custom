@@ -28,7 +28,33 @@ about a tree the repository never described.
 | Variable | Content | Checked against |
 | --- | --- | --- |
 | `RADEON_KERNEL_BUILD_ROOT_618` | retained pre-7.0 kernel build tree | `ci/kernel-build-roots/6.18.38-2-cachyos-lts.sha256` |
-| `RADEON_UPSTREAM_RADEON_TREE` | pristine upstream `drivers/gpu/drm/radeon/` | `docs/upstream-radeon-v6.18-manifest.tsv` |
+| `RADEON_UPSTREAM_RADEON_TREE` | pristine upstream `drivers/gpu/drm/radeon/` | the subtree object in `linux-radeon-gororoba/UPSTREAM_BASE.toml`, then `docs/upstream-radeon-v6.18-manifest.tsv` |
+
+`RADEON_UPSTREAM_RADEON_TREE` points into a `linux-radeon-gororoba` checkout on
+the workstation, so the `package` job depends on a sibling repository's working
+tree. Two checks make that dependency safe, and each catches what the other
+cannot. `docs/upstream-radeon-v6.18-manifest.tsv` was emitted from this path, so
+comparing the path back against it detects an uncommitted edit and a repointed
+variable while saying nothing about which revision is checked out. The git
+subtree object is a content address for the whole directory, so it identifies
+the revision. `UPSTREAM_BASE.toml` is the one home for that constant, and the
+job reads it from the sibling checkout rather than keeping a second copy.
+
+## Upstream history
+
+Origin attribution runs `git log -S` and `git log -G` over
+`drivers/gpu/drm/radeon`, which needs commit history and blob content. The
+importer fetches `--depth 1 --filter=blob:none`, so the imported subtree serves
+none of it. A separate full bare mirror of `linux.git` carries that history, and
+its path is a workspace-local fact recorded alongside the other roots.
+
+```sh
+git clone --bare https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git \
+  /opt/gororoba/upstream/linux.git
+```
+
+A bare mirror over a blobless clone, because every query is then local: a
+blobless clone fetches blobs per `-S` query, and the origin map runs dozens.
 
 ## Runner maintenance
 
