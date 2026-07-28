@@ -1,8 +1,9 @@
 --- a/radeon/radeon_device.c
 +++ b/radeon/radeon_device.c
-@@ -46,6 +46,80 @@
+@@ -46,7 +46,81 @@
  #include "radeon_reg.h"
  #include "radeon.h"
+ #include "r300d.h"
  #include "atom.h"
 +#include <linux/panic_notifier.h>
 +

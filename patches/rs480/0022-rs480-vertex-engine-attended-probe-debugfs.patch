@@ -2,9 +2,10 @@ diff --git a/radeon/radeon.h b/radeon/radeon.h
 index 3aba495..9760236 100644
 --- a/radeon/radeon.h
 +++ b/radeon/radeon.h
-@@ -119,6 +119,7 @@ extern int radeon_rs480_cp_me_ram_dump;
+@@ -119,7 +119,8 @@ extern int radeon_rs480_cp_me_ram_dump;
  extern int radeon_rs480_cp_me_ram_inject;
  extern int radeon_rs480_cp_me_oracle;
+ extern int radeon_rs480_r400_us_cs;
  extern int radeon_rs480_frontier_index;
 +extern int radeon_rs480_vertex_index;
  extern int radeon_rs480_hazard_index;
@@ -14,9 +15,10 @@ diff --git a/radeon/radeon_drv.c b/radeon/radeon_drv.c
 index dee67fd..2dc488c 100644
 --- a/radeon/radeon_drv.c
 +++ b/radeon/radeon_drv.c
-@@ -147,6 +147,7 @@ int radeon_rs480_cp_me_ram_dump;
+@@ -147,7 +147,8 @@ int radeon_rs480_cp_me_ram_dump;
  int radeon_rs480_cp_me_ram_inject;
  int radeon_rs480_cp_me_oracle;
+ int radeon_rs480_r400_us_cs;
  int radeon_rs480_frontier_index = -1;
 +int radeon_rs480_vertex_index = -1;
  int radeon_rs480_hazard_index = -1;
@@ -87,7 +89,7 @@ index 7e3d6df..fe672bf 100644
   *
   * The 471-register vet flagged 62 registers hazard_exclude_by_name with a name
 @@ -1648,6 +1689,11 @@ static void rs480_candidate_regs_debugfs_init(struct radeon_device *rdev)
- 	 * attended physical presence before arming an index. */
+ 	 * presence before opening the node. */
  	debugfs_create_file("radeon_rs480_frontier_probe", 0400, root, rdev,
  			    &rs480_frontier_probe_fops);
 +	/* Attended vertex-engine probe.  Mode 0400: reading it performs one RREG32
