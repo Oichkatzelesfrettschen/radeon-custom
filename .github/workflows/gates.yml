@@ -92,3 +92,81 @@ jobs:
             sh scripts/materialize_legacy_radeon_tree.sh --manifest "$work/treeA.tsv"
           cmp "$work/treeA.tsv" docs/legacy-tree-a-manifest.tsv
           echo "legacy tree manifest reproduces byte-identically"
+
+  # radeon_gem.c carries a LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) split,
+  # and both runners run 7.x, so every other compile job takes the 7.x side and
+  # leaves the pre-7.0 side unbuilt. This job points the same gate at a retained
+  # 6.18 kernel build tree, which is what gives that side a compiler.
+  #
+  # The tree is root-owned and read-only. External-module compilation writes
+  # into the temporary Radeon source tree, so the job needs no write access to
+  # it and holds none.
+  compat-6-18:
+    runs-on: [self-hosted, linux, cachyos, primary-compile-host]
+    timeout-minutes: 45
+    env:
+      KERNEL_BUILD_ROOT: ${{ vars.RADEON_KERNEL_BUILD_ROOT_618 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      # The retained tree is a workspace-local path, so its identity is asserted
+      # from the repository rather than assumed from the variable. A variable
+      # repointed at a 7.x tree fails the range check instead of producing a
+      # green compatibility verdict against the branch this job exists to build.
+      - name: Verify retained 6.18 build-tree identity
+        run: |
+          set -euo pipefail
+          : "${KERNEL_BUILD_ROOT:?RADEON_KERNEL_BUILD_ROOT_618 is unset}"
+
+          release=$(cat "$KERNEL_BUILD_ROOT/include/config/kernel.release")
+          code=$(awk '$1 == "#define" && $2 == "LINUX_VERSION_CODE" { print $3 }' \
+                   "$KERNEL_BUILD_ROOT/include/generated/uapi/linux/version.h")
+
+          [ "$release" = "6.18.38-2-cachyos-lts" ] || {
+            echo "unexpected retained kernel release: $release" >&2
+            exit 1
+          }
+
+          # KERNEL_VERSION(6,18,0) <= code < KERNEL_VERSION(7,0,0)
+          [ "$code" -ge 397824 ] && [ "$code" -lt 458752 ] || {
+            echo "version code $code does not exercise the pre-7.0 branch" >&2
+            exit 1
+          }
+
+          ( cd "$KERNEL_BUILD_ROOT" && sha256sum -c \
+              "$GITHUB_WORKSPACE/ci/kernel-build-roots/6.18.38-2-cachyos-lts.sha256" )
+
+          echo "retained compatibility tree: $release, LINUX_VERSION_CODE=$code"
+
+      # The proof is the pair: the gate resolves a pre-7.0 root, and
+      # radeon_gem.o reaches the compiler under it. Both sides of the split live
+      # in radeon_gem.c, so a filename alone identifies no branch, while a
+      # successful object under a pre-7.0 version code compiles exactly the
+      # branch a 7.x host skips.
+      - name: Compile through the pre-7.0 compatibility branch
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/compat618.XXXXXX")
+          trap 'rm -rf "$work"' EXIT
+
+          mkdir -p "$HOME/.cache/gororoba-ci"
+          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            sh scripts/check_radeon_patch_series_compiles.sh \
+              --require-compile \
+              --kernel-build-root "$KERNEL_BUILD_ROOT" | tee "$work/compile.log"
+
+          code=$(awk '$1 == "LINUX_VERSION_CODE:" { print $2 }' "$work/compile.log")
+          [ -n "$code" ] && [ "$code" -lt 458752 ] || {
+            echo "the gate resolved LINUX_VERSION_CODE '$code', which is not pre-7.0" >&2
+            exit 1
+          }
+
+          grep -Eq 'CC \[M\][[:space:]]+radeon_gem\.o' "$work/compile.log" || {
+            echo "radeon_gem.o did not reach the compiler, so no branch was built" >&2
+            exit 1
+          }
+
+          echo "pre-7.0 branch of radeon_gem.c compiled at LINUX_VERSION_CODE=$code"
