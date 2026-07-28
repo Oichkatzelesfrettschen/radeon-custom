@@ -139,11 +139,22 @@ jobs:
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
             sh scripts/materialize_legacy_radeon_base.sh \
               --upstream "$UPSTREAM_RADEON_TREE" \
+              --out "$work/base-tree" \
               --manifest "$work/base.tsv" \
               --normalization "$work/base-norm.tsv" \
               --prove-generated
           cmp "$work/base.tsv" docs/legacy-base-source-manifest.tsv
           cmp "$work/base-norm.tsv" docs/legacy-base-source-normalization.tsv
+
+          # The map's closure properties run against the same trees the
+          # manifests were just proved from: every changed line assigned
+          # exactly once, provenance per origin kind, and the mapped atom
+          # union reconstructing the base byte-identically.
+          python3 scripts/check_base_delta_map_closure.py \
+            --upstream "$UPSTREAM_RADEON_TREE" \
+            --base "$work/base-tree" \
+            --map docs/base-delta-map.tsv \
+            --base-manifest docs/legacy-base-source-manifest.tsv
 
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
             sh scripts/normalize_legacy_source_tree.sh \
