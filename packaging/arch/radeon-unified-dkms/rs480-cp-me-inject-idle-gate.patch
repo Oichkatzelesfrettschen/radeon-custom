@@ -24,7 +24,7 @@ Assisted-by: Codex
 + * original via the RADDR read pointer, stop the command queue with
 + * CP_CSQ_CNTL=CSQ_PRIDIS_INDDIS (the microcode stays loaded --
 + * r100_cp_disable()/r100_cp_init() would reload R300_cp.bin and clobber the
-@@ -1197,0 +1199,19 @@
+@@ -1197,0 +1198,19 @@
 +static int rs480_cp_me_ram_inject_wait_idle(struct radeon_device *rdev)
 +{
 +	int ret = 0;
@@ -44,7 +44,7 @@ Assisted-by: Codex
 +	return ret;
 +}
 +
-@@ -1276,0 +1297,10 @@
+@@ -1276,0 +1296,10 @@
 +	ret = rs480_cp_me_ram_inject_wait_idle(rdev);
 +	if (ret) {
 +		snprintf(ctx->result, sizeof(ctx->result),

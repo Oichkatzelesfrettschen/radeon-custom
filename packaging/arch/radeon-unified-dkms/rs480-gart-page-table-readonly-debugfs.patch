@@ -20,9 +20,12 @@ after DRM assigns the minor debugfs root.
 
 ---
 diff --git a/radeon/rs400.c b/radeon/rs400.c
+index 6657a11..e8a87e2 100644
 --- a/radeon/rs400.c
 +++ b/radeon/rs400.c
-@@ -33,6 +33,11 @@
+@@ -31,8 +31,13 @@
+ #include <linux/seq_file.h>
+ #include <linux/slab.h>
  #include <linux/pci.h>
 +#include <linux/mutex.h>
  #include <linux/uaccess.h>
@@ -34,19 +37,28 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
  #include <drm/drm_device.h>
  #include <drm/drm_file.h>
  
-@@ -43,2 +48,4 @@
+@@ -46,6 +51,8 @@
+ /* This files gather functions specifics to : rs400,rs480 */
  static void rs400_debugfs_pcie_gart_info_init(struct radeon_device *rdev);
  static void rs480_safe_regs_debugfs_init(struct radeon_device *rdev);
 +static DEFINE_MUTEX(rs400_gart_page_table_lock);
 +
-@@ -227,2 +234,3 @@ void rs400_gart_disable(struct radeon_device *rdev)
+ static void rs480_candidate_regs_debugfs_init(struct radeon_device *rdev);
+ 
+ void rs400_gart_adjust_size(struct radeon_device *rdev)
+@@ -227,9 +234,11 @@ void rs400_gart_disable(struct radeon_device *rdev)
  void rs400_gart_fini(struct radeon_device *rdev)
  {
 +	mutex_lock(&rs400_gart_page_table_lock);
-@@ -232,1 +240,2 @@ void rs400_gart_fini(struct radeon_device *rdev)
+ 	radeon_gart_fini(rdev);
+ 	rs400_gart_disable(rdev);
+ 	radeon_gart_table_ram_free(rdev);
 +	mutex_unlock(&rs400_gart_page_table_lock);
  }
-@@ -426,6 +435,164 @@
+
+ #define RS400_PTE_UNSNOOPED (1 << 0)
+ #define RS400_PTE_WRITEABLE (1 << 2)
+@@ -426,6 +435,164 @@ static int rs400_debugfs_gart_info_show(struct seq_file *m, void *unused)
  }
  
  DEFINE_SHOW_ATTRIBUTE(rs400_debugfs_gart_info);
@@ -211,8 +223,12 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
  #endif
  
  
-@@ -3122,1 +3289,3 @@ void radeon_rs480_re_debugfs_register(struct drm_minor *minor)
--	rs480_candidate_regs_debugfs_init(rdev);
-+	rs480_candidate_regs_debugfs_init(rdev);
+@@ -2231,6 +2398,8 @@ void radeon_rs480_re_debugfs_register(struct drm_minor *minor)
+ 
+ 	rs480_safe_regs_debugfs_init(rdev);
+ 	rs480_candidate_regs_debugfs_init(rdev);
 +	debugfs_create_file("radeon_rs480_gart_page_table", 0400,
 +			    minor->debugfs_root, rdev, &rs400_debugfs_gart_page_table_fops);
+ 	if ((rdev->family == CHIP_RS480 || rdev->family == CHIP_RS400) &&
+ 	    rdev->accel_working)
+ 		radeon_debugfs_rs480_mc_flush_init(rdev);
