@@ -67,7 +67,16 @@ emit() {
           size=$(printf '%s' "$target" | wc -c)
           sum=$(printf '%s' "$target" | sha256sum | cut -d' ' -f1)
         else
-          if [ -x "$f" ]; then mode=100755; else mode=100644; fi
+          # The permission bits decide the mode, matching the st_mode & 0o111
+          # test in linux-radeon-gororoba's manifest_source_tree.py. The two
+          # emitters feed one comparison, so they resolve the mode the same way.
+          # A [ -x ] access test would answer differently under root, where every
+          # readable file tests executable.
+          if [ "$(( 0$(stat -c '%a' "$f") & 0111 ))" -ne 0 ]; then
+            mode=100755
+          else
+            mode=100644
+          fi
           size=$(stat -c '%s' "$f")
           sum=$(sha256sum "$f" | cut -d' ' -f1)
         fi
