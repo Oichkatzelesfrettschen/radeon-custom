@@ -43,7 +43,7 @@
 +
  /* CP MicroEngine instruction-memory read-back dump.
   *
-  * The loaded R300_cp.bin is only the 256-microword ME_RAM overlay: the kernel
+  * The loaded R300_cp.bin is the entire CP-ME instruction memory: a 256-microword
 @@ -988,6 +1025,8 @@
  			    &rs480_candidate_zb_regs_fops);
  	debugfs_create_file("radeon_rs480_candidate_firmware_read_regs", 0444, root, rdev,

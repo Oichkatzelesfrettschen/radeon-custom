@@ -99,6 +99,27 @@ jobs:
       - name: Manifest emitter calibration
         run: sh scripts/emit_source_tree_manifest.sh --self-test
 
+      # The capture applies the dkms.conf series in order under exact context
+      # (git apply, then GNU patch at --fuzz=0), so a patch whose context has
+      # drifted fails here instead of being silently relocated by DKMS's
+      # default-fuzz apply. The committed effects table is the review record;
+      # a series edit reproduces as a row-level difference.
+      - name: Legacy patch-effects capture reproduces
+        run: |
+          set -euo pipefail
+          python3 scripts/capture_legacy_patch_effects.py --self-test
+          work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/effects.XXXXXX")
+          trap 'rm -rf "$work"' EXIT
+          mkdir -p "$work/tree"
+          tar xJf sources/radeon-unified-0.3-source.tar.xz -C "$work/tree"
+          python3 scripts/capture_legacy_patch_effects.py \
+            --tree "$work/tree" \
+            --dkms-conf packaging/arch/radeon-unified-dkms/dkms.conf \
+            --patches-dir patches/rs480 \
+            --out "$work/effects.tsv"
+          cmp "$work/effects.tsv" docs/legacy-patch-effects.tsv
+          echo "legacy patch effects reproduce: 70 rows under exact-context apply"
+
       # Both normalized oracles derive from pristine upstream, so the upstream
       # tree is content-checked before it is used. A path repointed at a
       # different revision fails against the committed upstream manifest instead

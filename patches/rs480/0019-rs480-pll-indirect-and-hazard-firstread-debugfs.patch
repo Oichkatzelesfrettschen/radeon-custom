@@ -225,7 +225,7 @@
  
  /* drm_driver.debugfs_init hook.  drm_debugfs_register() assigns
 @@ -1443,6 +1619,17 @@
- 	 * attended physical presence before arming an index. */
+ 	 * presence before opening the node. */
  	debugfs_create_file("radeon_rs480_frontier_probe", 0400, root, rdev,
  			    &rs480_frontier_probe_fops);
 +	/* PLL-indirect clock-tree read-out.  Read-only and low hazard: the PLL

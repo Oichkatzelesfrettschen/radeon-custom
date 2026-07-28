@@ -140,7 +140,7 @@ Grounded in the 2026-06-12 two-wedge-class finding.
  {
  #if defined(CONFIG_DEBUG_FS)
 @@ -1728,6 +1775,8 @@
- 	 * attended physical presence before arming an index. */
+ 	 * presence before opening the node. */
  	debugfs_create_file("radeon_rs480_frontier_probe", 0400, root, rdev,
  			    &rs480_frontier_probe_fops);
 +	debugfs_create_file("radeon_rs480_force_clock_read", 0400, root, rdev,
