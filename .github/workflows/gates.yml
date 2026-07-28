@@ -93,7 +93,7 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
             sh scripts/materialize_legacy_radeon_tree.sh --manifest "$work/treeA.tsv"
-          cmp "$work/treeA.tsv" docs/legacy-tree-a-manifest.tsv
+          cmp "$work/treeA.tsv" docs/legacy-payload-0.3-91-exact-context-manifest.tsv
           echo "legacy tree manifest reproduces byte-identically"
 
       - name: Manifest emitter calibration
@@ -183,8 +183,8 @@ jobs:
               --manifest "$work/final.tsv" \
               --normalization "$work/final-norm.tsv" \
               --prove-generated
-          cmp "$work/final.tsv" docs/legacy-tree-a-source-manifest.tsv
-          cmp "$work/final-norm.tsv" docs/legacy-tree-a-source-normalization.tsv
+          cmp "$work/final.tsv" docs/migration-oracle-0.3-91-exact-context-manifest.tsv
+          cmp "$work/final-norm.tsv" docs/migration-oracle-0.3-91-exact-context-normalization.tsv
 
           # The two oracles differ by exactly the generator input the series
           # adds, which is the arithmetic the base-delta map depends on.
