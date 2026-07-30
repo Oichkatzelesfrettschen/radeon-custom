@@ -134,12 +134,12 @@ jobs:
           printf '%s\n' "$verifier_output"
           package_sha256=$(printf '%s\n' "$verifier_output" |
             sed -n 's/^package_sha256=//p')
-          [ "$(printf '%s\n' "$package_sha256" | wc -l)" -eq 1 ] &&
-            printf '%s\n' "$package_sha256" |
-              grep -Eq '^[0-9a-f]{64}$' || {
-                echo "package verifier emitted no unique canonical digest" >&2
-                exit 1
-              }
+          if [ "$(printf '%s\n' "$package_sha256" | wc -l)" -ne 1 ] ||
+              ! printf '%s\n' "$package_sha256" |
+                grep -Eq '^[0-9a-f]{64}$'; then
+            echo "package verifier emitted no unique canonical digest" >&2
+            exit 1
+          fi
           printf 'PACKAGE_SHA256=%s\n' "$package_sha256" >>"$GITHUB_ENV"
           RADEON_UNIFIED_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" \
             bash scripts/test_radeon_dkms_package_verifier.sh "$package_path"
