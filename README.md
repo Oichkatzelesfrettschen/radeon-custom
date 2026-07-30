@@ -28,7 +28,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Unified DKMS package 0.3-94 exports the signed legacy-equivalent driver tree and composes trusted root-build and package KCFLAGS through one policy helper | compile-verified on 6.18.38-2-cachyos-lts and 7.1.4-1-cachyos; package export and disposable DKMS lifecycle pass; target install and load not run |
+| Unified DKMS package 0.3-95 exports the signed legacy-equivalent driver tree and composes trusted root-build and package KCFLAGS through one policy helper | compile-verified on 6.18.38-2-cachyos-lts and 7.1.4-1-cachyos; package export and disposable DKMS lifecycle pass; target install and load not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
 | RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
