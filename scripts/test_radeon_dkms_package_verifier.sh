@@ -56,7 +56,8 @@ create_package_fixture() {
 
 mkdir "$tmpdir/source-tree" "$tmpdir/source-mode-tree" \
     "$tmpdir/metadata-tree" "$tmpdir/extra-tree" \
-    "$tmpdir/executable-tree" "$tmpdir/excess-executable-tree"
+    "$tmpdir/executable-tree" "$tmpdir/excess-executable-tree" \
+    "$tmpdir/source-directory-mode-tree"
 bsdtar -xpf "$package" -C "$tmpdir/source-tree"
 printf '\n# verifier mutation fixture\n' \
     >>"$tmpdir/source-tree/usr/src/radeon-unified-0.3/radeon/Makefile"
@@ -111,7 +112,16 @@ chmod 0777 "$tmpdir/directory-mode-tree/usr/src/radeon-unified-0.3/radeon"
 create_package_fixture "$tmpdir/directory-mode.pkg.tar.zst" \
     "$tmpdir/directory-mode-tree"
 expect_rejection directory-mode "$tmpdir/directory-mode.pkg.tar.zst" \
-    "archive directory mode is neither 755 nor signed-source 775"
+    "archive directory mode is not 755"
+
+bsdtar -xpf "$package" -C "$tmpdir/source-directory-mode-tree"
+chmod 0775 \
+    "$tmpdir/source-directory-mode-tree/usr/src/radeon-unified-0.3/radeon/reg_srcs"
+create_package_fixture "$tmpdir/source-directory-mode.pkg.tar.zst" \
+    "$tmpdir/source-directory-mode-tree"
+expect_rejection source-directory-mode \
+    "$tmpdir/source-directory-mode.pkg.tar.zst" \
+    "archive directory mode is not 755"
 
 (
     umask 000

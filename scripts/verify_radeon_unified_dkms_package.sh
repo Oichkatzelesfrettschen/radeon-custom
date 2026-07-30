@@ -49,10 +49,9 @@ preflight_archive() {
         die "archive contains a member whose numeric UID or GID is not zero"
     fi
     if awk '$1 ~ /^d/ &&
-            $1 != "drwxr-xr-x" &&
-            $1 != "drwxrwxr-x" { found = 1 }
+            $1 != "drwxr-xr-x" { found = 1 }
             END { exit found ? 0 : 1 }' "$verbose_manifest"; then
-        die "archive directory mode is neither 755 nor signed-source 775"
+        die "archive directory mode is not 755"
     fi
 
     : >"$normalized_manifest"
@@ -281,6 +280,7 @@ check_member "$package_dir/radeon-re.conf" \
 git -C "$source_repository" archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
     bsdtar -xpf - -C "$expected_radeon"
+find "$expected_radeon" -type d -exec chmod 0755 {} +
 (cd "$expected_radeon" && find . -printf '%y\t%m\t%P\t%l\n' | sort) \
     >"$expected_tree_manifest"
 (cd "$dkms_root/radeon" && find . -printf '%y\t%m\t%P\t%l\n' | sort) \

@@ -4,10 +4,12 @@ This directory packages the signed legacy-equivalent Radeon source checkpoint.
 `linux-radeon-gororoba` owns the driver source. `radeon-custom` owns the source
 pin, DKMS glue, compiler policy, runtime defaults, and package verification.
 
-The active constructor is `PKGBUILD` at package revision 0.3-95. It resolves
+The active constructor is `PKGBUILD` at package revision 0.3-96. It resolves
 commit `9079be562eebd184da9cf891fbc6a72d5ac0d9f3`, verifies the annotated tag
 object and driver tree, and exports `drivers/gpu/drm/radeon` with `git archive`.
-The package applies no patch and performs no source mutation.
+The package applies no patch and changes no source file byte. Git tree objects
+carry no directory objects, so the constructor normalizes deployment directory
+modes to 0755.
 
 `source-identity.toml` records the source repository, commit, annotated tag
 object, driver tree, migration manifest digest, generated-output proof digest,
@@ -40,18 +42,20 @@ bash scripts/verify_radeon_unified_dkms_sources.sh \
 
 verifier_output=$(bash scripts/verify_radeon_unified_dkms_package.sh \
   --source-repository "$RADEON_UNIFIED_SOURCE_REPOSITORY" \
-  --package packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-95-x86_64.pkg.tar.zst)
+  --package packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-96-x86_64.pkg.tar.zst)
 printf '%s\n' "$verifier_output"
 package_digest=$(printf '%s\n' "$verifier_output" |
   sed -n 's/^package_sha256=//p')
 RADEON_UNIFIED_SOURCE_REPOSITORY="$RADEON_UNIFIED_SOURCE_REPOSITORY" \
   bash scripts/test_radeon_dkms_package_verifier.sh \
-    packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-95-x86_64.pkg.tar.zst
+    packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-96-x86_64.pkg.tar.zst
 ```
 
 The package verifier binds package metadata, root ownership, regular-file and
 directory member types, directory modes, the complete archive namespace, and
-every installed Radeon byte to the selected recipe and signed driver tree. Its
+every installed Radeon byte to the selected recipe and signed driver tree.
+Directory mode 0755 is package policy rather than source identity. The
+verifier's
 calibration rejects source, metadata, member-set, mode, ownership, traversal,
 link-type, and admitted-digest mutations.
 

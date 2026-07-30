@@ -5,7 +5,7 @@
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
-pkgrel=95
+pkgrel=96
 pkgdesc='Legacy-equivalent Radeon DKMS module from the signed source checkpoint'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/linux-radeon-gororoba'
@@ -81,6 +81,9 @@ package() {
   git -C "${srcdir}/radeon-source" archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
     bsdtar -xf - -C "${dkmsdir}/radeon"
+  # Git archives synthesize directory modes outside the Git tree object.
+  # Normalize them so upgrades preserve one deployment mode without warnings.
+  find "${dkmsdir}/radeon" -type d -exec chmod 0755 {} +
 
   install -Dm644 "${srcdir}/source-identity.toml" \
     "${dkmsdir}/source-identity.toml"
