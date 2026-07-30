@@ -199,13 +199,16 @@ run_dkms_recipe() {
     local config=$1
     local capture=$2
     local parallel_value=${3:-3}
+    local kernel_release=${4:-fixture-kernel}
     local package_name
     local package_version
     local make_command
     local kernel_build_root="$tmpdir/kernel build"
+    local kernel_build_root_q
+    local kernel_release_q
 
     # shellcheck disable=SC2034
-    kernelver=fixture-kernel
+    kernelver=$kernel_release
     dkms_tree="$tmpdir/dkms"
     # shellcheck disable=SC2034
     R300_RS480_KERNEL_BUILD_ROOT=$kernel_build_root
@@ -222,6 +225,11 @@ run_dkms_recipe() {
     chmod 0755 \
         "$dkms_tree/$package_name/$package_version/build/radeon-dkms-make"
     make_command=${MAKE[0]}
+    printf -v kernel_release_q '%q' "$kernel_release"
+    printf -v kernel_build_root_q '%q' "$kernel_build_root"
+    [[ $PRE_BUILD == \
+        "pre-build.sh ${kernel_release_q} ${kernel_build_root_q}" ]] ||
+        die "$config does not quote the PRE_BUILD arguments"
 
     PATH="$tmpdir/bin:$PATH" \
         RADEON_DKMS_CAPTURE="$capture" \
@@ -243,11 +251,39 @@ run_dkms_recipe() {
         grep -Fxq 'ARG=-j' "$capture" ||
             die "$config does not preserve DKMS unlimited parallelism"
     fi
-    grep -Fxq 'ARG=KERNELRELEASE=fixture-kernel' "$capture" ||
+    grep -Fxq "ARG=KERNELRELEASE=$kernel_release" "$capture" ||
         die "$config does not preserve the DKMS kernel release"
     grep -Fxq "ARG=M=$dkms_tree/$package_name/$package_version/build/radeon" \
         "$capture" ||
         die "$config does not preserve a quoted DKMS module path"
+}
+
+run_invalid_parallel_recipe() {
+    local config=$1
+    local diagnostic="$tmpdir/$(basename "$config").invalid-parallel.log"
+
+    # shellcheck disable=SC2034
+    kernelver=fixture-kernel
+    dkms_tree="$tmpdir/dkms-invalid"
+    # shellcheck disable=SC2034
+    R300_RS480_KERNEL_BUILD_ROOT="$tmpdir/kernel build"
+    parallel_jobs='invalid; printf DKMS_CONFIG_INJECTION'
+    # shellcheck source=/dev/null
+    source "$config"
+    unset R300_RS480_KERNEL_BUILD_ROOT
+    unset parallel_jobs
+    [[ ${BUILT_MODULE_NAME[0]-} == radeon &&
+        ${BUILT_MODULE_LOCATION[0]-} == radeon &&
+        -n ${MAKE[0]-} ]] ||
+        die "$config drops module directives for invalid parallel input"
+    if bash -c "${MAKE[0]}" >"$diagnostic" 2>&1; then
+        die "$config accepts an invalid DKMS parallel job count"
+    fi
+    grep -Fxq 'dkms.conf: invalid DKMS parallel job count' "$diagnostic" ||
+        die "$config invalid parallel command omits its diagnostic"
+    if grep -Fq 'DKMS_CONFIG_INJECTION' "$diagnostic"; then
+        die "$config evaluates invalid parallel input"
+    fi
 }
 
 primary_capture="$tmpdir/primary.capture"
@@ -259,6 +295,14 @@ run_dkms_recipe \
 run_dkms_recipe "$package_dir/dkms.conf" "$tmpdir/primary-unlimited.capture" ''
 run_dkms_recipe "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
     "$tmpdir/legacy-unlimited.capture" ''
+hostile_release='fixture; printf PREBUILD_INJECTION; #'
+run_dkms_recipe "$package_dir/dkms.conf" "$tmpdir/primary-hostile.capture" \
+    3 "$hostile_release"
+run_dkms_recipe "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
+    "$tmpdir/legacy-hostile.capture" 3 "$hostile_release"
+run_invalid_parallel_recipe "$package_dir/dkms.conf"
+run_invalid_parallel_recipe \
+    "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2"
 
 primary_kcflags=$(sed -n 's/^KCFLAGS=//p' "$primary_capture")
 legacy_kcflags=$(sed -n 's/^KCFLAGS=//p' "$legacy_capture")

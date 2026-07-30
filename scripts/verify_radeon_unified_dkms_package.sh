@@ -35,7 +35,7 @@ preflight_archive() {
 
     LC_ALL=C bsdtar -tf "$archive" >"$raw_manifest" ||
         die "cannot list package archive"
-    LC_ALL=C bsdtar -tvf "$archive" >"$verbose_manifest" ||
+    LC_ALL=C bsdtar --numeric-owner -tvf "$archive" >"$verbose_manifest" ||
         die "cannot inspect package archive members"
     [[ -s $raw_manifest ]] || die "package archive has no members"
     if awk 'substr($0, 1, 1) != "-" && substr($0, 1, 1) != "d" {
@@ -44,9 +44,9 @@ preflight_archive() {
         END { exit found ? 0 : 1 }' "$verbose_manifest"; then
         die "archive contains a symbolic link, hard link, or special file"
     fi
-    if awk '$3 != "root" || $4 != "root" { found = 1 }
+    if awk '$3 != "0" || $4 != "0" { found = 1 }
             END { exit found ? 0 : 1 }' "$verbose_manifest"; then
-        die "archive contains a member not owned by root"
+        die "archive contains a member whose numeric UID or GID is not zero"
     fi
     if awk '$1 ~ /^d/ &&
             $1 != "drwxr-xr-x" &&
@@ -180,7 +180,7 @@ expected_files="$tmpdir/expected-files.txt"
 expected_members="$tmpdir/expected-members.txt"
 mkdir "$extracted_root" "$expected_radeon"
 : >"$expected_files"
-bsdtar -xf "$admitted_package" -C "$extracted_root"
+bsdtar -xpf "$admitted_package" -C "$extracted_root"
 
 pkginfo="$extracted_root/.PKGINFO"
 [[ -f $pkginfo && ! -L $pkginfo ]] ||
@@ -280,7 +280,7 @@ check_member "$package_dir/radeon-re.conf" \
 
 git -C "$source_repository" archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
-    bsdtar -xf - -C "$expected_radeon"
+    bsdtar -xpf - -C "$expected_radeon"
 (cd "$expected_radeon" && find . -printf '%y\t%m\t%P\t%l\n' | sort) \
     >"$expected_tree_manifest"
 (cd "$dkms_root/radeon" && find . -printf '%y\t%m\t%P\t%l\n' | sort) \
