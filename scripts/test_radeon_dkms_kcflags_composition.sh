@@ -88,7 +88,7 @@ run_helper_case empty '' ''
 run_helper_case multi_argument \
     '-DRADEON_CALLER_SENTINEL=1 -Wno-unused-parameter' \
     '-DRADEON_CALLER_SENTINEL=1'
-run_helper_case deduplicated \
+run_helper_case required_flags_present \
     '-DRADEON_CALLER_SENTINEL=1 -O2 -pipe' \
     '-DRADEON_CALLER_SENTINEL=1'
 run_helper_case repeated_spaces \
@@ -98,6 +98,7 @@ run_helper_case repeated_spaces \
 assert_helper_rejects() {
     local name=$1
     local incoming_kcflags=$2
+    local diagnostic=$3
 
     if PATH="$tmpdir/bin:$PATH" \
             RADEON_DKMS_CAPTURE="$tmpdir/$name.capture" \
@@ -107,20 +108,35 @@ assert_helper_rejects() {
     fi
     [[ ! -e $tmpdir/$name.capture ]] ||
         die "helper invokes make for rejected KCFLAGS in $name"
+    grep -Fq -- "$diagnostic" "$tmpdir/$name.trace" ||
+        die "helper rejection lacks its contract diagnostic in $name"
 }
 
-assert_helper_rejects quoted "-DVALUE='x -O2 y'"
-assert_helper_rejects shell_operator '-O2;id'
-assert_helper_rejects command_substitution '-DVALUE=$(id)'
-assert_helper_rejects backtick '-DVALUE=`id`'
-assert_helper_rejects tab $'-O2\t-pipe'
-assert_helper_rejects newline $'-O2\n-pipe'
+assert_helper_rejects quoted "-DVALUE='x -O2 y'" \
+    'unsafe KCFLAGS token'
+assert_helper_rejects shell_operator '-O2;id' \
+    'unsafe KCFLAGS token'
+assert_helper_rejects command_substitution '-DVALUE=$(id)' \
+    'unsafe KCFLAGS token'
+assert_helper_rejects backtick '-DVALUE=`id`' \
+    'unsafe KCFLAGS token'
+assert_helper_rejects tab $'-O2\t-pipe' \
+    'must contain printable ASCII separated by spaces'
+assert_helper_rejects newline $'-O2\n-pipe' \
+    'must contain printable ASCII separated by spaces'
+assert_helper_rejects duplicate_o2 '-O2 -O2' \
+    'duplicate package KCFLAGS token: -O2'
+assert_helper_rejects duplicate_pipe '-pipe -pipe' \
+    'duplicate package KCFLAGS token: -pipe'
+assert_helper_rejects duplicate_o2_mixed '-O2 -pipe -O2' \
+    'duplicate package KCFLAGS token: -O2'
 
-grep -Fq 'unsafe KCFLAGS token' "$tmpdir/shell_operator.trace" ||
-    die "shell-operator rejection lacks its contract diagnostic"
-grep -Fq 'must contain printable ASCII separated by spaces' \
-    "$tmpdir/tab.trace" ||
-    die "control-character rejection lacks its contract diagnostic"
+for optimization in -O -O0 -O1 -O3 -Og -Os -Oz -Ofast; do
+    name="conflicting_${optimization#-}"
+    assert_helper_rejects "$name" \
+        "$optimization -DRADEON_CALLER_SENTINEL=1" \
+        "conflicting optimization token: $optimization; package requires -O2"
+done
 
 calibration_good="$tmpdir/calibration-good"
 cat >"$calibration_good" <<'EOF'
