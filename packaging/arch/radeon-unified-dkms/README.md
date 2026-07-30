@@ -1,101 +1,61 @@
-# Arch/CachyOS Radeon DKMS Adapter
+# Arch Radeon DKMS package
 
-This directory is the Arch-family packaging frontend for the canonical
-`src/re/radeon/` DKMS patchset.
+This directory packages the signed legacy-equivalent Radeon source checkpoint.
+`linux-radeon-gororoba` owns the driver source. `radeon-custom` owns the source
+pin, DKMS glue, compiler policy, runtime defaults, and package verification.
 
-Current status:
+The active constructor is `PKGBUILD` at package revision 0.3-94. It resolves
+commit `9079be562eebd184da9cf891fbc6a72d5ac0d9f3`, verifies the annotated tag
+object and driver tree, and exports `drivers/gpu/drm/radeon` with `git archive`.
+The package applies no patch and performs no source mutation.
 
-| File | Meaning |
-|---|---|
-| `PKGBUILD` | Buildable CachyOS package frontend for `radeon-unified-dkms`. |
-| `dkms.conf` | DKMS config that calls the package-owned compiler-policy wrapper and applies package-owned probe patches. |
-| `pre-build.sh` | Trace-header staging plus compiler-policy logging. |
-| `compiler-policy.conf` | Package-owned defaults for compiler family, compiler binary, ccache, and plain distcc. |
-| `radeon-dkms-compiler-policy` | Validates and resolves the package-owned compiler/cache/distcc policy. |
-| `radeon-dkms-compiler` | Generic CC wrapper used by DKMS builds; dispatches through the resolved compiler policy. |
-| `radeon-dkms-ccache-*` | Family-pinned compatibility wrappers that reuse the shared compiler policy. |
-| `radeon-re.conf` | Package-owned modprobe policy for RS482/RS485 reverse-engineering and stable boot defaults. |
-| `radeon-unified-mkinitcpio.conf` | Package-owned mkinitcpio drop-in that appends `radeon` to `MODULES` for early KMS. |
+`source-identity.toml` records the source repository, commit, annotated tag
+object, driver tree, migration manifest digest, generated-output proof digest,
+and source-equivalence workflow run. The file is installed beside the DKMS
+source at `/usr/src/radeon-unified-0.3/source-identity.toml`.
 
-The package builds the generated unified source tarball retained under
-`src/re/radeon/sources/`.  The current tarball is based on the
-RS480-tested CachyOS source because that is the verified superset for
-this host; future changes should move toward an explicit upstream base
-plus ordered patch application.  Do not add new Arch-only kernel fixes
-here; add them to `../../patches/` and regenerate the frontend.
-
-The `PKGBUILD` source aliases intentionally differ from the installed
-DKMS filenames.  That keeps untracked files in this packaging directory
-from shadowing the canonical inputs in `src/re/radeon/patches/rs480/`
-and `src/re/radeon/sources/`.  Validate source integrity with a clean
-temporary source cache after editing any package input:
+The default transport is:
 
 ```bash
-../../../scripts/verify_radeon_unified_dkms_sources.sh
-tmp_srcdest=$(mktemp -d)
-trap 'rm -rf "$tmp_srcdest"' EXIT
-SRCDEST="$tmp_srcdest" makepkg -fC --verifysource --noconfirm
-makepkg -fC --noconfirm
-../../../scripts/verify_radeon_unified_dkms_package.sh \
-  ./radeon-unified-dkms-*.pkg.tar.zst
+git+ssh://git@github.com/Oichkatzelesfrettschen/linux-radeon-gororoba.git
 ```
 
-Existing `radeon-unified-dkms-*.pkg.tar.zst` files are build outputs,
-not source authority.  Rebuild them after any `radeon-re.conf`,
-compiler-policy, patch-series, register-table, or source-tarball change before installing
-on RS482/RS485 hardware, then run the built-package verifier to prove the
-Arch payload still matches the canonical package-owned configs, DKMS
-patches, and RS480 register tables.
-
-Compiler policy defaults to the target kernel's recorded compiler family,
-uses `ccache` when present, and enables plain `distcc` only when
-`RADEON_DKMS_DISTCC_HOSTS` is set.  Supported overrides are:
+A workstation with the sibling source repository uses:
 
 ```bash
-RADEON_DKMS_COMPILER_FAMILY=auto|clang|gcc
-RADEON_DKMS_CLANG_BIN=clang-22
-RADEON_DKMS_GCC_BIN=gcc
-RADEON_DKMS_CACHE_MODE=auto|ccache|off
-RADEON_DKMS_DISTCC_MODE=auto|plain|off
-RADEON_DKMS_DISTCC_HOSTS='ALIENWARE/32,lzo x570-5600X3D/16,lzo localhost/2,lzo'
+export RADEON_UNIFIED_SOURCE_REPOSITORY=../linux-radeon-gororoba
+export RADEON_UNIFIED_SOURCE_URL="git+file://$(realpath "$RADEON_UNIFIED_SOURCE_REPOSITORY")"
 ```
 
-Pump remains intentionally unsupported in this DKMS lane because the build
-consumes generated kernel headers and per-kernel ABI state.
-
-The installed DKMS default exposes the RS482 register readers:
-`rs480_safe_regs=1` for promoted safe reads and
-`rs480_candidate_regs=1` for bounded candidate-register validation.
-The first block-scoped candidate file is
-`radeon_rs480_candidate_config_regs`; `radeon_rs480_candidate_regs`
-remains as a compatibility alias for the current config-aperture cohort.
-The next split cohort is `radeon_rs480_candidate_gart_mc_regs`, which
-keeps the mixed reader boundary explicit by exposing only `AGP_BASE_2`,
-`GART_FEATURE_ID`, and `GART_BASE` instead of promoting the full
-`rs400_gart_info` surface.
-The bounded 3D-state file is `radeon_rs480_candidate_z_regs`, which
-holds the first bounded RS482 depth-state cohort:
-`R300_SC_HYPERZ`, `R300_GB_Z_PEQ_CONFIG`, `R300_ZB_ZTOP`,
-`R300_ZB_ZCACHE_CTLSTAT`, `R300_ZB_BW_CNTL`, `R300_ZB_ZMASK_OFFSET`,
-`R300_ZB_ZMASK_PITCH`, `R300_ZB_ZPASS_DATA`, and `R300_ZB_ZPASS_ADDR`.
-`ZB_HIZ_*` remains out of the first cohort because Mesa still models
-RS482 with `hiz_ram = 0` and the retained zpass bundle did not show any
-`ZB_HIZ_*` traffic. Use the candidate reader to exercise newly uncovered
-registers before promotion into the safe table.
-
-Build and install on CachyOS:
+Run the source, package, and lifecycle checks from the repository root:
 
 ```bash
-makepkg -Cf
-sudo pacman -U ./radeon-unified-dkms-*.pkg.tar.zst
-dkms status
+bash scripts/verify_radeon_unified_dkms_sources.sh \
+  --source-repository "$RADEON_UNIFIED_SOURCE_REPOSITORY"
+
+(
+  cd packaging/arch/radeon-unified-dkms
+  makepkg -fC --noconfirm
+)
+
+bash scripts/verify_radeon_unified_dkms_package.sh \
+  --source-repository "$RADEON_UNIFIED_SOURCE_REPOSITORY" \
+  --package packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-94-x86_64.pkg.tar.zst
 ```
 
-Upgrade-survival check:
+The package verifier compares every installed Radeon path, type, mode, link
+target, and file byte with a fresh archive from the pinned driver tree.
 
-```bash
-pacman -Qkk radeon-unified-dkms
-pacman -Qo /etc/modprobe.d/radeon-re.conf /etc/mkinitcpio.conf.d/radeon-unified.conf
-modinfo -k "$(uname -r)" radeon | grep 'rs480_.*regs'
-lsinitcpio /boot/*/linux-cachyos*/initramfs-linux-cachyos* | grep updates/dkms/radeon.ko
-```
+`radeon-dkms-make` admits printable unquoted KCFLAGS tokens, preserves their
+order, adds `-O2 -pipe` exactly once, and removes userspace compiler variables
+before Kbuild starts. `test_radeon_dkms_kcflags_composition.sh` calibrates the
+accepted and rejected forms.
+
+The disposable lifecycle gate extracts one admitted package into private DKMS
+roots, completes add, build, install, metadata capture, uninstall, unbuild, and
+remove, then proves no DKMS state remains. The expected SHA-256 binds the
+evidence to reviewed package bytes. It does not authenticate an externally
+obtained package.
+
+The files under `patches/`, `sources/`, and `migration/input/` are immutable
+legacy evidence. The active package does not consume them.

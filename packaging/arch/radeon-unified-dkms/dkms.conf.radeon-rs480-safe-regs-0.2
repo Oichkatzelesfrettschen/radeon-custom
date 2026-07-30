@@ -1,5 +1,7 @@
 PACKAGE_NAME="radeon-rs480-safe-regs"
 PACKAGE_VERSION="0.2"
+radeon_kernel_build_root=${R300_RS480_KERNEL_BUILD_ROOT:-/lib/modules/${kernelver}/build}
+printf -v radeon_kernel_build_root_q '%q' "$radeon_kernel_build_root"
 
 # This DKMS package rebuilds the in-tree radeon driver with one
 # steinmarder patch applied:
@@ -31,8 +33,9 @@ PACKAGE_VERSION="0.2"
 #   Detected at DKMS build time by reading compile.h from the target kernel.
 #   If compile.h records a clang build, CC=clang (system default Clang).
 #   Otherwise, CC=gcc (system default GCC), which matches GCC-built kernels.
-#   KCFLAGS='-O2 -pipe' reaches external-module compiler invocations and aligns
-#   with the kernel's release build profile.
+#   radeon-dkms-make preserves admitted non-conflicting caller KCFLAGS, rejects
+#   duplicate policy flags and other -O* tokens, adds the missing -O2 and -pipe
+#   release flags, and keeps userspace CFLAGS outside the kernel build.
 #   The CachyOS LTS kernel (6.18.x) is GCC-built; the main kernel is Clang-built.
 #   Package-local wrapper scripts use ccache when available, then fall back
 #   to the raw compiler.  Distcc/pump is deliberately not used here because
@@ -50,8 +53,8 @@ DEST_MODULE_LOCATION[0]="/updates/dkms"
 
 # CC detection: read compile.h from the target kernel's build headers.
 # grep exit code 0 = clang built; non-zero = GCC built -> use gcc.
-MAKE[0]="make CC=$(grep -q 'clang' /lib/modules/${kernelver}/build/include/generated/compile.h 2>/dev/null && echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-clang || echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-gcc) KCFLAGS='-O2 -pipe' -C /lib/modules/${kernelver}/build M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon modules"
+MAKE[0]="${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-make CC=$(grep -q 'clang' "$radeon_kernel_build_root/include/generated/compile.h" 2>/dev/null && echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-clang || echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-gcc) -C ${radeon_kernel_build_root_q} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon modules"
 
-PRE_BUILD="pre-build.sh ${kernelver}"
+PRE_BUILD="pre-build.sh ${kernelver} ${radeon_kernel_build_root_q}"
 
 AUTOINSTALL="yes"

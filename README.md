@@ -11,18 +11,15 @@ equivalent path under that repository on the workstation). Treat that file as
 the source of truth and update it when this repo changes the installed DKMS
 `pkgrel` or patch series.
 
-This repository is the single active kernel build source. Mesa userspace lives
-in `mesa-26-gororoba`; retained RS482 probes, logs, result bundles, and hardware
-verdicts live in `steinmarder-r300`. Historical Steinmarder package trees remain
-provenance, not active build inputs.
+`linux-radeon-gororoba` is the canonical kernel source. This repository is the
+deployment and package authority. It owns the signed source pin, Arch and
+CachyOS package, DKMS glue, compiler policy, initramfs and modprobe policy,
+hazard preflight, and package verification.
 
-Kernel source moves to `linux-radeon-gororoba`, and authority moves with it at
-the source-pin cutover. Until that cutover this repository remains the
-deployable authority and the source repository is a reconstruction candidate,
-so deployment consumes what is built here. After cutover this repository owns
-the Arch and CachyOS package, DKMS glue, compiler policy, initramfs and modprobe
-policy, hazard preflight, the source pin, and package verification, while the
-kernel source and its register policy tables answer to the source repository.
+Mesa userspace lives in `mesa-26-gororoba`. Retained RS482 probes, logs, result
+bundles, falsifiers, and hardware verdicts live in `steinmarder-r300`.
+Historical patch files and source snapshots in this repository remain
+provenance. The active package does not consume them.
 
 ## What this repository proves and what it does not
 
@@ -31,7 +28,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Unified DKMS package 0.3-91 (exact-context series) builds on 6.18.38 and the current 7.x compile roots | compile-verified; no retained target install or load of this revision |
+| Unified DKMS package 0.3-94 exports the signed legacy-equivalent driver tree and composes caller and package KCFLAGS through one policy helper | compile-verified on 6.18.38-2-cachyos-lts and 7.1.4-1-cachyos; package export and disposable DKMS lifecycle pass; target install and load not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
 | RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
@@ -52,11 +49,14 @@ The package and patch order are authoritative here.
 
 The primary package is `packaging/arch/radeon-unified-dkms/`.
 
-- `dkms.conf` is the ordered patch manifest.
-- `PKGBUILD` generates and installs the canonical Radeon source tree used by
-  DKMS and rebuilds the boot initramfs after installation.
-- `patches/rs480/` contains RS480/RS482 instrumentation, reset experiments,
-  failed-reset parking/containment, and bounded reset-mask candidates.
+- `source-identity.toml` pins the signed source commit, tag object, driver tree,
+  and equivalence proofs.
+- `PKGBUILD` exports the pinned driver subtree with `git archive`, installs the
+  exact bytes under `/usr/src`, and rebuilds the boot initramfs after
+  installation.
+- `dkms.conf` builds the exported source directly. It declares no patch phase.
+- `patches/rs480/` preserves the chronological migration evidence. The active
+  package consumes no patch file.
 - `radeon_rs480_gart_page_table` exposes at most 64 hardware GART entries and
   two CPU page-table rows through a root-only read-only debugfs file. The
   reader selects the PAT bit by page-table level and emits a fixed 20-column
@@ -87,8 +87,9 @@ recovery.
 
 ## Repository layout
 
-- `patches/` holds ordered kernel changes and generated patch material.
-- `sources/` holds the canonical source snapshots used to construct the DKMS tree.
+- `patches/` holds historical kernel changes and generated patch material.
+- `sources/` holds historical source snapshots used by migration proofs.
+- `migration/input/` holds immutable legacy constructor declarations.
 - `scripts/` holds source generation, validation, and packaging helpers.
 - `packaging/arch/radeon-unified-dkms/` is the active Arch DKMS package.
 - `packaging/arch/rs480-reset-hazard-stack/` is the hazardous-run meta-package
@@ -125,25 +126,43 @@ from the repository root. Several checks source the PKGBUILD or use bash
 arrays, so invoke them with `bash` rather than `sh`:
 
 ```bash
-# PKGBUILD sha256sums match the patch files on disk
+# PKGBUILD sha256sums match package-owned inputs
 bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 
-# Patch series applies and (when a kernel build dir is present) compiles
-# (POSIX sh; uses repository-root packaging/, patches/, and sources/)
-sh scripts/check_radeon_patch_series_compiles.sh
+# Verify the signed source pin and package-owned inputs
+bash scripts/verify_radeon_unified_dkms_sources.sh \
+  --source-repository /path/to/linux-radeon-gororoba
 
-# Same gate in the mode a CI job uses: a missing kernel build dir becomes
-# exit 5, so a green status means the touched units reached the compiler
-sh scripts/check_radeon_patch_series_compiles.sh --require-compile
-
-# Compile the pre-7.0 side of the radeon_gem.c LINUX_VERSION_CODE split against
-# a retained 6.18 kernel build tree; ci/kernel-build-roots/README.md records
-# how a root is prepared and which release this repository pins
-sh scripts/check_radeon_patch_series_compiles.sh --require-compile \
+# Build the pinned export against each retained kernel root
+sh scripts/check_radeon_tagged_source_compiles.sh \
+  --source-repository /path/to/linux-radeon-gororoba \
   --kernel-build-root /path/to/6.18-build-root
+sh scripts/check_radeon_tagged_source_compiles.sh \
+  --source-repository /path/to/linux-radeon-gororoba \
+  --kernel-build-root /path/to/7.1-build-root
 
-# Unified DKMS source tree hashes and patch-chain apply dry-run
-bash scripts/verify_radeon_unified_dkms_sources.sh
+# Both recipes preserve admitted non-conflicting caller KCFLAGS and enforce
+# the package-owned -O2 -pipe release profile. Duplicate -O2 or -pipe and
+# caller optimization tokens other than -O2 fail before make runs. Quoted
+# KCFLAGS tokens and control whitespace fail admission; the DKMS command
+# separately preserves a kernel build-root pathname containing spaces.
+bash scripts/test_radeon_dkms_kcflags_composition.sh
+
+# Run the unprivileged payload verifier first, and use only a package built
+# from a reviewed, clean repository commit. The expected digest binds this
+# lifecycle evidence to the admitted bytes; it does not authenticate an
+# externally obtained package.
+bash scripts/verify_radeon_unified_dkms_package.sh \
+  --source-repository /path/to/linux-radeon-gororoba \
+  --package /path/to/package
+
+# One trusted package completes disposable add, build, install, metadata, and cleanup
+sudo install -d -m 0755 -o root -g root \
+  /var/lib/radeon-dkms-lifecycle-evidence
+sudo bash scripts/test_radeon_dkms_lifecycle.sh --package /path/to/package \
+  --expected-sha256 "$(sha256sum /path/to/package | awk '{print $1}')" \
+  --kernel-release "$(uname -r)" \
+  --evidence-dir /var/lib/radeon-dkms-lifecycle-evidence/new-run
 
 # Project-authored prose carries no dash construction
 python3 scripts/check_project_prose_style.py
@@ -156,6 +175,12 @@ gate:
 ```bash
 # 5 known-bad inputs rejected, 2 known-good inputs cleared
 sh scripts/check_radeon_patch_series_compiles.sh --self-test
+
+# wrong tree and malformed source identities fail
+python3 scripts/check_radeon_source_pin.py --self-test
+
+# clean and allowlisted logs pass, an unapproved warning fails
+sh scripts/check_radeon_tagged_source_compiles.sh --self-test
 
 # known-good prose silent, known-bad prose reported, corpus selection correct
 python3 scripts/check_project_prose_style.py --self-test
@@ -172,15 +197,17 @@ the intended kernel trees available:
 
 ```bash
 # keep the shell at the repository root for the checks below
-( cd packaging/arch/radeon-unified-dkms && makepkg -f )
+RADEON_UNIFIED_SOURCE_URL=git+file:///path/to/linux-radeon-gororoba \
+  makepkg -D packaging/arch/radeon-unified-dkms -fC --noconfirm
 ```
 
-After a package artifact exists under that directory, verify its payload
+After package artifacts exist, verify each payload and its executable modes
 against the canonical inputs:
 
 ```bash
-# Requires a built radeon-unified-dkms-*.pkg.tar.* in the package directory
-bash scripts/verify_radeon_unified_dkms_package.sh
+bash scripts/verify_radeon_unified_dkms_package.sh \
+  --source-repository /path/to/linux-radeon-gororoba \
+  --package /path/to/radeon-unified-dkms.pkg.tar.zst
 ```
 
 Optional runtime check on a live host (module loaded from the unified package):
@@ -195,8 +222,10 @@ or `installed`; promotion to `hardware-run`, `partial`, `hardware-pass`, or
 
 ## Cross-repository contract
 
-- `radeon-custom` owns kernel code, package contents, patch order, dependencies,
-  and safe defaults.
+- `linux-radeon-gororoba` owns modified kernel source, register policy inputs,
+  source history, and source-equivalence attestations.
+- `radeon-custom` owns package contents, source pins, dependencies, DKMS glue,
+  deployment policy, and safe defaults.
 - `steinmarder-r300` owns RS482 probes, evidence bundles, falsifiers, and hardware
   verdicts.
 - `mesa-26-gororoba` owns r300g/r3v userspace behavior and the cross-repository

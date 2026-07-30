@@ -29,6 +29,7 @@ jobs:
         with:
           persist-credentials: false
           clean: true
+          fetch-depth: 0
 
       # Each verdict-producing gate proves itself on known-good and known-bad
       # inputs before its tree verdict is trusted.
@@ -41,6 +42,12 @@ jobs:
       - name: Patch-series gate calibration
         run: sh scripts/check_radeon_patch_series_compiles.sh --self-test
 
+      - name: Source-pin gate calibration
+        run: python3 scripts/check_radeon_source_pin.py --self-test
+
+      - name: Tagged-source build calibration
+        run: sh scripts/check_radeon_tagged_source_compiles.sh --self-test
+
       - name: Base-delta closure calibration
         run: python3 scripts/check_base_delta_map_closure.py --self-test
 
@@ -48,7 +55,16 @@ jobs:
         run: ruff check scripts/
 
       - name: shellcheck
-        run: shellcheck -S error scripts/*.sh packaging/arch/radeon-unified-dkms/*.sh
+        run: |
+          shellcheck -S error scripts/*.sh \
+            packaging/arch/radeon-unified-dkms/*.sh \
+            packaging/arch/radeon-unified-dkms/radeon-dkms-make
+
+      - name: DKMS KCFLAGS composition
+        run: bash scripts/test_radeon_dkms_kcflags_composition.sh
+
+      - name: DKMS lifecycle input calibration
+        run: bash scripts/test_radeon_dkms_lifecycle.sh --self-test
 
       - name: ASCII only
         run: |
@@ -62,28 +78,78 @@ jobs:
   package:
     runs-on: [self-hosted, linux, cachyos, primary-compile-host]
     timeout-minutes: 45
+    env:
+      SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
+      KERNEL_BUILD_ROOT_71: ${{ vars.RADEON_KERNEL_BUILD_ROOT_71 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           clean: true
+          fetch-depth: 0
 
       - name: PKGBUILD sha256sums
         run: bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 
-      - name: DKMS source hashes and patch chain
-        run: bash scripts/verify_radeon_unified_dkms_sources.sh
+      - name: DKMS source pin and package inputs
+        run: |
+          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
+          bash scripts/verify_radeon_unified_dkms_sources.sh \
+            --source-repository "$SOURCE_REPOSITORY"
 
       # One lock per physical host. Each repository serializes its own jobs,
       # and two runner services share this machine, so the lock is what keeps a
       # source build and a packaging build off the same cores and page cache.
-      # Strict mode: a missing kernel build dir exits 5 rather than reporting a
-      # skip as success.
-      - name: Patch series applies and compiles
+      - name: Tagged source builds against 7.1
         run: |
+          : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
           mkdir -p "$HOME/.cache/gororoba-ci"
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            sh scripts/check_radeon_patch_series_compiles.sh --require-compile
+            timeout 15m sh scripts/check_radeon_tagged_source_compiles.sh \
+              --source-repository "$SOURCE_REPOSITORY" \
+              --kernel-build-root "$KERNEL_BUILD_ROOT_71"
+
+      - name: Build and verify legacy-equivalent package
+        run: |
+          set -euo pipefail
+          PACKAGE_WORK="${RUNNER_TEMP}/radeon-package-artifacts"
+          printf 'PACKAGE_WORK=%s\n' "$PACKAGE_WORK" >>"$GITHUB_ENV"
+          mkdir -p "$PACKAGE_WORK/package"
+          cp -a packaging/arch/radeon-unified-dkms/. "$PACKAGE_WORK/package/"
+          (
+            cd "$PACKAGE_WORK/package"
+            RADEON_UNIFIED_SOURCE_URL="git+file://${SOURCE_REPOSITORY}" \
+              makepkg -fC --noconfirm
+          )
+          package_path=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
+            -name 'radeon-unified-dkms-*.pkg.tar.zst' | sort | tail -n 1)
+          [ -n "$package_path" ] || {
+            echo "makepkg produced no radeon-unified-dkms package" >&2
+            exit 1
+          }
+          printf 'PACKAGE_PATH=%s\n' "$package_path" >>"$GITHUB_ENV"
+          bash scripts/verify_radeon_unified_dkms_package.sh \
+            --source-repository "$SOURCE_REPOSITORY" \
+            --package "$package_path"
+
+      - name: Exercise disposable DKMS lifecycle
+        run: |
+          set -euo pipefail
+          evidence_parent=/var/lib/gororoba-ci/radeon-dkms-lifecycle
+          evidence_dir="${evidence_parent}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sudo install -d -m 0755 -o root -g root "$evidence_parent"
+          package_sha256=$(sha256sum "$PACKAGE_PATH")
+          package_sha256=${package_sha256%% *}
+          lifecycle_status=0
+          sudo bash scripts/test_radeon_dkms_lifecycle.sh \
+            --package "$PACKAGE_PATH" \
+            --expected-sha256 "$package_sha256" \
+            --kernel-release "$(uname -r)" \
+            --evidence-dir "$evidence_dir" ||
+            lifecycle_status=$?
+          sudo cp -a "$evidence_dir" "$PACKAGE_WORK/lifecycle-evidence"
+          sudo chown -R "$(id -u):$(id -g)" "$PACKAGE_WORK/lifecycle-evidence"
+          exit "$lifecycle_status"
 
       - name: Legacy tree manifest reproduces
         run: |
@@ -92,7 +158,9 @@ jobs:
           work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/treeA.XXXXXX")
           trap 'rm -rf "$work"' EXIT
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            sh scripts/materialize_legacy_radeon_tree.sh --manifest "$work/treeA.tsv"
+            sh scripts/materialize_legacy_radeon_tree.sh \
+              --dkms-conf migration/input/legacy-dkms-patch-order.conf \
+              --manifest "$work/treeA.tsv"
           cmp "$work/treeA.tsv" docs/legacy-payload-0.3-91-exact-context-manifest.tsv
           echo "legacy tree manifest reproduces byte-identically"
 
@@ -114,7 +182,7 @@ jobs:
           tar xJf sources/radeon-unified-0.3-source.tar.xz -C "$work/tree"
           python3 scripts/capture_legacy_patch_effects.py \
             --tree "$work/tree" \
-            --dkms-conf packaging/arch/radeon-unified-dkms/dkms.conf \
+            --dkms-conf migration/input/legacy-dkms-patch-order.conf \
             --patches-dir patches/rs480 \
             --out "$work/effects.tsv"
           cmp "$work/effects.tsv" docs/legacy-patch-effects.tsv
@@ -135,7 +203,7 @@ jobs:
           tar xJf sources/radeon-unified-0.3-source.tar.xz -C "$work/tree"
           python3 scripts/emit_legacy_patch_transitions.py \
             --tree "$work/tree" \
-            --dkms-conf packaging/arch/radeon-unified-dkms/dkms.conf \
+            --dkms-conf migration/input/legacy-dkms-patch-order.conf \
             --patches-dir patches/rs480 \
             --out "$work/transitions.tsv" \
             --final-tree-out "$work/final"
@@ -223,6 +291,15 @@ jobs:
           }
           echo "normalized oracles reproduce: 212 base, 213 final, reg_srcs/rs480 apart"
 
+      - name: Upload package and lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: radeon-unified-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/radeon-package-artifacts
+          retention-days: 30
+          if-no-files-found: warn
+
   # radeon_gem.c carries a LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) split,
   # and both runners run 7.x, so every other compile job takes the 7.x side and
   # leaves the pre-7.0 side unbuilt. This job points the same gate at a retained
@@ -236,6 +313,7 @@ jobs:
     timeout-minutes: 45
     env:
       KERNEL_BUILD_ROOT: ${{ vars.RADEON_KERNEL_BUILD_ROOT_618 }}
+      SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -292,24 +370,19 @@ jobs:
       - name: Compile through the pre-7.0 compatibility branch
         run: |
           set -euo pipefail
+          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
           work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/compat618.XXXXXX")
           trap 'rm -rf "$work"' EXIT
 
           mkdir -p "$HOME/.cache/gororoba-ci"
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            sh scripts/check_radeon_patch_series_compiles.sh \
-              --require-compile \
+            timeout 15m sh scripts/check_radeon_tagged_source_compiles.sh \
+              --source-repository "$SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT" | tee "$work/compile.log"
-
-          code=$(awk '$1 == "LINUX_VERSION_CODE:" { print $2 }' "$work/compile.log")
-          [ -n "$code" ] && [ "$code" -lt 458752 ] || {
-            echo "the gate resolved LINUX_VERSION_CODE '$code', which is not pre-7.0" >&2
-            exit 1
-          }
 
           grep -Eq 'CC \[M\][[:space:]]+radeon_gem\.o' "$work/compile.log" || {
             echo "radeon_gem.o did not reach the compiler, so no branch was built" >&2
             exit 1
           }
 
-          echo "pre-7.0 branch of radeon_gem.c compiled at LINUX_VERSION_CODE=$code"
+          echo "pre-7.0 branch of radeon_gem.c compiled from the pinned source"

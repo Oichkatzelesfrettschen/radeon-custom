@@ -38,6 +38,7 @@ set -eu
 require_compile=0
 self_test=0
 kernel_build_root=${R300_RS480_KERNEL_BUILD_ROOT:-}
+dkms_conf=${RADEON_LEGACY_DKMS_CONF:-}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --require-compile) require_compile=1; shift ;;
@@ -46,8 +47,12 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || { echo "--kernel-build-root requires a directory" >&2; exit 2; }
       kernel_build_root=$2; shift 2
       ;;
+    --dkms-conf)
+      [ "$#" -ge 2 ] || { echo "--dkms-conf requires a file" >&2; exit 2; }
+      dkms_conf=$2; shift 2
+      ;;
     -h|--help)
-      echo "usage: $0 [--require-compile] [--self-test] [--kernel-build-root DIR]"
+      echo "usage: $0 [--require-compile] [--self-test] [--kernel-build-root DIR] [--dkms-conf FILE]"
       exit 0
       ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -222,8 +227,9 @@ repo_root=$(git rev-parse --show-toplevel) || { echo "not inside a git repo" >&2
 RAD="$repo_root"
 DKMSDIR="$RAD/packaging/arch/radeon-unified-dkms"
 BASE="$RAD/sources/radeon-unified-0.3-source.tar.xz"
+[ -n "$dkms_conf" ] || dkms_conf="$DKMSDIR/dkms.conf"
 [ -f "$BASE" ] || { echo "missing base tarball: $BASE" >&2; exit 2; }
-[ -f "$DKMSDIR/dkms.conf" ] || { echo "missing dkms.conf: $DKMSDIR/dkms.conf" >&2; exit 2; }
+[ -f "$dkms_conf" ] || { echo "missing dkms.conf: $dkms_conf" >&2; exit 2; }
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
@@ -235,7 +241,8 @@ tar -xJf "$BASE" -C "$WORK/radeon"
 # Anchored to the start of the line so a commented-out entry stays unparsed:
 # DKMS skips it, and applying it here would test a series the package does not
 # build.
-grep -oE '^[[:space:]]*PATCH\[[0-9]+\]="[^"]+"' "$DKMSDIR/dkms.conf" | sed -E 's/.*="([^"]+)"/\1/' > "$WORK/order.txt"
+grep -oE '^[[:space:]]*PATCH\[[0-9]+\]="[^"]+"' "$dkms_conf" |
+  sed -E 's/.*="([^"]+)"/\1/' > "$WORK/order.txt"
 n=0
 while IFS= read -r p; do
   [ -z "$p" ] && continue
@@ -276,7 +283,7 @@ if [ ! -d "$KB" ]; then
   }
   exit 0
 fi
-KB=$(CDPATH= cd -- "$KB" && pwd -P)
+KB=$(CDPATH='' cd -- "$KB" && pwd -P)
 
 # A directory alone is not a prepared kernel tree. Kbuild for an external module
 # needs the top Makefile, the exported symbol table, and the generated
@@ -323,7 +330,7 @@ echo "compiling touched units against $kernel_release: $objs"
 compile_log="$WORK/compile.log"
 # shellcheck disable=SC2086
 compile_status=0
-( cd "$WORK/radeon" && make "$@" KCFLAGS='-O2 -pipe' -C "$KB" M="$PWD" $objs ) \
+( cd "$WORK/radeon" && "$DKMSDIR/radeon-dkms-make" "$@" -C "$KB" M="$PWD" $objs ) \
   >"$compile_log" 2>&1 || compile_status=$?
 cat "$compile_log"
 if [ "$compile_status" -ne 0 ]; then
