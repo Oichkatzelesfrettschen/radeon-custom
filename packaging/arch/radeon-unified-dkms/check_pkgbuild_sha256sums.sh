@@ -9,57 +9,68 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 cd "$script_dir"
 
-startdir=$script_dir
-# shellcheck source=/dev/null
-source ./PKGBUILD
+check_recipe() (
+    recipe=$1
+    # PKGBUILD consumes startdir and declares both arrays when sourced.
+    # shellcheck disable=SC2034
+    startdir=$script_dir
+    # shellcheck source=/dev/null
+    source "$recipe"
 
-if [ "${#source[@]}" -ne "${#sha256sums[@]}" ]; then
-    echo "PKGBUILD sha256sums DRIFT: source and sha256sums lengths differ." >&2
-    echo "sources=${#source[@]} sha256sums=${#sha256sums[@]}" >&2
-    exit 1
-fi
-
-fail=0
-for i in "${!source[@]}"; do
-    entry=${source[$i]}
-    expected=${sha256sums[$i]}
-    label=$entry
-
-    case $entry in
-        *::file://*)
-            label=${entry%%::*}
-            path=${entry#*::file://}
-            ;;
-        file://*)
-            path=${entry#file://}
-            ;;
-        *)
-            path=$script_dir/$entry
-            ;;
-    esac
-
-    if [ "$expected" = "SKIP" ]; then
-        continue
-    fi
-    if [ ! -f "$path" ]; then
-        echo "PKGBUILD sha256sums DRIFT: missing source for $label: $path" >&2
-        fail=$((fail + 1))
-        continue
+    # shellcheck disable=SC2154
+    if [ "${#source[@]}" -ne "${#sha256sums[@]}" ]; then
+        printf '%s: source and sha256sums lengths differ\n' "$recipe" >&2
+        printf 'sources=%d sha256sums=%d\n' \
+            "${#source[@]}" "${#sha256sums[@]}" >&2
+        exit 1
     fi
 
-    actual=$(sha256sum -- "$path")
-    actual=${actual%% *}
-    if [ "$actual" != "$expected" ]; then
-        echo "PKGBUILD sha256sums DRIFT: $label" >&2
-        echo "  expected $expected" >&2
-        echo "  actual   $actual" >&2
-        fail=$((fail + 1))
-    fi
-done
+    fail=0
+    for i in "${!source[@]}"; do
+        entry=${source[$i]}
+        expected=${sha256sums[$i]}
+        label=$entry
 
-if [ "$fail" -ne 0 ]; then
-    echo "PKGBUILD sha256sums DRIFT: $fail source file(s) fail their checksum." >&2
-    echo "Regenerate with: makepkg -g  and replace the sha256sums array." >&2
-    exit 1
-fi
-echo "PKGBUILD sha256sums: all sources match"
+        case $entry in
+            *::file://*)
+                label=${entry%%::*}
+                path=${entry#*::file://}
+                ;;
+            file://*)
+                path=${entry#file://}
+                ;;
+            *)
+                path=$script_dir/$entry
+                ;;
+        esac
+
+        if [ "$expected" = "SKIP" ]; then
+            continue
+        fi
+        if [ ! -f "$path" ]; then
+            printf '%s: missing source for %s: %s\n' \
+                "$recipe" "$label" "$path" >&2
+            fail=$((fail + 1))
+            continue
+        fi
+
+        actual=$(sha256sum -- "$path")
+        actual=${actual%% *}
+        if [ "$actual" != "$expected" ]; then
+            printf '%s: checksum drift for %s\n' "$recipe" "$label" >&2
+            printf '  expected %s\n' "$expected" >&2
+            printf '  actual   %s\n' "$actual" >&2
+            fail=$((fail + 1))
+        fi
+    done
+
+    if [ "$fail" -ne 0 ]; then
+        printf '%s: %d source files fail their checksum\n' \
+            "$recipe" "$fail" >&2
+        exit 1
+    fi
+    printf '%s: all source checksums match\n' "$recipe"
+)
+
+check_recipe ./PKGBUILD
+check_recipe ./PKGBUILD.radeon-rs480-safe-regs-0.2

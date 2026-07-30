@@ -31,7 +31,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Unified DKMS package 0.3-91 (exact-context series) builds on 6.18.38 and the current 7.x compile roots | compile-verified; no retained target install or load of this revision |
+| Unified DKMS package 0.3-94 and legacy package 0.2-10 compose caller and package KCFLAGS identically; both link on 6.18.38-2-cachyos-lts, and the unified touched units compile on 7.1.4-1-cachyos | compile-verified in disposable trees; no retained target install or load of these revisions |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
 | RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
@@ -145,6 +145,17 @@ sh scripts/check_radeon_patch_series_compiles.sh --require-compile \
 # Unified DKMS source tree hashes and patch-chain apply dry-run
 bash scripts/verify_radeon_unified_dkms_sources.sh
 
+# Caller and package KCFLAGS compose identically in both DKMS recipes
+bash scripts/test_radeon_dkms_kcflags_composition.sh
+
+# One built package completes disposable add, build, install, metadata, and cleanup
+sudo install -d -m 0755 -o root -g root \
+  /var/lib/radeon-dkms-lifecycle-evidence
+sudo bash scripts/test_radeon_dkms_lifecycle.sh --package /path/to/package \
+  --expected-sha256 "$(sha256sum /path/to/package | awk '{print $1}')" \
+  --kernel-release "$(uname -r)" \
+  --evidence-dir /var/lib/radeon-dkms-lifecycle-evidence/new-run
+
 # Project-authored prose carries no dash construction
 python3 scripts/check_project_prose_style.py
 ```
@@ -175,12 +186,14 @@ the intended kernel trees available:
 ( cd packaging/arch/radeon-unified-dkms && makepkg -f )
 ```
 
-After a package artifact exists under that directory, verify its payload
+After package artifacts exist, verify each payload and its executable modes
 against the canonical inputs:
 
 ```bash
-# Requires a built radeon-unified-dkms-*.pkg.tar.* in the package directory
-bash scripts/verify_radeon_unified_dkms_package.sh
+bash scripts/verify_radeon_unified_dkms_package.sh \
+  /path/to/radeon-unified-dkms.pkg.tar.zst
+bash scripts/verify_radeon_unified_dkms_package.sh \
+  /path/to/radeon-rs480-safe-regs-dkms.pkg.tar.zst
 ```
 
 Optional runtime check on a live host (module loaded from the unified package):

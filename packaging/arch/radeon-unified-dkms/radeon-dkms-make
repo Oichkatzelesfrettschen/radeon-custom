@@ -1,0 +1,47 @@
+#!/bin/sh
+# Compose package release flags with caller-supplied Kbuild KCFLAGS.
+
+set -eu
+set -f
+
+kcflags=${KCFLAGS-}
+
+case "$kcflags" in
+    *[!\ -~]*)
+        printf '%s\n' \
+            'radeon-dkms-make: KCFLAGS must contain printable ASCII separated by spaces' \
+            >&2
+        exit 2
+        ;;
+esac
+
+for word in $kcflags; do
+    case "$word" in
+        *[!A-Za-z0-9_./,:+=%@~-]*)
+            printf 'radeon-dkms-make: unsafe KCFLAGS token: %s\n' \
+                "$word" >&2
+            exit 2
+            ;;
+    esac
+done
+
+append_kcflag() {
+    flag=$1
+    for word in $kcflags; do
+        [ "$word" = "$flag" ] && return
+    done
+    kcflags="${kcflags:+${kcflags} }${flag}"
+}
+
+append_kcflag -O2
+append_kcflag -pipe
+
+KCFLAGS=$kcflags
+export KCFLAGS
+unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS
+
+if [ "${RADEON_DKMS_MAKE_TRACE:-0}" = 1 ]; then
+    printf 'radeon-dkms-make: KCFLAGS=%s\n' "$KCFLAGS" >&2
+fi
+
+exec make "$@"
