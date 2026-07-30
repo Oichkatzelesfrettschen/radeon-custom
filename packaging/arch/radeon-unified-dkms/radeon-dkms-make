@@ -5,6 +5,8 @@ set -eu
 set -f
 
 kcflags=${KCFLAGS-}
+o2_count=0
+pipe_count=0
 
 case "$kcflags" in
     *[!\ -~]*)
@@ -23,18 +25,37 @@ for word in $kcflags; do
             exit 2
             ;;
     esac
+    case "$word" in
+        -O2)
+            o2_count=$((o2_count + 1))
+            ;;
+        -O*)
+            printf '%s\n' \
+                "radeon-dkms-make: conflicting optimization token: $word; package requires -O2" \
+                >&2
+            exit 2
+            ;;
+        -pipe)
+            pipe_count=$((pipe_count + 1))
+            ;;
+    esac
 done
 
-append_kcflag() {
-    flag=$1
-    for word in $kcflags; do
-        [ "$word" = "$flag" ] && return
-    done
-    kcflags="${kcflags:+${kcflags} }${flag}"
-}
+if [ "$o2_count" -gt 1 ]; then
+    printf '%s\n' \
+        'radeon-dkms-make: duplicate package KCFLAGS token: -O2' >&2
+    exit 2
+fi
+if [ "$pipe_count" -gt 1 ]; then
+    printf '%s\n' \
+        'radeon-dkms-make: duplicate package KCFLAGS token: -pipe' >&2
+    exit 2
+fi
 
-append_kcflag -O2
-append_kcflag -pipe
+[ "$o2_count" -eq 1 ] ||
+    kcflags="${kcflags:+${kcflags} }-O2"
+[ "$pipe_count" -eq 1 ] ||
+    kcflags="${kcflags:+${kcflags} }-pipe"
 
 KCFLAGS=$kcflags
 export KCFLAGS

@@ -145,10 +145,20 @@ sh scripts/check_radeon_patch_series_compiles.sh --require-compile \
 # Unified DKMS source tree hashes and patch-chain apply dry-run
 bash scripts/verify_radeon_unified_dkms_sources.sh
 
-# Caller and package KCFLAGS compose identically in both DKMS recipes
+# Both recipes preserve admitted non-conflicting caller KCFLAGS and enforce
+# the package-owned -O2 -pipe release profile. Duplicate -O2 or -pipe and
+# caller optimization tokens other than -O2 fail before make runs. Quoted
+# KCFLAGS tokens and control whitespace fail admission; the DKMS command
+# separately preserves a kernel build-root pathname containing spaces.
 bash scripts/test_radeon_dkms_kcflags_composition.sh
 
-# One built package completes disposable add, build, install, metadata, and cleanup
+# Run the unprivileged payload verifier first, and use only a package built
+# from a reviewed, clean repository commit. The expected digest binds this
+# lifecycle evidence to the admitted bytes; it does not authenticate an
+# externally obtained package.
+bash scripts/verify_radeon_unified_dkms_package.sh /path/to/package
+
+# One trusted package completes disposable add, build, install, metadata, and cleanup
 sudo install -d -m 0755 -o root -g root \
   /var/lib/radeon-dkms-lifecycle-evidence
 sudo bash scripts/test_radeon_dkms_lifecycle.sh --package /path/to/package \

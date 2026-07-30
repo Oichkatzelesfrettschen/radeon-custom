@@ -33,8 +33,9 @@ printf -v radeon_kernel_build_root_q '%q' "$radeon_kernel_build_root"
 #   Detected at DKMS build time by reading compile.h from the target kernel.
 #   If compile.h records a clang build, CC=clang (system default Clang).
 #   Otherwise, CC=gcc (system default GCC), which matches GCC-built kernels.
-#   radeon-dkms-make preserves caller KCFLAGS, adds the package release flags
-#   exactly once, and keeps userspace CFLAGS outside the kernel build.
+#   radeon-dkms-make preserves admitted non-conflicting caller KCFLAGS, rejects
+#   duplicate policy flags and other -O* tokens, adds the missing -O2 and -pipe
+#   release flags, and keeps userspace CFLAGS outside the kernel build.
 #   The CachyOS LTS kernel (6.18.x) is GCC-built; the main kernel is Clang-built.
 #   Package-local wrapper scripts use ccache when available, then fall back
 #   to the raw compiler.  Distcc/pump is deliberately not used here because
