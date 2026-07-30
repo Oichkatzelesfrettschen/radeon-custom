@@ -21,6 +21,58 @@ hash_file() {
     sha256sum "$1" | awk '{ print $1 }'
 }
 
+external_module_command_policy() {
+    local command_lines=$1
+    local command_count
+    local kcflags_pattern="(^|[[:space:]])KCFLAGS='-O2 -pipe'([[:space:]]|$)"
+    local legacy_pattern="(^|[[:space:]])EXTRA_CFLAGS="
+    command_count=$(printf '%s\n' "$command_lines" |
+        sed '/^[[:space:]]*$/d' |
+        wc -l)
+    [[ $command_count -eq 1 &&
+       ! $command_lines =~ $legacy_pattern &&
+       $command_lines =~ $kcflags_pattern ]]
+}
+
+calibration_good=$'# release profile\nMAKE[0]="make KCFLAGS=\'-O2 -pipe\' modules"'
+calibration_missing=$'# KCFLAGS=\'-O2 -pipe\' reaches external modules\nMAKE[0]="make modules"'
+calibration_legacy=$'# release profile\nMAKE[0]="make EXTRA_CFLAGS=\'-O2 -pipe\' modules"'
+calibration_wrong_name=$'# release profile\nMAKE[0]="make NOT_KCFLAGS=\'-O2 -pipe\' modules"'
+
+external_module_command_policy \
+    "$(grep -E '^MAKE\[[0-9]+\]=' <<<"$calibration_good")" ||
+    die "external-module flag policy rejects its known-good calibration"
+if external_module_command_policy \
+        "$(grep -E '^MAKE\[[0-9]+\]=' <<<"$calibration_legacy")"; then
+    die "external-module flag policy accepts its known-bad legacy channel"
+fi
+if external_module_command_policy \
+        "$(grep -E '^MAKE\[[0-9]+\]=' <<<"$calibration_missing")"; then
+    die "external-module flag policy accepts a missing release flag"
+fi
+if external_module_command_policy \
+        "$(grep -E '^MAKE\[[0-9]+\]=' <<<"$calibration_wrong_name")"; then
+    die "external-module flag policy accepts a wrong variable name"
+fi
+
+dkms_flag_carriers=(
+    "$package_dir/dkms.conf"
+    "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2"
+)
+for flag_carrier in "${dkms_flag_carriers[@]}"; do
+    command_lines=$(grep -E '^MAKE\[[0-9]+\]=' "$flag_carrier") ||
+        die "external-module MAKE command is absent from $flag_carrier"
+    external_module_command_policy "$command_lines" ||
+        die "external-module flags do not use KCFLAGS in $flag_carrier"
+done
+
+compile_gate="$repo_root/scripts/check_radeon_patch_series_compiles.sh"
+command_lines=$(grep -E \
+    '^[[:space:]]*\( cd "\$WORK/radeon" && make ' "$compile_gate") ||
+    die "external-module make command is absent from $compile_gate"
+external_module_command_policy "$command_lines" ||
+    die "external-module flags do not use KCFLAGS in $compile_gate"
+
 startdir="$package_dir"
 source "$pkgbuild"
 
@@ -176,6 +228,7 @@ fi
 
 [ "$failures" -eq 0 ] || exit 1
 printf 'radeon unified DKMS source hashes: ok\n'
+printf 'radeon unified DKMS external-module flag channel: KCFLAGS\n'
 printf 'radeon unified DKMS patch chain: applies clean (%d patches)\n' \
     "${#patch_chain[@]}"
 printf 'radeon unified DKMS GART reader policy: bounded and read-only\n'

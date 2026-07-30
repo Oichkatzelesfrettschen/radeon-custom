@@ -323,7 +323,7 @@ echo "compiling touched units against $kernel_release: $objs"
 compile_log="$WORK/compile.log"
 # shellcheck disable=SC2086
 compile_status=0
-( cd "$WORK/radeon" && make "$@" EXTRA_CFLAGS='-O2 -pipe' -C "$KB" M="$PWD" $objs ) \
+( cd "$WORK/radeon" && make "$@" KCFLAGS='-O2 -pipe' -C "$KB" M="$PWD" $objs ) \
   >"$compile_log" 2>&1 || compile_status=$?
 cat "$compile_log"
 if [ "$compile_status" -ne 0 ]; then
