@@ -54,9 +54,10 @@ create_package_fixture() {
     )
 }
 
-mkdir "$tmpdir/source-tree" "$tmpdir/metadata-tree" "$tmpdir/extra-tree" \
-    "$tmpdir/executable-tree"
-bsdtar -xf "$package" -C "$tmpdir/source-tree"
+mkdir "$tmpdir/source-tree" "$tmpdir/source-mode-tree" \
+    "$tmpdir/metadata-tree" "$tmpdir/extra-tree" \
+    "$tmpdir/executable-tree" "$tmpdir/excess-executable-tree"
+bsdtar -xpf "$package" -C "$tmpdir/source-tree"
 printf '\n# verifier mutation fixture\n' \
     >>"$tmpdir/source-tree/usr/src/radeon-unified-0.3/radeon/Makefile"
 create_package_fixture "$tmpdir/mutated-source.pkg.tar.zst" \
@@ -64,7 +65,15 @@ create_package_fixture "$tmpdir/mutated-source.pkg.tar.zst" \
 expect_rejection source-mutation "$tmpdir/mutated-source.pkg.tar.zst" \
     "installed Radeon bytes differ from git archive"
 
-bsdtar -xf "$package" -C "$tmpdir/metadata-tree"
+bsdtar -xpf "$package" -C "$tmpdir/source-mode-tree"
+chmod 0666 \
+    "$tmpdir/source-mode-tree/usr/src/radeon-unified-0.3/radeon/Makefile"
+create_package_fixture "$tmpdir/excess-source-mode.pkg.tar.zst" \
+    "$tmpdir/source-mode-tree"
+expect_rejection excess-source-mode "$tmpdir/excess-source-mode.pkg.tar.zst" \
+    "installed Radeon path, type, mode, or link manifest differs from git archive"
+
+bsdtar -xpf "$package" -C "$tmpdir/metadata-tree"
 sed -i 's/^pkgver = .*/pkgver = 0.3-999/' \
     "$tmpdir/metadata-tree/.PKGINFO"
 create_package_fixture "$tmpdir/mutated-metadata.pkg.tar.zst" \
@@ -72,14 +81,14 @@ create_package_fixture "$tmpdir/mutated-metadata.pkg.tar.zst" \
 expect_rejection metadata-mutation "$tmpdir/mutated-metadata.pkg.tar.zst" \
     ".PKGINFO pkgver does not equal the selected PKGBUILD value"
 
-bsdtar -xf "$package" -C "$tmpdir/extra-tree"
+bsdtar -xpf "$package" -C "$tmpdir/extra-tree"
 : >"$tmpdir/extra-tree/usr/src/radeon-unified-0.3/unexpected"
 create_package_fixture "$tmpdir/extra-file.pkg.tar.zst" \
     "$tmpdir/extra-tree"
 expect_rejection extra-member "$tmpdir/extra-file.pkg.tar.zst" \
     "archive member manifest differs from the closed package payload"
 
-bsdtar -xf "$package" -C "$tmpdir/executable-tree"
+bsdtar -xpf "$package" -C "$tmpdir/executable-tree"
 chmod 0644 \
     "$tmpdir/executable-tree/usr/src/radeon-unified-0.3/radeon-dkms-make"
 create_package_fixture "$tmpdir/nonexecutable-helper.pkg.tar.zst" \
@@ -87,8 +96,17 @@ create_package_fixture "$tmpdir/nonexecutable-helper.pkg.tar.zst" \
 expect_rejection executable-mode "$tmpdir/nonexecutable-helper.pkg.tar.zst" \
     "radeon-dkms-make mode is 644, expected 755"
 
+bsdtar -xpf "$package" -C "$tmpdir/excess-executable-tree"
+chmod 0777 \
+    "$tmpdir/excess-executable-tree/usr/src/radeon-unified-0.3/radeon-dkms-make"
+create_package_fixture "$tmpdir/excess-executable-mode.pkg.tar.zst" \
+    "$tmpdir/excess-executable-tree"
+expect_rejection excess-executable-mode \
+    "$tmpdir/excess-executable-mode.pkg.tar.zst" \
+    "radeon-dkms-make mode is 777, expected 755"
+
 mkdir "$tmpdir/directory-mode-tree"
-bsdtar -xf "$package" -C "$tmpdir/directory-mode-tree"
+bsdtar -xpf "$package" -C "$tmpdir/directory-mode-tree"
 chmod 0777 "$tmpdir/directory-mode-tree/usr/src/radeon-unified-0.3/radeon"
 create_package_fixture "$tmpdir/directory-mode.pkg.tar.zst" \
     "$tmpdir/directory-mode-tree"
@@ -102,7 +120,16 @@ expect_rejection directory-mode "$tmpdir/directory-mode.pkg.tar.zst" \
         -C "$tmpdir/extra-tree" .
 )
 expect_rejection non-root-owner "$tmpdir/non-root-owner.pkg.tar.zst" \
-    "archive contains a member not owned by root"
+    "archive contains a member whose numeric UID or GID is not zero"
+
+(
+    umask 000
+    bsdtar -caf "$tmpdir/spoofed-root-owner.pkg.tar.zst" \
+        --uid 1000 --gid 1000 --uname root --gname root \
+        -C "$tmpdir/extra-tree" .
+)
+expect_rejection spoofed-root-owner "$tmpdir/spoofed-root-owner.pkg.tar.zst" \
+    "archive contains a member whose numeric UID or GID is not zero"
 
 printf 'unsafe archive fixture\n' >"$tmpdir/safe-name"
 (

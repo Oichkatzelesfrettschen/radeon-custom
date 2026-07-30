@@ -15,15 +15,14 @@ printf -v radeon_dkms_compiler_q '%q' "$radeon_dkms_compiler"
 printf -v radeon_dkms_module_q '%q' "${radeon_dkms_build_root}/radeon"
 printf -v radeon_kernel_release_q '%q' "$kernelver"
 radeon_parallel_arg=
+radeon_parallel_valid=1
 if [ "${parallel_jobs+x}" = x ]; then
     case $parallel_jobs in
         '')
             radeon_parallel_arg=-j
             ;;
         *[!0-9]*)
-            printf 'dkms.conf: invalid DKMS parallel job count: %s\n' \
-                "$parallel_jobs" >&2
-            return 1
+            radeon_parallel_valid=0
             ;;
         *)
             radeon_parallel_arg="-j${parallel_jobs}"
@@ -82,7 +81,10 @@ DEST_MODULE_LOCATION[0]="/updates/dkms"
 # CC detection: read compile.h from the target kernel's build headers.
 # grep exit code 0 = clang built; non-zero = GCC built -> use gcc.
 MAKE[0]="${radeon_dkms_helper_q}${radeon_parallel_arg:+ ${radeon_parallel_arg}} KERNELRELEASE=${radeon_kernel_release_q} CC=${radeon_dkms_compiler_q} -C ${radeon_kernel_build_root_q} M=${radeon_dkms_module_q} modules"
+if [ "$radeon_parallel_valid" -ne 1 ]; then
+    MAKE[0]="printf '%s\\n' 'dkms.conf: invalid DKMS parallel job count' >&2; false"
+fi
 
-PRE_BUILD="pre-build.sh ${kernelver} ${radeon_kernel_build_root_q}"
+PRE_BUILD="pre-build.sh ${radeon_kernel_release_q} ${radeon_kernel_build_root_q}"
 
 AUTOINSTALL="yes"
