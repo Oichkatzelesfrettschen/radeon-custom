@@ -48,7 +48,16 @@ jobs:
         run: ruff check scripts/
 
       - name: shellcheck
-        run: shellcheck -S error scripts/*.sh packaging/arch/radeon-unified-dkms/*.sh
+        run: |
+          shellcheck -S error scripts/*.sh \
+            packaging/arch/radeon-unified-dkms/*.sh \
+            packaging/arch/radeon-unified-dkms/radeon-dkms-make
+
+      - name: DKMS KCFLAGS composition
+        run: bash scripts/test_radeon_dkms_kcflags_composition.sh
+
+      - name: DKMS lifecycle input calibration
+        run: bash scripts/test_radeon_dkms_lifecycle.sh --self-test
 
       - name: ASCII only
         run: |

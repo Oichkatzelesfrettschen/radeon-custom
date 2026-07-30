@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
 package_dir="$repo_root/packaging/arch/radeon-unified-dkms"
 pkgbuild="$package_dir/PKGBUILD"
@@ -24,20 +24,22 @@ hash_file() {
 external_module_command_policy() {
     local command_lines=$1
     local command_count
-    local kcflags_pattern="(^|[[:space:]])KCFLAGS='-O2 -pipe'([[:space:]]|$)"
+    local helper_pattern='(^|[/"])radeon-dkms-make("|[[:space:]]|$)'
+    local hardcoded_kcflags_pattern="(^|[[:space:]])KCFLAGS="
     local legacy_pattern="(^|[[:space:]])EXTRA_CFLAGS="
     command_count=$(printf '%s\n' "$command_lines" |
         sed '/^[[:space:]]*$/d' |
         wc -l)
     [[ $command_count -eq 1 &&
        ! $command_lines =~ $legacy_pattern &&
-       $command_lines =~ $kcflags_pattern ]]
+       ! $command_lines =~ $hardcoded_kcflags_pattern &&
+       $command_lines =~ $helper_pattern ]]
 }
 
-calibration_good=$'# release profile\nMAKE[0]="make KCFLAGS=\'-O2 -pipe\' modules"'
-calibration_missing=$'# KCFLAGS=\'-O2 -pipe\' reaches external modules\nMAKE[0]="make modules"'
+calibration_good=$'# release profile\nMAKE[0]="/build/radeon-dkms-make modules"'
+calibration_missing=$'# radeon-dkms-make reaches external modules\nMAKE[0]="make modules"'
 calibration_legacy=$'# release profile\nMAKE[0]="make EXTRA_CFLAGS=\'-O2 -pipe\' modules"'
-calibration_wrong_name=$'# release profile\nMAKE[0]="make NOT_KCFLAGS=\'-O2 -pipe\' modules"'
+calibration_hardcoded=$'# release profile\nMAKE[0]="/build/radeon-dkms-make KCFLAGS=\'-O2 -pipe\' modules"'
 
 external_module_command_policy \
     "$(grep -E '^MAKE\[[0-9]+\]=' <<<"$calibration_good")" ||
@@ -51,8 +53,8 @@ if external_module_command_policy \
     die "external-module flag policy accepts a missing release flag"
 fi
 if external_module_command_policy \
-        "$(grep -E '^MAKE\[[0-9]+\]=' <<<"$calibration_wrong_name")"; then
-    die "external-module flag policy accepts a wrong variable name"
+        "$(grep -E '^MAKE\[[0-9]+\]=' <<<"$calibration_hardcoded")"; then
+    die "external-module flag policy accepts a hardcoded KCFLAGS override"
 fi
 
 dkms_flag_carriers=(
@@ -68,14 +70,21 @@ done
 
 compile_gate="$repo_root/scripts/check_radeon_patch_series_compiles.sh"
 command_lines=$(grep -E \
-    '^[[:space:]]*\( cd "\$WORK/radeon" && make ' "$compile_gate") ||
+    '^[[:space:]]*\( cd "\$WORK/radeon" && "\$DKMSDIR/radeon-dkms-make" ' \
+    "$compile_gate") ||
     die "external-module make command is absent from $compile_gate"
 external_module_command_policy "$command_lines" ||
     die "external-module flags do not use KCFLAGS in $compile_gate"
 
+bash "$repo_root/scripts/test_radeon_dkms_kcflags_composition.sh"
+
+# PKGBUILD consumes startdir and declares both arrays when sourced.
+# shellcheck disable=SC2034
 startdir="$package_dir"
+# shellcheck disable=SC1090
 source "$pkgbuild"
 
+# shellcheck disable=SC2154
 [ "${#source[@]}" -eq "${#sha256sums[@]}" ] ||
     die "source and sha256sums arrays differ in length"
 

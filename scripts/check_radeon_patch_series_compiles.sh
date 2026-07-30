@@ -276,7 +276,7 @@ if [ ! -d "$KB" ]; then
   }
   exit 0
 fi
-KB=$(CDPATH= cd -- "$KB" && pwd -P)
+KB=$(CDPATH='' cd -- "$KB" && pwd -P)
 
 # A directory alone is not a prepared kernel tree. Kbuild for an external module
 # needs the top Makefile, the exported symbol table, and the generated
@@ -323,7 +323,7 @@ echo "compiling touched units against $kernel_release: $objs"
 compile_log="$WORK/compile.log"
 # shellcheck disable=SC2086
 compile_status=0
-( cd "$WORK/radeon" && make "$@" KCFLAGS='-O2 -pipe' -C "$KB" M="$PWD" $objs ) \
+( cd "$WORK/radeon" && "$DKMSDIR/radeon-dkms-make" "$@" -C "$KB" M="$PWD" $objs ) \
   >"$compile_log" 2>&1 || compile_status=$?
 cat "$compile_log"
 if [ "$compile_status" -ne 0 ]; then

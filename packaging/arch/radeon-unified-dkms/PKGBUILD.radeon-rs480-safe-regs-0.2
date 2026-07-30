@@ -13,7 +13,7 @@
 
 pkgname=radeon-rs480-safe-regs-dkms
 pkgver=0.2
-pkgrel=9
+pkgrel=10
 pkgdesc='Radeon RS400/RS480 safe-register debugfs reader DKMS module'
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/steinmarder'
@@ -25,8 +25,11 @@ conflicts=('radeon-rs480-safe-regs-dkms-git')
 # DKMS source directory.  Keep makepkg from unpacking it into srcdir first.
 noextract=('radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz')
 source=(
-  'dkms.conf'
+  'dkms.conf.radeon-rs480-safe-regs-0.2'
   'pre-build.sh'
+  'compiler-policy.conf'
+  'radeon-dkms-compiler-policy'
+  'radeon-dkms-make'
   'radeon-dkms-ccache-gcc'
   'radeon-dkms-ccache-clang'
   "SAFE_REGS.tsv::file://${startdir}/../../../patches/rs480/SAFE_REGS.tsv"
@@ -34,21 +37,31 @@ source=(
   "0001-rs480-safe-regs-debugfs.patch::file://${startdir}/../../../patches/rs480/0001-rs480-safe-regs-debugfs.patch"
 )
 sha256sums=(
-  'd9aa641dd1096b758387852b0e1d24b84aa0cbb6dfde3aafd51f59d2c160af65'
-  'fe709b98275d6238aec74dd2c1bebb6b7a9d6f31d8a88f41885e5eda49fa707a'
-  '5f00a982b9fd212d6a75f51154735f86d3600bc5fd38a074789125256e9e6631'
-  '56abe9164529b84b68ace1777fcc5107d71e87a2ac2794ad21fa07c4e4fbcf1a'
-  'ec8c00ff367aeec92f0f63572eb12379ecb63340323ad260c502f334a84677f1'
+  '5ec8ae17a3aa94708a3d6fdb4a2e684c57fc38802ea2cb35660e0ae39406ff20'
+  '9dc4d60bec36c530c33440e4494b5ee52a15cf92e1305cf36d7f14fc960a3d08'
+  'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
+  '7aeb7fff0b01696120ce182765df84b6f5edb6657d374c30efb85c4c86a4a9f2'
+  '37ff463276e8adccfbbdbda0360a72775f078ed7e92a7c6e4f05dcf5e5a09e43'
+  '4654ac693bd3fd00da36779ed9ec5b10a61ab84fd4fef5a6addcf85a2fe988e7'
+  '9a1e4041c958ae1fe12ded548cb0d334a5833c0d4a29bb20ba3e64cf8a9b381a'
+  '36eecdee98168cdf1a9fbbaaa6171babc6ed745ffc35432b7acbd332490ce7dd'
   '7a1e1b6343e0f4a5e5e24bc0e45544c4d7cc79979aca0a15569ab5467df6ce29'
-  'd05330bbc56da3085cdc8e789547286bd312ad80cec076d7d4e7e5d9f31b22a4'
+  'f7db1a39d7b2138940dcf7a90d4cedf4cffe6b5cea02c94e47302cc5d2b7b99d'
 )
 
 package() {
   local _dkmsdir="${pkgdir}/usr/src/radeon-rs480-safe-regs-${pkgver}"
 
   install -d "${_dkmsdir}/patches"
-  install -Dm644 "${srcdir}/dkms.conf"    "${_dkmsdir}/dkms.conf"
+  install -Dm644 \
+    "${srcdir}/dkms.conf.radeon-rs480-safe-regs-0.2" \
+    "${_dkmsdir}/dkms.conf"
   install -Dm755 "${srcdir}/pre-build.sh" "${_dkmsdir}/pre-build.sh"
+  install -Dm644 "${srcdir}/compiler-policy.conf" \
+    "${_dkmsdir}/compiler-policy.conf"
+  install -Dm755 "${srcdir}/radeon-dkms-compiler-policy" \
+    "${_dkmsdir}/radeon-dkms-compiler-policy"
+  install -Dm755 "${srcdir}/radeon-dkms-make" "${_dkmsdir}/radeon-dkms-make"
   install -Dm755 "${srcdir}/radeon-dkms-ccache-gcc" "${_dkmsdir}/radeon-dkms-ccache-gcc"
   install -Dm755 "${srcdir}/radeon-dkms-ccache-clang" "${_dkmsdir}/radeon-dkms-ccache-clang"
   install -Dm644 "${srcdir}/SAFE_REGS.tsv" "${_dkmsdir}/SAFE_REGS.tsv"
