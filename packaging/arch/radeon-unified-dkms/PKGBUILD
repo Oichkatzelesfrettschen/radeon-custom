@@ -1,182 +1,33 @@
 # Maintainer: Terascale Functionalists
-# Why: kernel header packages do not ship a buildable radeon driver source
-#      tree.  This package expands the canonical unified radeon source
-#      tarball into /usr/src/radeon-unified-${pkgver}/radeon/ so DKMS hooks
-#      rebuild the module automatically on kernel upgrades.
-#
-#      Targeted mechanisms (RS480/RS482/RS485 RE + Palm safety):
-#        0001 safe-regs read-only debugfs;      0002 CP cache-drain packet;
-#        0003 pre-reset crash-shim telemetry;   0004 candidate-register groups;
-#        0005 firmware-read candidate regs;      0006 CP-ME RAM dump (RADDR port);
-#        0007 cs-parser-init failure telemetry;  0008 CP-ME RAM inject
-#          (write-verify-restore, exact-token + ARM-keyword gated, no execute);
-#        0009 debugfs registration via drm_driver.debugfs_init so the RE nodes
-#          land under dri/N on 6.7+ DRM instead of the debugfs top level;
-#        0010 driver-only-read benign MC candidate node
-#          (radeon_rs480_candidate_mc_benign_regs: MEM_TIMING_CNTL 0x0144,
-#          MEM_STR_CNTL 0x0150; direct RREG32, the RS480-verifiable subset of
-#          the 471-register flow vet; 0x017c MC_READ_CNTL_AB excluded as
-#          PCI_GART_PAGE-aliased and IGP-unread on RS480);
-#        0011 GART aperture status node
-#          (radeon_rs480_candidate_gart_status_regs: GART_BASE 0x2c,
-#          GART_FEATURE_ID 0x2b, GART_CACHE_CNTRL 0x2e, AGP_ADDRESS_SPACE_SIZE
-#          0x38; MC-indirect controlled reads, read-only, driver-read on RS480.
-#          GART_BASE and GART_FEATURE_ID also appear in the 0004 gart_mc cohort
-#          at the same offsets; the duplication is intentional, one self-contained
-#          view per cohort.  Readback is retained in
-#          src/re/r300/results/cachyos_vostro1000_rs482_candidate_reader_mediated_read_sweep_20260613Z/validation.txt);
-#        0012 UMA frame-buffer status node (radeon_rs480_uma_status: NB_TOM
-#          decode, CONFIG_MEMSIZE, MC_FB_LOCATION, MC_MISC_UMA_CNTL, and the
-#          driver real/visible/mc VRAM sizes; read-only, not a size setter).
-#        0013 CP-ME oracle node (radeon_rs480_cp_me_oracle: armed by the
-#          rs480_cp_me_oracle=0x4f524331 module param; root-only, inert when
-#          disarmed).  Excluded on every RADEON_IS_IGP part: firing the
-#          CSQ-toggle + ring_test live-fire on the RS480 IGP hard-locked both
-#          CPU cores (the K8 northbridge has no MMIO completion timeout, RCA
-#          2026-06-06-rs480-cp-me-oracle-csq-toggle-ringtest-safety-rca).  The
-#          live-fire sequence is retained, commented, for a future discrete
-#          Radeon where the PCIe completion timeout makes a wedged poll fail
-#          cleanly.  On IGP the node prints the exclusion notice and returns.
-#        0014 promote three config aperture/base registers (CONFIG_REG_1_BASE
-#          0x010c, CONFIG_REG_APER_SIZE 0x0110, CONFIG_MEMSIZE_EMBEDDED 0x0114)
-#          into the safe-regs list: read-only in the public register text and
-#          confirmed readable through the 0004 candidate config cohort with
-#          hazard_count=0; the candidate cohort is retained as the observation
-#          provenance.
-#        0015 attended single-step frontier probe node
-#          (radeon_rs480_frontier_probe): retained as an inert exhausted-state
-#          notice.  The selected CAP0/CAP1 VIP video-capture registers
-#          (RADEON_CAP0_CONFIG 0x0958, CAP0_BUF_STATUS 0x0970, CAP1_CONFIG
-#          0x09c8, CAP1_BUF_STATUS 0x09e0, CAP1_DWNSC_XRATIO 0x09e8) and IDCT
-#          video-decode registers all read back 0x00000000 without a wedge in
-#          retained attended bundles, so the generated frontier index map has no
-#          residual rows and no rs480_frontier_index value performs an MMIO read.
-#          Further VIP/CAP reads are handled by later gated readers, not by this
-#          exhausted frontier node.
-#        0016 CP_ME_RAM inject hardening: the increment-1 write handler returns
-#          -EIO when the restore read-back fails (microcode left modified) and
-#          -ENXIO when the write never took (ROM-backed address), instead of a
-#          silent success; rejects a continued/seeked write (*ppos != 0); and
-#          moves the result buffer + lock into a per-device context.
-#        0017 promote the 3 RS400 secondary display-output registers
-#          (RS400_FP2_2_GEN_CNTL 0x0388, RS400_TMDS2_CNTL 0x0394,
-#          RS400_TMDS2_TRANSMITTER_CNTL 0x03a4) into the safe-regs list: the
-#          attended frontier --arm read completed with the heartbeat advancing
-#          and no wedge, and they have no documented write side-effect on read.
-#        0018 read-only SCLK_CNTL PLL status node (radeon_rs480_sclk_cntl):
-#          reads R_00000D_SCLK_CNTL through RREG32_PLL under the driver's clock
-#          lock and decodes FORCE_IDCT/FORCE_VIP.  STATUS only, not a de-risker
-#          for the gated CAP/IDCT MMIO read; no FORCE-on write knob.
-#        0019 two read-only register-elucidation nodes:
-#          radeon_rs480_pll_regs reads the full distinct PLL index set (PPLL
-#          dividers, M_SPLL/MPLL/SPLL/MCLK feedback, VCLK/HTOTAL, clock-power,
-#          TV/secondary) through RREG32_PLL and decodes the documented divider
-#          and feedback fields.  Low hazard: r100_pll_rreg serializes the
-#          index/data dance under pll_idx_lock and the aperture is always
-#          clocked.  radeon_rs480_hazard_read takes a single first observation,
-#          selected by radeon_rs480_hazard_index (default -1 disarmed), of the
-#          22 read-safe name-pattern false-positives in the hazard tier (BIOS_8..15
-#          and GUI scratch, SE_VPORT_*, SW_SEMAPHORE, WAIT_UNTIL) before they are
-#          promoted to safe-regs.  The two genuine northbridge-stall registers
-#          (CRTC8_IDX 0x03b4, BIF_SLAVE_CNTL 0x180c) and the index/data/FIFO and
-#          CP/VIP/CAP registers are excluded at compile time, not listed.
-#        0020 promote the 22 hazard-tier read-safe registers (BIOS_8..15_SCRATCH,
-#          SW_SEMAPHORE, GUI_SCRATCH_REG0..5, WAIT_UNTIL, SE_VPORT_*) into the
-#          read-only safe-regs list: each read clean on the real RS480 IGP through
-#          the 0019 radeon_rs480_hazard_read node (every read returned, no wedge;
-#          SE_VPORT verified against SCLK_CNTL FORCE_CP=1).  They were parked only
-#          by a name-pattern regex, not a measured hazard.  radeon_rs480_hazard_read
-#          is retained as the observation provenance.
-#        0021 generate a dedicated rs480 CS-checker safe bitmap (reg_srcs/rs480 =
-#          the r300 list plus the R400 fragment-shader US registers: US_CODE_BANK
-#          0x46b8, US_CODE_EXT 0x46bc, US_ALU_EXT_ADDR_0..63 0x4ac0-0x4bbc).
-#          CHIP_RS480 keeps the stock r300 bitmap unless the operator sets the
-#          explicit module gate rs480_r400_us_cs=1 at load time for an attended
-#          mesa R300_HB_R400_US run.  Every other family keeps the stock r300
-#          bitmap.  These are plain value registers (code-bank index,
-#          extended-address bits), not BO offsets, so they need no relocation
-#          handling once the gate is armed.
-#        Plus the Palm unsafe-reset guard and Evergreen SMX_DC_CTL0 allowlist,
-#        and CachyOS 6.x/7.x API compatibility.
-#
-#      Tested: patch stack (0002-0020) compile-gated clean on 7.0.10-2-cachyos
-#      AND 6.18.33-2-cachyos-lts (both clang/LLVM, LLVM=1 radeon.ko link + BTF).  RS480 debugfs nodes
-#      node-validated on Vostro (RS480 0x1002:0x5974) under /sys/kernel/debug/dri/N/
-#      after 0009 across prior pkgrels; ring/ib self-test pass, no DRM CS/fault
-#      errors.  The 0015 frontier node is compiled as an exhausted-state notice;
-#      selected CAP/IDCT runtime reads are captured per-register in the retained
-#      frontier read bundles, not asserted by this package comment.
-#      0021 status: mkregtable generates reg_srcs/rs480 -> rs480_reg_safe_bm[159]
-#      clean (US bits cleared vs r300: dword 141 0xC100->0x0100, the 0x4ac0-0x4bbc
-#      dwords cleared), and the rs480_set_reg_safe binder keeps the stock bitmap
-#      unless rs480_r400_us_cs=1 is set at module load.  The full radeon.ko
-#      compile-gate across both kernels runs at dkms build on install; an attended
-#      R300_HB_R400_US test must arm both the Mesa route and the kernel CS gate.
-#
-#        0022 vertex-engine attended probe node (radeon_rs480_vertex_probe):
-#          reads ONE VAP/PVS register selected by radeon_rs480_vertex_index per
-#          open; index -1 (default) disarmed.  Attended-only; the VAP/PVS domain
-#          clock-gates at rest and a read can stall the K8 northbridge.
-#        0024 reader hazard-skip guard: the candidate/frontier readers skip an
-#          offset that fails a precondition instead of issuing the stalling read.
-#        0025 per-domain force-clock-then-read node (radeon_rs480_force_clock_read):
-#          arms radeon_rs480_force_clock_index (default -1), sets the domain
-#          SCLK_CNTL FORCE bit, reads the register, restores SCLK_CNTL.  Validated
-#          the 48-entry VIP/CAP block wedge-free.  Confirmatory only: SCLK_CNTL is
-#          BIOS-programmed 0xfffffff9, so every FORCE bit is already set.
-#        0026 gate the wedge-prone candidate readers
-#          (radeon_rs480_candidate_vap_regs, radeon_rs480_candidate_firmware_read_regs)
-#          behind radeon_rs480_hazard_readers_armed (default 0 disarmed): disarmed,
-#          they emit a safety notice and skip the MMIO read.  VAP/PVS clock-gates at
-#          rest and stalls; the firmware_read cohort includes HOST_PATH_CNTL 0x0130,
-#          which gates the HyperTransport host path.
-#        0027 GPU-hang panic breadcrumb notifier (radeon_device.c): a panic
-#          notifier writes the software-side ring/fence state, captured in the kdump
-#          vmcore (ramoops is unviable on this K8: the reboot clears all DRAM).
-#        0028 (A) promote the COMBIOS-4 (GRPH_BUFFER_CNTL 0x02f0,
-#          GRPH2_BUFFER_CNTL 0x03f0, RS400_DMIF_MEM_CNTL1 0x0e38) into the
-#          safe-regs list: firmware-touched in the COMBIOS ASIC-init census,
-#          observed-responding, cs_writable=no and cs_special=no (no read side-effect),
-#          in always-clocked display/MC domains.  (B) add the gated
-#          radeon_rs480_candidate_vip_straggler_regs node (VID_BUFFER_CONTROL 0x0900,
-#          FCP_CNTL 0x0910, TV_MASTER_CNTL 0x0800) behind rs480_hazard_readers_armed:
-#          FORCE_VIP/FORCE_TV_SCLK are BIOS-set but these VIP/TV reads are untested,
-#          so the node is disarmed by default and read attended under kdump.
-#
-#      Tested: patch stack (0002-0027) compile-gated clean at dkms build on
-#      6.18.34-1-cachyos-lts and 7.0.11-1-cachyos; 0026 gating and 0027 breadcrumb
-#      runtime-verified on cachyos-vostro1000.
+# The transitional package exports the exact signed source-equivalent Radeon
+# subtree. The source repository owns driver bytes; this repository owns DKMS
+# construction, compiler policy, runtime defaults, and deployment artifacts.
 
 pkgname=radeon-unified-dkms
 pkgver=0.3
 pkgrel=94
-pkgdesc='Unified Radeon DKMS module for RS480 and Palm safety gates'
+pkgdesc='Legacy-equivalent Radeon DKMS module from the signed source checkpoint'
 arch=('x86_64')
-url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
+url='https://github.com/Oichkatzelesfrettschen/linux-radeon-gororoba'
 license=('GPL-2.0-only')
-# depends stays 'dkms' only: this package must remain buildable and loadable as a
-# normal diagnostic DKMS module. Do NOT hard-depend on the SB600 watchdog here;
-# that conflates "the radeon module loads" with "this machine is safe to run
-# destructive RAD-05 fires", which a pacman dependency cannot prove (watchdog
-# substrate visible, fired latch cleared, netconsole live, srcversion match).
-# Active watchdog feeding is RETIRED for RAD-05 fire timing (the SB600 reset is
-# not deferrable via WDIOC_SETTIMEOUT/WDIOC_KEEPALIVE/magic close), so no feeder
-# belongs in any chain. The SB600 watchdog substrate is a loud optdepend below;
-# the hard safety chain lives in the rs480-reset-hazard-stack meta-package, gated
-# by a runtime preflight, not by package presence.
 depends=('dkms')
-optdepends=('sp5100-tco-ioapic-dkms>=0.4-4: SB600 hardware watchdog substrate, REQUIRED on cachyos-vostro1000 for RAD-05 hazardous reset campaigns (enables /dev/watchdog via the IOAPIC-page fallback); package presence does not validate the watchdog feeder, hazardous runs must still pass the runtime preflight'
-            'rs480-reset-hazard-stack: full RS480 failed-reset hazard stack (radeon + SB600 watchdog + runtime preflight); install this instead when running destructive reset experiments')
+makedepends=('git')
+optdepends=('sp5100-tco-ioapic-dkms>=0.4-4: SB600 watchdog substrate for attended RS480 reset experiments'
+            'rs480-reset-hazard-stack: RS480 failed-reset experiment dependencies and preflight')
 provides=("radeon-unified=${pkgver}-${pkgrel}" 'radeon-rs480-safe-regs=0.2-10' 'radeon-palm-gate=1.0')
 conflicts=('radeon-rs480-safe-regs-dkms' 'radeon-rs480-safe-regs-dkms-git' 'radeon-palm-gate-dkms')
 replaces=('radeon-rs480-safe-regs-dkms' 'radeon-palm-gate-dkms')
 
-# The generated unified radeon source tarball is expanded by package() into the
-# DKMS source directory.  Keep makepkg from unpacking it into srcdir first.
-noextract=('radeon-unified-canonical-source.tar.xz')
+_source_repository='Oichkatzelesfrettschen/linux-radeon-gororoba'
+_source_commit='9079be562eebd184da9cf891fbc6a72d5ac0d9f3'
+_source_tag='radeon-unified-0.3-pkgrel91-source-equivalent'
+_source_tag_object='81a2510e34d1d62f5486683bcd6e240db8223b7d'
+_source_driver_tree='b0f40a1970f57d00b690890120ad1ba8fd1e474c'
+_source_url=${RADEON_UNIFIED_SOURCE_URL:-git+ssh://git@github.com/${_source_repository}.git}
+
 source=(
-  "rs480-cp-mc-cache-flush.patch::file://${startdir}/../../../patches/rs480/0002-rs480-cp-mc-cache-flush.patch"
-  "rs480-crash-shim-recovery.patch::file://${startdir}/../../../patches/rs480/0003-rs480-crash-shim-recovery.patch"
+  "radeon-source::${_source_url}#commit=${_source_commit}"
+  'source-identity.toml'
   'dkms.conf'
   'pre-build.sh'
   'dkms-initramfs-refresh.sh'
@@ -188,397 +39,69 @@ source=(
   'radeon-re.conf'
   'radeon-dkms-ccache-gcc'
   'radeon-dkms-ccache-clang'
-  "rs480-safe-regs.tsv::file://${startdir}/../../../patches/rs480/SAFE_REGS.tsv"
-  "rs480-candidate-regs.tsv::file://${startdir}/../../../patches/rs480/CANDIDATE_REGS.tsv"
-  "radeon-unified-canonical-source.tar.xz::file://${startdir}/../../../sources/radeon-unified-0.3-source.tar.xz"
-  "rs480-safe-regs-debugfs.patch::file://${startdir}/../../../patches/rs480/0001-rs480-safe-regs-debugfs.patch"
-  "rs480-candidate-regs-debugfs.patch::file://${startdir}/../../../patches/rs480/0004-rs480-candidate-regs-debugfs.patch"
-  "rs480-firmware-read-candidate-regs-debugfs.patch::file://${startdir}/../../../patches/rs480/0005-rs480-firmware-read-candidate-regs-debugfs.patch"
-  "rs480-cp-me-ram-dump-debugfs.patch::file://${startdir}/../../../patches/rs480/0006-rs480-cp-me-ram-dump-debugfs.patch"
-  "rs480-cs-parser-init-failure-telemetry.patch::file://${startdir}/../../../patches/rs480/0007-rs480-cs-parser-init-failure-telemetry.patch"
-  "rs480-cp-me-ram-inject-write-verify-restore.patch::file://${startdir}/../../../patches/rs480/0008-rs480-cp-me-ram-inject-write-verify-restore.patch"
-  "rs480-debugfs-init-dri-minor-root.patch::file://${startdir}/../../../patches/rs480/0009-rs480-debugfs-init-dri-minor-root.patch"
-  "rs480-mc-benign-candidate-regs-debugfs.patch::file://${startdir}/../../../patches/rs480/0010-rs480-mc-benign-candidate-regs-debugfs.patch"
-  "rs480-gart-status-candidate-regs-debugfs.patch::file://${startdir}/../../../patches/rs480/0011-rs480-gart-status-candidate-regs-debugfs.patch"
-  "rs480-uma-status-debugfs.patch::file://${startdir}/../../../patches/rs480/0012-rs480-uma-status-debugfs.patch"
-  "rs480-cp-me-oracle-debugfs.patch::file://${startdir}/../../../patches/rs480/0013-rs480-cp-me-oracle-debugfs.patch"
-  "rs480-promote-config-regs-to-safe.patch::file://${startdir}/../../../patches/rs480/0014-rs480-promote-config-regs-to-safe.patch"
-  "rs480-frontier-attended-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0015-rs480-frontier-attended-probe-debugfs.patch"
-  "rs480-cp-me-inject-eio-perdev-ppos-hardening.patch::file://${startdir}/../../../patches/rs480/0016-rs480-cp-me-inject-eio-perdev-ppos-hardening.patch"
-  "rs480-promote-frontier-responders-to-safe.patch::file://${startdir}/../../../patches/rs480/0017-rs480-promote-frontier-responders-to-safe.patch"
-  "rs480-sclk-cntl-pll-status-debugfs.patch::file://${startdir}/../../../patches/rs480/0018-rs480-sclk-cntl-pll-status-debugfs.patch"
-  "rs480-pll-indirect-and-hazard-firstread-debugfs.patch::file://${startdir}/../../../patches/rs480/0019-rs480-pll-indirect-and-hazard-firstread-debugfs.patch"
-  "rs480-promote-hazard-read-responders-to-safe.patch::file://${startdir}/../../../patches/rs480/0020-rs480-promote-hazard-read-responders-to-safe.patch"
-  "rs480-cs-checker-r400-us-allowlist.patch::file://${startdir}/../../../patches/rs480/0021-rs480-cs-checker-r400-us-allowlist.patch"
-  "rs480-vertex-engine-attended-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0022-rs480-vertex-engine-attended-probe-debugfs.patch"
-  "rs480-reader-hazard-skip-guard.patch::file://${startdir}/../../../patches/rs480/0024-rs480-reader-hazard-skip-guard.patch"
-  "rs480-per-domain-force-clock-then-read-node.patch::file://${startdir}/../../../patches/rs480/0025-rs480-per-domain-force-clock-then-read-node.patch"
-  "rs480-gate-wedge-prone-candidate-readers.patch::file://${startdir}/../../../patches/rs480/0026-rs480-gate-wedge-prone-candidate-readers.patch"
-  "rs480-gpu-hang-panic-breadcrumb-notifier.patch::file://${startdir}/../../../patches/rs480/0027-rs480-gpu-hang-panic-breadcrumb-notifier.patch"
-  "rs480-combios4-safe-and-vip-straggler-reader.patch::file://${startdir}/../../../patches/rs480/0028-rs480-combios4-safe-and-vip-straggler-reader.patch"
-  "rs480-force-clock-disp1-disp2-extension.patch::file://${startdir}/../../../patches/rs480/0029-rs480-force-clock-disp1-disp2-extension.patch"
-  "rs480-force-clock-cohort-widen-fp-crtc2-ov0.patch::file://${startdir}/../../../patches/rs480/0030-rs480-force-clock-cohort-widen-fp-crtc2-ov0.patch"
-  "rs480-gated-state-plain-read-disp2-probe.patch::file://${startdir}/../../../patches/rs480/0031-rs480-gated-state-plain-read-disp2-probe.patch"
-  "rs480-force-clock-remaining-disp-ov0-vip-tv.patch::file://${startdir}/../../../patches/rs480/0032-rs480-force-clock-remaining-disp-ov0-vip-tv.patch"
-  "rs480-force-clock-3d-engine-control-registers.patch::file://${startdir}/../../../patches/rs480/0033-rs480-force-clock-3d-engine-control-registers.patch"
-  "rs480-force-clock-3d-table-expansion-ga-rs-rb.patch::file://${startdir}/../../../patches/rs480/0034-rs480-force-clock-3d-table-expansion-ga-rs-rb.patch"
-  "rs480-force-clock-3d-table-vap-su-sc-fg-rb-control.patch::file://${startdir}/../../../patches/rs480/0035-rs480-force-clock-3d-table-vap-su-sc-fg-rb-control.patch"
-  "rs480-skip-discrete-r300-mc-idle-wait-on-igp.patch::file://${startdir}/../../../patches/rs480/0036-rs480-skip-discrete-r300-mc-idle-wait-on-igp.patch"
-  "rs480-force-clock-undoc-4xxx-probe-table.patch::file://${startdir}/../../../patches/rs480/0037-rs480-force-clock-undoc-4xxx-probe-table.patch"
-  "rs480-cp-me-inject-idle-gate.patch::file://${startdir}/../../../patches/rs480/0038-rs480-cp-me-inject-idle-gate.patch"
-  "rs480-cp-ib-scratch-baseline-oracle-debugfs.patch::file://${startdir}/../../../patches/rs480/0039-rs480-cp-ib-scratch-baseline-oracle-debugfs.patch"
-  "rs480-gpu-reset-recover-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0040-rs480-gpu-reset-recover-probe-debugfs.patch"
-  "rs480-rbbm-soft-reset-recovery-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0041-rs480-rbbm-soft-reset-recovery-probe-debugfs.patch"
-  "rs480-blit-busy-reset-recovery-probe-debugfs.patch::file://${startdir}/../../../patches/rs480/0042-rs480-blit-busy-reset-recovery-probe-debugfs.patch"
-  "rs480-r300-asic-reset-force-clock-production-path.patch::file://${startdir}/../../../patches/rs480/0043-rs480-r300-asic-reset-force-clock-production-path.patch"
-  "rs480-wedged-3d-production-reset-recovery-probe.patch::file://${startdir}/../../../patches/rs480/0044-rs480-wedged-3d-production-reset-recovery-probe.patch"
-  "rs480-wedge-safe-crash-shim-gated-3d-readback.patch::file://${startdir}/../../../patches/rs480/0045-rs480-wedge-safe-crash-shim-gated-3d-readback.patch"
-  "rs480-parked-gpu-failure-path-host-survival.patch::file://${startdir}/../../../patches/rs480/0046-rs480-parked-gpu-failure-path-host-survival.patch"
-  "rs480-hold-force-clock-on-failed-reset.patch::file://${startdir}/../../../patches/rs480/0047-rs480-hold-force-clock-on-failed-reset.patch"
-  "rs480-failed-reset-touch-nothing-after-classification.patch::file://${startdir}/../../../patches/rs480/0048-rs480-failed-reset-touch-nothing-after-classification.patch"
-  "rs480-parked-gpu-gart-tlb-flush-guard.patch::file://${startdir}/../../../patches/rs480/0049-rs480-parked-gpu-gart-tlb-flush-guard.patch"
-  "rs480-parked-gpu-modeset-and-flip-gate.patch::file://${startdir}/../../../patches/rs480/0050-rs480-parked-gpu-modeset-and-flip-gate.patch"
-  "rs480-parked-gpu-fence-lockup-check-gate.patch::file://${startdir}/../../../patches/rs480/0051-rs480-parked-gpu-fence-lockup-check-gate.patch"
-  "rs480-parked-gpu-close-path-pins.patch::file://${startdir}/../../../patches/rs480/0052-rs480-parked-gpu-close-path-pins.patch"
-  "rs480-parked-gpu-leak-bos-by-design.patch::file://${startdir}/../../../patches/rs480/0053-rs480-parked-gpu-leak-bos-by-design.patch"
-  "rs480-parked-gpu-counted-leak-breadcrumb.patch::file://${startdir}/../../../patches/rs480/0054-rs480-parked-gpu-counted-leak-breadcrumb.patch"
-  "rs480-rs400-include-pci-for-save-restore-state.patch::file://${startdir}/../../../patches/rs480/0055-rs480-rs400-include-pci-for-save-restore-state.patch"
-  "rs480-parked-gpu-quiesce-async-agents.patch::file://${startdir}/../../../patches/rs480/0056-rs480-parked-gpu-quiesce-async-agents.patch"
-  "rs480-parked-gpu-sync-drain-async-works.patch::file://${startdir}/../../../patches/rs480/0057-rs480-parked-gpu-sync-drain-async-works.patch"
-  "rs480-parked-gpu-disable-kms-output-poll.patch::file://${startdir}/../../../patches/rs480/0058-rs480-parked-gpu-disable-kms-output-poll.patch"
-  "rs480-parked-gpu-gate-fbdev-vram-aperture.patch::file://${startdir}/../../../patches/rs480/0059-rs480-parked-gpu-gate-fbdev-vram-aperture.patch"
-  "rs480-parked-gpu-sigbus-vram-mmap.patch::file://${startdir}/../../../patches/rs480/0060-rs480-parked-gpu-sigbus-vram-mmap.patch"
-  "rs480-parked-gpu-debugfs-readers-hard-return.patch::file://${startdir}/../../../patches/rs480/0061-rs480-parked-gpu-debugfs-readers-hard-return.patch"
-  "rs480-parked-gpu-module-unload-no-hardware.patch::file://${startdir}/../../../patches/rs480/0062-rs480-parked-gpu-module-unload-no-hardware.patch"
-  "rs480-parameterized-soft-reset-mask-candidates.patch::file://${startdir}/../../../patches/rs480/0063-rs480-parameterized-soft-reset-mask-candidates.patch"
-  "rs480-soft-reset-mask-candidates-review-hardening.patch::file://${startdir}/../../../patches/rs480/0064-rs480-soft-reset-mask-candidates-review-hardening.patch"
-  "rs480-soft-reset-mask-selector-races-and-mask-aware-idle.patch::file://${startdir}/../../../patches/rs480/0065-rs480-soft-reset-mask-selector-races-and-mask-aware-idle.patch"
-  "rs480-atomic-one-shot-reset-mask-consume-cmpxchg.patch::file://${startdir}/../../../patches/rs480/0066-rs480-atomic-one-shot-reset-mask-consume-cmpxchg.patch"
-  "rs480-reset-idle-check-gui-active-for-experimental-masks.patch::file://${startdir}/../../../patches/rs480/0067-rs480-reset-idle-check-gui-active-for-experimental-masks.patch"
-  "rs480-reset-idle-check-comment-grammar.patch::file://${startdir}/../../../patches/rs480/0068-rs480-reset-idle-check-comment-grammar.patch"
-  "rs480-parked-fbdev-write-advance-ppos.patch::file://${startdir}/../../../patches/rs480/0069-rs480-parked-fbdev-write-advance-ppos.patch"
-  "rs480-parked-gem-fault-reserve-before-placement.patch::file://${startdir}/../../../patches/rs480/0070-rs480-parked-gem-fault-reserve-before-placement.patch"
-  "rs480-parked-residual-irq-cursor-detect-debugfs-gates.patch::file://${startdir}/../../../patches/rs480/0071-rs480-parked-residual-irq-cursor-detect-debugfs-gates.patch"
-  "rs480-gart-page-table-readonly-debugfs.patch::file://${startdir}/../../../patches/rs480/0072-rs480-gart-page-table-readonly-debugfs.patch"
 )
-sha256sums=('9aaeed7ff68c6892c2c754977784a9ae1ab43722f0270afd4e4f308783ca57fc'
-            'cc921d8f17005e3e77fb7a610c427d585b15c1dfd907525c6d7575dac168b5c3'
-            'dbebb7f547726c8fcc4ff7ecd78bdfc2d97acc32aec080afd9b1a9450572af44'
-            '9dc4d60bec36c530c33440e4494b5ee52a15cf92e1305cf36d7f14fc960a3d08'
-            '0096c2fe01a114793169e120a006684b8d98403a678568f8adc967948b134743'
-            'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
-            '7aeb7fff0b01696120ce182765df84b6f5edb6657d374c30efb85c4c86a4a9f2'
-            '643aa779fb01de7f1d95dd6ec06f3422b940b7a1dcbdbc60e3e7246fb722d510'
-            '3218c56bbdb41d9221897a046247fc6ed965ac134325844f10bc185703380684'
-            'b9804f15603da32c4e6254466a1b24975d7c67fbb1194c72f7b6995da005201e'
-            '7833e442e230d3c92d3680786b247b7cac39e000e7908845d97d1b877d7539b1'
-            '4654ac693bd3fd00da36779ed9ec5b10a61ab84fd4fef5a6addcf85a2fe988e7'
-            '9a1e4041c958ae1fe12ded548cb0d334a5833c0d4a29bb20ba3e64cf8a9b381a'
-            '36eecdee98168cdf1a9fbbaaa6171babc6ed745ffc35432b7acbd332490ce7dd'
-            '90386deaff96452b73d667d660e217bb442b68675bf319e91d02eb651558fd52'
-            '46dcd8f609bad0b5c57536f10998206739fcc54480c111fc48c7b55a5b399f4b'
-            'f7db1a39d7b2138940dcf7a90d4cedf4cffe6b5cea02c94e47302cc5d2b7b99d'
-            'dd75e9385f5d790d8b2dea4a3a45a63018381ecc07ef13f736202572af1c50fb'
-            '649b31644834efe1492dd6d3ccf36734654649cc8a454d919a2636e2d8efb5cc'
-            'f516362810b934851fd9f8773bddc926e6febf0218bd4731fe2cc18bfc6beeb2'
-            'db99d8058c4054ea6de6c6c618e2f1a3837dd87c09a5f331741961efd8a877e2'
-            '29b1f12b17c1ea40d61638f93e69c9155935dafebeae55c08e07d1669992fe87'
-            'e5e4da27a9cb3eca0c909411e505ae083c1097d3ff205597fd922ecd8a3e236a'
-            'a7d19ed4adbfc90655ecd3684468294e3ba5d25c18c2a4114e39e0b9dfccdf9a'
-            '72188c3a54ad234a16650547615840831c0a5b908d98fcd6b67b45a94ff66829'
-            'c4a72d72e4d20455b55e9b34d4f9930e0b1fd310ad6e29c107a3f21d89303e66'
-            '4b07be4380937339b63043315fa1fa1ae20666274a86f708e198228795f4a981'
-            '85bc4b0bbff13997d51ccce1fa7fa9e4bbf47f1e121203803b8409f6313d6092'
-            'a814f5bd6b46f9b2083d4dc6053d57512b7e571187a2e8e8b9f2ccdc90d6193b'
-            '7dbed51345e065c75bbf97fb269fe784bf78cf0d6d89618f9fce3aba2da1be61'
-            '1c4dc355f24a95f5eb8b68ab9179dc457873b711dcbba1f9c691b08f7a1d3cee'
-            '8e7b4c63b9bad39d7b30986ce0c4a6c4935bfc5d09d7a9684d5ab6154ec3eeca'
-            'b706f21b8a5e099ec006ad105406c71452939bb3671615a2d03865a016b25fa9'
-            'df61741aedb64bcdf05001199305e566f2d75b15c517ade104386805b3e77f62'
-            '84c51c35f302e144685fdd9edfc62b6e0e09ff993fb6cc5cce475c79fa3e84a0'
-            'ece85f2d906e860fa458dec8c2bb420d8f8414e6f4667c5d785fba6972ff283c'
-            '17e629374a6c3a4e911933c18195abedd7197663a0b9f1e144e2762edb6d8f9b'
-            '930c027a7240675cb6afa3f1e8af15662b5e8f5ba6147815bb4c62a1ff75c9e6'
-            '06c890d5e9f4c023b1ffbe0da4f603bfaa6911c88c4ad91dd54c44a9fd2196b2'
-            'e5c0786ebbea57cb1d3b582178d00d7375cc8fcb8e6faec4adecab25788f0f54'
-            '90e8b93731afbe75aafb2b96ddc6e945449c7fbf648e2dde5c4d5e53034edf91'
-            'b64d5d086a05347b5c81545095e0923174507f40d9bcf72b4303877cdea25331'
-            '0d3dc6d388f074a38620264dd6cc5f4b3cbdd469828862104a6d85c5d47ed1d7'
-            '02b82ee5a2129b0838e699c3fa19814ff160409a641de53fefc10de60456fa3a'
-            '58346fcc23a428b1c558c97b7d90183fbaae0272b2ff2d2dcd4e31aaecb5ea4b'
-            'd9e27efa5010b6716c69f1ddc9276a0ec2f34b95f1a352688a79dbb58d5fcd06'
-            '43e0982e31c012a098ac3408ffc4a81476a0375f7da9dd1a4312c05fdc477c8a'
-            'b373840d3135faf48892b5ad92a3f6e905f8b114230321c1ecf18557268ccfe5'
-            'd7af69e31ef8e86b8eb69559abc674f5bcd679ef61c9f8c33565184fb5cbcbfc'
-            '971f82aa6572dca397dc97d582a3cbf611fbda35aacbf95b933bae590859b3f0'
-            '69d06af367d869baefd0b2f9afb9a7564f0a12edc4ea908578cbda02eef4e317'
-            '4db590fb082910b87b68692ae6a16d95b468744dabd6cd9ee22a1eaaf4e2e7d3'
-            'f8b4114e670f24c399effddaed2b2768266f4ca41baaed48b3f9c211a1d3b011'
-            'a99ef00f43ca49d01f06eb8041a675712d824c4a19f81c7191b5e9da5b417a49'
-            'cf950319e668bc60198ac907df65aba3ca1e7a05cc64dbe680ed8916db58ba5a'
-            'cb3aaeab39c5655c6126574f57252609482b2efae025cec1dd2e248498d2d2b0'
-            '78aa710995bc2bd41840737d3e69badf11286d3803d847c11505fa3301bf58d6'
-            '654f42b815258e8a2e5f0caab2b1bd6acd1573f9bc1e0df04fc5211b3087eaed'
-            '64bbe577a4f28332d6b099349d2500f511f47d5a395735cc413ecc753b8288fa'
-            'c086224f34b32f0427628b05e43f728290362db2d7ab281495e97fcee3fa2c81'
-            'f53942ec3e1b58c66f09e56abca8f50f2a872e51ed2f72872f47624378499969'
-            '4bf55b609e938a9c8b2360023f77582ef230602d7d9f43c0966490188444e1c2'
-            '263a189397e6e7e3153fc88a3e185a8639bb5a26677e90363d20f049d2837f39'
-            '92eda8e11923b3a4d2ee4db9d851b1ab895400791b5b9e13a5711de266356df7'
-            '01285287b26ad8374b956becc1207e2705f35f2ed16d7b9f2d54606d88db04d9'
-            '2992a24f8e6e06242a604783fb45fc6bc4c3a84c38c63e58209d1a7b441364af'
-            'd64e7f8f9a1722a54dfc98d74b7dba38b1f6b3e90c2c6f70d6d7c27e9e875921'
-            'f0fb0e953af5e53a01a5c674fc71d0d488b5b8aa53cb117d732aef7249de4510'
-            '65ff70de18dc87e090ddea63d279aafbe13653d607d2372e02c62c8f3ddf4a5e'
-            '0ff7f9ce2a5e954383c4238f116f8b66bcb8f69538ad6acefa83e0a6cb689ab3'
-            '5468e2c2d97e5e80cb15b862a4c3038e3b8f2777e5218b97542219c9003df030'
-            'b714bc1590d61b9d300d67dd36071b939c8a447020d4d7ef5ba1f5f25ba368e0'
-            '165f1cf6743a11851ca33261224a1ae1850bbac5986cbd8cafc02a741c6fd0df'
-            '3339e5d4149722a59da9764397dd3aa9077099decd68195ede4d39cb21cee21a'
-            'f1c51b8dfbb6cbe9282510b91e5ab15b7ee8937a584b9608617b614118e8db11'
-            '0ae780cf7e59b38e29fd96b80ebaf72fc3be5c5813ee99dccd48b4a293d8c0e4'
-            '9d65440c6170cd0b16aea6c6c4067f79bba02e3e4c569b792e0e8cb9a0a6516d'
-            'f00c6465a459222ad0a985a3bb28e7ddf3cdaf3b53f628f5dccaad5500258c48'
-            '418ccc742762b7e751cf3ee8d89a56ec7f31003e443b604c73963d22c323a148'
-            '83b4b2b545dea37139eda3165c6486eec8b87d9f01b21240a4462d8ec50566fd'
-            'c81db75464b1e819c6e2a20c7d337467fcfca3ad635b10eee33a9d4f454e0850'
-            'eb54349d64e3c5d9a45e204ed09e80f04c6a62217651ff0976fed13678b4d9c3'
-            '21d0a28edb3825d8c5ee208307f553c076599c69405feadf3cad268a28a48061'
-            '1bb113fa512f9c449bcc30145177b8678f1b43aeeb5ad94fd7921e3e871cc42c'
-            '62c57221319f28785121538302770966ae21e02e94cc4bbebea6d5812b9deed4')
-package() {
-  local _dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
-  install -Dm644 "${srcdir}/rs480-cp-mc-cache-flush.patch" "${_dkmsdir}/patches/0002-rs480-cp-mc-cache-flush.patch"
-  install -Dm644 "${srcdir}/rs480-crash-shim-recovery.patch" "${_dkmsdir}/patches/0003-rs480-crash-shim-recovery.patch"
+sha256sums=(
+  'SKIP'
+  '09fcf852d5ea91f625c2f5c6c918540ae64039b2c906a42a87f0edd3aabb1a3b'
+  'daa7321cc88f27402f0101be834c9334792e7c93e185a4295cf89e747a18c7ec'
+  '9dc4d60bec36c530c33440e4494b5ee52a15cf92e1305cf36d7f14fc960a3d08'
+  '0096c2fe01a114793169e120a006684b8d98403a678568f8adc967948b134743'
+  'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
+  '7aeb7fff0b01696120ce182765df84b6f5edb6657d374c30efb85c4c86a4a9f2'
+  '643aa779fb01de7f1d95dd6ec06f3422b940b7a1dcbdbc60e3e7246fb722d510'
+  '3218c56bbdb41d9221897a046247fc6ed965ac134325844f10bc185703380684'
+  'b9804f15603da32c4e6254466a1b24975d7c67fbb1194c72f7b6995da005201e'
+  '7833e442e230d3c92d3680786b247b7cac39e000e7908845d97d1b877d7539b1'
+  '4654ac693bd3fd00da36779ed9ec5b10a61ab84fd4fef5a6addcf85a2fe988e7'
+  '9a1e4041c958ae1fe12ded548cb0d334a5833c0d4a29bb20ba3e64cf8a9b381a'
+)
 
-  install -d "${_dkmsdir}/patches"
-  install -Dm644 "${srcdir}/dkms.conf"    "${_dkmsdir}/dkms.conf"
-  install -Dm755 "${srcdir}/pre-build.sh" "${_dkmsdir}/pre-build.sh"
-  install -Dm755 "${srcdir}/dkms-initramfs-refresh.sh" "${_dkmsdir}/dkms-initramfs-refresh.sh"
+prepare() {
+  local actual
+
+  actual=$(git -C "${srcdir}/radeon-source" rev-parse HEAD)
+  [[ ${actual} == "${_source_commit}" ]] ||
+    { printf 'source commit mismatch: %s\n' "${actual}" >&2; return 1; }
+  actual=$(git -C "${srcdir}/radeon-source" rev-parse "refs/tags/${_source_tag}^{tag}")
+  [[ ${actual} == "${_source_tag_object}" ]] ||
+    { printf 'source tag object mismatch: %s\n' "${actual}" >&2; return 1; }
+  actual=$(git -C "${srcdir}/radeon-source" rev-parse "refs/tags/${_source_tag}^{}")
+  [[ ${actual} == "${_source_commit}" ]] ||
+    { printf 'source tag peel mismatch: %s\n' "${actual}" >&2; return 1; }
+  actual=$(git -C "${srcdir}/radeon-source" rev-parse \
+    "${_source_commit}:drivers/gpu/drm/radeon")
+  [[ ${actual} == "${_source_driver_tree}" ]] ||
+    { printf 'source driver tree mismatch: %s\n' "${actual}" >&2; return 1; }
+}
+
+package() {
+  local dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
+
+  install -d "${dkmsdir}/radeon"
+  git -C "${srcdir}/radeon-source" archive \
+    "${_source_commit}:drivers/gpu/drm/radeon" |
+    bsdtar -xf - -C "${dkmsdir}/radeon"
+
+  install -Dm644 "${srcdir}/source-identity.toml" \
+    "${dkmsdir}/source-identity.toml"
+  install -Dm644 "${srcdir}/dkms.conf" "${dkmsdir}/dkms.conf"
+  install -Dm755 "${srcdir}/pre-build.sh" "${dkmsdir}/pre-build.sh"
+  install -Dm755 "${srcdir}/dkms-initramfs-refresh.sh" \
+    "${dkmsdir}/dkms-initramfs-refresh.sh"
   install -Dm644 "${srcdir}/compiler-policy.conf" \
-    "${_dkmsdir}/compiler-policy.conf"
+    "${dkmsdir}/compiler-policy.conf"
   install -Dm755 "${srcdir}/radeon-dkms-compiler-policy" \
-    "${_dkmsdir}/radeon-dkms-compiler-policy"
+    "${dkmsdir}/radeon-dkms-compiler-policy"
   install -Dm755 "${srcdir}/radeon-dkms-compiler" \
-    "${_dkmsdir}/radeon-dkms-compiler"
+    "${dkmsdir}/radeon-dkms-compiler"
   install -Dm755 "${srcdir}/radeon-dkms-make" \
-    "${_dkmsdir}/radeon-dkms-make"
+    "${dkmsdir}/radeon-dkms-make"
+  install -Dm755 "${srcdir}/radeon-dkms-ccache-gcc" \
+    "${dkmsdir}/radeon-dkms-ccache-gcc"
+  install -Dm755 "${srcdir}/radeon-dkms-ccache-clang" \
+    "${dkmsdir}/radeon-dkms-ccache-clang"
   install -Dm644 "${srcdir}/radeon-unified-mkinitcpio.conf" \
     "${pkgdir}/etc/mkinitcpio.conf.d/radeon-unified.conf"
   install -Dm644 "${srcdir}/radeon-re.conf" \
     "${pkgdir}/etc/modprobe.d/radeon-re.conf"
-  install -Dm755 "${srcdir}/radeon-dkms-ccache-gcc" "${_dkmsdir}/radeon-dkms-ccache-gcc"
-  install -Dm755 "${srcdir}/radeon-dkms-ccache-clang" "${_dkmsdir}/radeon-dkms-ccache-clang"
-  install -Dm644 "${srcdir}/rs480-safe-regs.tsv" "${_dkmsdir}/SAFE_REGS.tsv"
-  install -Dm644 "${srcdir}/rs480-candidate-regs.tsv" "${_dkmsdir}/CANDIDATE_REGS.tsv"
-  install -d "${_dkmsdir}/radeon"
-  tar -xJf "${srcdir}/radeon-unified-canonical-source.tar.xz" \
-    -C "${_dkmsdir}/radeon"
-  install -Dm644 \
-    "${srcdir}/rs480-safe-regs-debugfs.patch" \
-    "${_dkmsdir}/patches/0001-radeon-rs480-safe-regs-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-candidate-regs-debugfs.patch" \
-    "${_dkmsdir}/patches/0004-rs480-candidate-regs-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-firmware-read-candidate-regs-debugfs.patch" \
-    "${_dkmsdir}/patches/0005-rs480-firmware-read-candidate-regs-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cp-me-ram-dump-debugfs.patch" \
-    "${_dkmsdir}/patches/0006-rs480-cp-me-ram-dump-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cs-parser-init-failure-telemetry.patch" \
-    "${_dkmsdir}/patches/0007-rs480-cs-parser-init-failure-telemetry.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cp-me-ram-inject-write-verify-restore.patch" \
-    "${_dkmsdir}/patches/0008-rs480-cp-me-ram-inject-write-verify-restore.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-debugfs-init-dri-minor-root.patch" \
-    "${_dkmsdir}/patches/0009-rs480-debugfs-init-dri-minor-root.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-mc-benign-candidate-regs-debugfs.patch" \
-    "${_dkmsdir}/patches/0010-rs480-mc-benign-candidate-regs-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-gart-status-candidate-regs-debugfs.patch" \
-    "${_dkmsdir}/patches/0011-rs480-gart-status-candidate-regs-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-uma-status-debugfs.patch" \
-    "${_dkmsdir}/patches/0012-rs480-uma-status-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cp-me-oracle-debugfs.patch" \
-    "${_dkmsdir}/patches/0013-rs480-cp-me-oracle-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-promote-config-regs-to-safe.patch" \
-    "${_dkmsdir}/patches/0014-rs480-promote-config-regs-to-safe.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-frontier-attended-probe-debugfs.patch" \
-    "${_dkmsdir}/patches/0015-rs480-frontier-attended-probe-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cp-me-inject-eio-perdev-ppos-hardening.patch" \
-    "${_dkmsdir}/patches/0016-rs480-cp-me-inject-eio-perdev-ppos-hardening.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-promote-frontier-responders-to-safe.patch" \
-    "${_dkmsdir}/patches/0017-rs480-promote-frontier-responders-to-safe.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-sclk-cntl-pll-status-debugfs.patch" \
-    "${_dkmsdir}/patches/0018-rs480-sclk-cntl-pll-status-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-pll-indirect-and-hazard-firstread-debugfs.patch" \
-    "${_dkmsdir}/patches/0019-rs480-pll-indirect-and-hazard-firstread-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-promote-hazard-read-responders-to-safe.patch" \
-    "${_dkmsdir}/patches/0020-rs480-promote-hazard-read-responders-to-safe.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cs-checker-r400-us-allowlist.patch" \
-    "${_dkmsdir}/patches/0021-rs480-cs-checker-r400-us-allowlist.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-vertex-engine-attended-probe-debugfs.patch" \
-    "${_dkmsdir}/patches/0022-rs480-vertex-engine-attended-probe-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-reader-hazard-skip-guard.patch" \
-    "${_dkmsdir}/patches/0024-rs480-reader-hazard-skip-guard.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-per-domain-force-clock-then-read-node.patch" \
-    "${_dkmsdir}/patches/0025-rs480-per-domain-force-clock-then-read-node.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-gate-wedge-prone-candidate-readers.patch" \
-    "${_dkmsdir}/patches/0026-rs480-gate-wedge-prone-candidate-readers.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-gpu-hang-panic-breadcrumb-notifier.patch" \
-    "${_dkmsdir}/patches/0027-rs480-gpu-hang-panic-breadcrumb-notifier.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-combios4-safe-and-vip-straggler-reader.patch" \
-    "${_dkmsdir}/patches/0028-rs480-combios4-safe-and-vip-straggler-reader.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-force-clock-disp1-disp2-extension.patch" \
-    "${_dkmsdir}/patches/0029-rs480-force-clock-disp1-disp2-extension.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-force-clock-cohort-widen-fp-crtc2-ov0.patch" \
-    "${_dkmsdir}/patches/0030-rs480-force-clock-cohort-widen-fp-crtc2-ov0.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-gated-state-plain-read-disp2-probe.patch" \
-    "${_dkmsdir}/patches/0031-rs480-gated-state-plain-read-disp2-probe.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-force-clock-remaining-disp-ov0-vip-tv.patch" \
-    "${_dkmsdir}/patches/0032-rs480-force-clock-remaining-disp-ov0-vip-tv.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-force-clock-3d-engine-control-registers.patch" \
-    "${_dkmsdir}/patches/0033-rs480-force-clock-3d-engine-control-registers.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-force-clock-3d-table-expansion-ga-rs-rb.patch" \
-    "${_dkmsdir}/patches/0034-rs480-force-clock-3d-table-expansion-ga-rs-rb.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-force-clock-3d-table-vap-su-sc-fg-rb-control.patch" \
-    "${_dkmsdir}/patches/0035-rs480-force-clock-3d-table-vap-su-sc-fg-rb-control.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-skip-discrete-r300-mc-idle-wait-on-igp.patch" \
-    "${_dkmsdir}/patches/0036-rs480-skip-discrete-r300-mc-idle-wait-on-igp.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-force-clock-undoc-4xxx-probe-table.patch" \
-    "${_dkmsdir}/patches/0037-rs480-force-clock-undoc-4xxx-probe-table.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cp-me-inject-idle-gate.patch" \
-    "${_dkmsdir}/patches/0038-rs480-cp-me-inject-idle-gate.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-cp-ib-scratch-baseline-oracle-debugfs.patch" \
-    "${_dkmsdir}/patches/0039-rs480-cp-ib-scratch-baseline-oracle-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-gpu-reset-recover-probe-debugfs.patch" \
-    "${_dkmsdir}/patches/0040-rs480-gpu-reset-recover-probe-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-rbbm-soft-reset-recovery-probe-debugfs.patch" \
-    "${_dkmsdir}/patches/0041-rs480-rbbm-soft-reset-recovery-probe-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-blit-busy-reset-recovery-probe-debugfs.patch" \
-    "${_dkmsdir}/patches/0042-rs480-blit-busy-reset-recovery-probe-debugfs.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-r300-asic-reset-force-clock-production-path.patch" \
-    "${_dkmsdir}/patches/0043-rs480-r300-asic-reset-force-clock-production-path.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-wedged-3d-production-reset-recovery-probe.patch" \
-    "${_dkmsdir}/patches/0044-rs480-wedged-3d-production-reset-recovery-probe.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-wedge-safe-crash-shim-gated-3d-readback.patch" \
-    "${_dkmsdir}/patches/0045-rs480-wedge-safe-crash-shim-gated-3d-readback.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-failure-path-host-survival.patch" \
-    "${_dkmsdir}/patches/0046-rs480-parked-gpu-failure-path-host-survival.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-hold-force-clock-on-failed-reset.patch" \
-    "${_dkmsdir}/patches/0047-rs480-hold-force-clock-on-failed-reset.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-failed-reset-touch-nothing-after-classification.patch" \
-    "${_dkmsdir}/patches/0048-rs480-failed-reset-touch-nothing-after-classification.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-gart-tlb-flush-guard.patch" \
-    "${_dkmsdir}/patches/0049-rs480-parked-gpu-gart-tlb-flush-guard.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-modeset-and-flip-gate.patch" \
-    "${_dkmsdir}/patches/0050-rs480-parked-gpu-modeset-and-flip-gate.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-fence-lockup-check-gate.patch" \
-    "${_dkmsdir}/patches/0051-rs480-parked-gpu-fence-lockup-check-gate.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-close-path-pins.patch" \
-    "${_dkmsdir}/patches/0052-rs480-parked-gpu-close-path-pins.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-leak-bos-by-design.patch" \
-    "${_dkmsdir}/patches/0053-rs480-parked-gpu-leak-bos-by-design.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-counted-leak-breadcrumb.patch" \
-    "${_dkmsdir}/patches/0054-rs480-parked-gpu-counted-leak-breadcrumb.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-rs400-include-pci-for-save-restore-state.patch" \
-    "${_dkmsdir}/patches/0055-rs480-rs400-include-pci-for-save-restore-state.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-quiesce-async-agents.patch" \
-    "${_dkmsdir}/patches/0056-rs480-parked-gpu-quiesce-async-agents.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-sync-drain-async-works.patch" \
-    "${_dkmsdir}/patches/0057-rs480-parked-gpu-sync-drain-async-works.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-disable-kms-output-poll.patch" \
-    "${_dkmsdir}/patches/0058-rs480-parked-gpu-disable-kms-output-poll.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-gate-fbdev-vram-aperture.patch" \
-    "${_dkmsdir}/patches/0059-rs480-parked-gpu-gate-fbdev-vram-aperture.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-sigbus-vram-mmap.patch" \
-    "${_dkmsdir}/patches/0060-rs480-parked-gpu-sigbus-vram-mmap.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-debugfs-readers-hard-return.patch" \
-    "${_dkmsdir}/patches/0061-rs480-parked-gpu-debugfs-readers-hard-return.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gpu-module-unload-no-hardware.patch" \
-    "${_dkmsdir}/patches/0062-rs480-parked-gpu-module-unload-no-hardware.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parameterized-soft-reset-mask-candidates.patch" \
-    "${_dkmsdir}/patches/0063-rs480-parameterized-soft-reset-mask-candidates.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-soft-reset-mask-candidates-review-hardening.patch" \
-    "${_dkmsdir}/patches/0064-rs480-soft-reset-mask-candidates-review-hardening.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-soft-reset-mask-selector-races-and-mask-aware-idle.patch" \
-    "${_dkmsdir}/patches/0065-rs480-soft-reset-mask-selector-races-and-mask-aware-idle.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-atomic-one-shot-reset-mask-consume-cmpxchg.patch" \
-    "${_dkmsdir}/patches/0066-rs480-atomic-one-shot-reset-mask-consume-cmpxchg.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-reset-idle-check-gui-active-for-experimental-masks.patch" \
-    "${_dkmsdir}/patches/0067-rs480-reset-idle-check-gui-active-for-experimental-masks.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-reset-idle-check-comment-grammar.patch" \
-    "${_dkmsdir}/patches/0068-rs480-reset-idle-check-comment-grammar.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-fbdev-write-advance-ppos.patch" \
-    "${_dkmsdir}/patches/0069-rs480-parked-fbdev-write-advance-ppos.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-gem-fault-reserve-before-placement.patch" \
-    "${_dkmsdir}/patches/0070-rs480-parked-gem-fault-reserve-before-placement.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-parked-residual-irq-cursor-detect-debugfs-gates.patch" \
-    "${_dkmsdir}/patches/0071-rs480-parked-residual-irq-cursor-detect-debugfs-gates.patch"
-  install -Dm644 \
-    "${srcdir}/rs480-gart-page-table-readonly-debugfs.patch" \
-    "${_dkmsdir}/patches/0072-rs480-gart-page-table-readonly-debugfs.patch"
 }

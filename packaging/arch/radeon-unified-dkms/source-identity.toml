@@ -1,0 +1,16 @@
+schema = 1
+constructor = "legacy-equivalent"
+
+source_repository = "Oichkatzelesfrettschen/linux-radeon-gororoba"
+source_commit = "9079be562eebd184da9cf891fbc6a72d5ac0d9f3"
+source_tag = "radeon-unified-0.3-pkgrel91-source-equivalent"
+source_tag_object = "81a2510e34d1d62f5486683bcd6e240db8223b7d"
+driver_subtree = "drivers/gpu/drm/radeon"
+driver_tree = "b0f40a1970f57d00b690890120ad1ba8fd1e474c"
+archive_entry_count = 214
+
+migration_input_commit = "210e2b06c0266e316f08eb0b2b3e9832884c43de"
+migration_manifest = "migration/expected-prefixes/mechanism/M24.manifest.tsv"
+migration_manifest_sha256 = "71ae424fc8af1828200ec98e9233b646c6483c11ecfb778d91ec64ef6bf9f5dc"
+generated_output_proof_sha256 = "1efe8d77577c8c9173093d5c47a8df2905fd487471a22c5c9d0507693502909a"
+equivalence_workflow_run = 30546146534

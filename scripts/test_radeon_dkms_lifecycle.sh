@@ -6,6 +6,14 @@ die() {
     exit 1
 }
 
+make_temp_dir() {
+    local temp_base=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
+
+    [[ -d $temp_base && -w $temp_base ]] ||
+        die "temporary lifecycle root is absent or not writable: $temp_base"
+    mktemp -d "$temp_base/radeon-dkms-lifecycle.XXXXXX"
+}
+
 find_dkms_conf() {
     local root=$1
     local -a configs=()
@@ -90,7 +98,7 @@ run_self_test() {
     local package_sha256
     local -a retained_logs=()
 
-    tmpdir=$(mktemp -d)
+    tmpdir=$(make_temp_dir)
     trap 'rm -rf "$tmpdir"' RETURN
     mkdir -p "$tmpdir/good/usr/src/module-1" \
         "$tmpdir/missing/usr/src" \
@@ -201,7 +209,7 @@ root_protected_path "$evidence_parent" ||
     die "evidence directory must be a new path: $evidence_dir"
 mkdir -m 0700 "$evidence_dir"
 
-tmpdir=$(mktemp -d)
+tmpdir=$(make_temp_dir)
 extract_root="$tmpdir/package"
 source_tree="$tmpdir/usr/src"
 dkms_tree="$tmpdir/var/lib/dkms"
@@ -255,6 +263,10 @@ module_version=$PACKAGE_VERSION
 expected_source="$extract_root/usr/src/$module_name-$module_version"
 [[ $packaged_source == "$expected_source" ]] ||
     die "package source path does not match PACKAGE_NAME and PACKAGE_VERSION"
+source_identity="$packaged_source/source-identity.toml"
+[[ -f $source_identity && ! -L $source_identity ]] ||
+    die "package source identity is absent or not a regular file"
+cp "$source_identity" "$evidence_dir/source-identity.toml"
 cp -a "$packaged_source" "$source_tree/$module_name-$module_version"
 
 cat >"$stub_bin/limine-mkinitcpio" <<'EOF'
@@ -321,9 +333,12 @@ mapfile -t modules < <(
     die "expected one installed radeon module, observed ${#modules[@]}"
 module_path=${modules[0]}
 module_name_actual=$(modinfo -F name "$module_path")
+module_srcversion=$(modinfo -F srcversion "$module_path")
 module_vermagic=$(modinfo -F vermagic "$module_path")
 [[ $module_name_actual == radeon ]] ||
     die "installed module name is $module_name_actual"
+[[ -n $module_srcversion ]] ||
+    die "installed module srcversion is empty"
 [[ $module_vermagic == "$kernel_release "* ]] ||
     die "installed module vermagic does not start with $kernel_release"
 
@@ -337,6 +352,7 @@ module_vermagic=$(modinfo -F vermagic "$module_path")
     printf 'kernel_build_disposition=disposable-copy\n'
     printf 'module_path=%s\n' "$module_path"
     printf 'module_name=%s\n' "$module_name_actual"
+    printf 'srcversion=%s\n' "$module_srcversion"
     printf 'vermagic=%s\n' "$module_vermagic"
     printf 'sha256=%s\n' "$(sha256sum "$module_path" | awk '{print $1}')"
 } >"$evidence_dir/module-metadata.txt"

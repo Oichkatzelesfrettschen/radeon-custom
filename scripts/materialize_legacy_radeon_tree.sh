@@ -29,28 +29,33 @@ set -eu
 usage() {
   cat <<'EOF'
 usage: materialize_legacy_radeon_tree.sh [--out DIR] [--manifest FILE]
+                                         [--dkms-conf FILE]
 
   --out DIR        keep the materialized tree at DIR (default: a temp dir)
   --manifest FILE  write the content manifest to FILE (default: stdout)
+  --dkms-conf FILE read the historical patch order from FILE
 EOF
 }
 
 out_dir=""
 manifest=""
+dkms_conf=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) out_dir=${2:?--out needs a directory}; shift 2 ;;
     --manifest) manifest=${2:?--manifest needs a path}; shift 2 ;;
+    --dkms-conf) dkms_conf=${2:?--dkms-conf needs a path}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
 repo_root=$(git rev-parse --show-toplevel) || { echo "not inside a git repo" >&2; exit 2; }
-DKMSDIR="$repo_root/packaging/arch/radeon-unified-dkms"
 BASE="$repo_root/sources/radeon-unified-0.3-source.tar.xz"
+[ -n "$dkms_conf" ] ||
+  dkms_conf="$repo_root/migration/input/legacy-dkms-patch-order.conf"
 [ -f "$BASE" ] || { echo "missing base tarball: $BASE" >&2; exit 2; }
-[ -f "$DKMSDIR/dkms.conf" ] || { echo "missing dkms.conf" >&2; exit 2; }
+[ -f "$dkms_conf" ] || { echo "missing dkms.conf: $dkms_conf" >&2; exit 2; }
 
 if [ -n "$out_dir" ]; then
   # A residual file under --out would enter the manifest and be attributed to
@@ -71,7 +76,7 @@ tar -xJf "$BASE" -C "$WORK/radeon"
 
 # Anchored so a commented-out entry stays unparsed, matching the apply gate and
 # matching what DKMS itself replays.
-grep -oE '^[[:space:]]*PATCH\[[0-9]+\]="[^"]+"' "$DKMSDIR/dkms.conf" \
+grep -oE '^[[:space:]]*PATCH\[[0-9]+\]="[^"]+"' "$dkms_conf" \
   | sed -E 's/.*="([^"]+)"/\1/' > "$WORK/order.txt"
 
 n=0

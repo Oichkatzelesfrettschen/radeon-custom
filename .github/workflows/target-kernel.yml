@@ -25,6 +25,8 @@ jobs:
   target-kernel:
     runs-on: [self-hosted, linux, cachyos-target, target-host]
     timeout-minutes: 60
+    env:
+      SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -83,8 +85,11 @@ jobs:
           echo "target identity confirmed: RS482 1002:5974 on an RS485M platform"
           echo "kernel: $(uname -r)"
 
-      - name: Patch series applies and compiles on the target kernel
+      - name: Tagged source compiles on the target kernel
         run: |
+          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
           mkdir -p "$HOME/.cache/gororoba-ci"
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            sh scripts/check_radeon_patch_series_compiles.sh --require-compile
+            timeout 20m sh scripts/check_radeon_tagged_source_compiles.sh \
+              --source-repository "$SOURCE_REPOSITORY" \
+              --kernel-build-root "/lib/modules/$(uname -r)/build"
