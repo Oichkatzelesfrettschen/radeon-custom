@@ -31,7 +31,8 @@ PACKAGE_VERSION="0.2"
 #   Detected at DKMS build time by reading compile.h from the target kernel.
 #   If compile.h records a clang build, CC=clang (system default Clang).
 #   Otherwise, CC=gcc (system default GCC), which matches GCC-built kernels.
-#   EXTRA_CFLAGS='-O2 -pipe' aligns with the kernel's release build profile.
+#   KCFLAGS='-O2 -pipe' reaches external-module compiler invocations and aligns
+#   with the kernel's release build profile.
 #   The CachyOS LTS kernel (6.18.x) is GCC-built; the main kernel is Clang-built.
 #   Package-local wrapper scripts use ccache when available, then fall back
 #   to the raw compiler.  Distcc/pump is deliberately not used here because
@@ -49,7 +50,7 @@ DEST_MODULE_LOCATION[0]="/updates/dkms"
 
 # CC detection: read compile.h from the target kernel's build headers.
 # grep exit code 0 = clang built; non-zero = GCC built -> use gcc.
-MAKE[0]="make CC=$(grep -q 'clang' /lib/modules/${kernelver}/build/include/generated/compile.h 2>/dev/null && echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-clang || echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-gcc) EXTRA_CFLAGS='-O2 -pipe' -C /lib/modules/${kernelver}/build M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon modules"
+MAKE[0]="make CC=$(grep -q 'clang' /lib/modules/${kernelver}/build/include/generated/compile.h 2>/dev/null && echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-clang || echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-gcc) KCFLAGS='-O2 -pipe' -C /lib/modules/${kernelver}/build M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon modules"
 
 PRE_BUILD="pre-build.sh ${kernelver}"
 
