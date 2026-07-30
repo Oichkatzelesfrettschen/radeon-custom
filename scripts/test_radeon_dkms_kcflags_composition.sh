@@ -29,6 +29,7 @@ validate_capture() {
     local required_sentinel=$2
     local kcflags_value
     local cflags_value
+    local control_value
 
     kcflags_value=$(sed -n 's/^KCFLAGS=//p' "$capture")
     cflags_value=$(sed -n 's/^CFLAGS=//p' "$capture")
@@ -41,9 +42,15 @@ validate_capture() {
     [[ $(count_token "$kcflags_value" -O2) -eq 1 ]] || return 1
     [[ $(count_token "$kcflags_value" -pipe) -eq 1 ]] || return 1
     [[ -z $cflags_value ]] || return 1
+    for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES; do
+        control_value=$(sed -n "s/^${variable}=//p" "$capture")
+        [[ -z $control_value ]] || return 1
+    done
 }
 
-tmpdir=$(mktemp -d)
+temp_root=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
+mkdir -p "$temp_root"
+tmpdir=$(mktemp -d "$temp_root/radeon-kcflags.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 mkdir -p "$tmpdir/bin"
 
@@ -58,6 +65,10 @@ set -f
     done
     printf '\n'
     printf 'CFLAGS=%s\n' "${CFLAGS-}"
+    printf 'MAKEFLAGS=%s\n' "${MAKEFLAGS-}"
+    printf 'MFLAGS=%s\n' "${MFLAGS-}"
+    printf 'GNUMAKEFLAGS=%s\n' "${GNUMAKEFLAGS-}"
+    printf 'MAKEFILES=%s\n' "${MAKEFILES-}"
     for argument in "$@"; do
         printf 'ARG=%s\n' "$argument"
     done
@@ -77,6 +88,10 @@ run_helper_case() {
         RADEON_DKMS_MAKE_TRACE=1 \
         KCFLAGS="$incoming_kcflags" \
         CFLAGS='-march=native -funsafe-math-optimizations' \
+        MAKEFLAGS='-j99' \
+        MFLAGS='-k' \
+        GNUMAKEFLAGS='-s' \
+        MAKEFILES='/tmp/untrusted.mk' \
         "$helper" modules 2>"$trace"
     validate_capture "$capture" "$sentinel" ||
         die "$name does not preserve the KCFLAGS composition contract"
@@ -183,6 +198,7 @@ fi
 run_dkms_recipe() {
     local config=$1
     local capture=$2
+    local parallel_value=${3:-3}
     local package_name
     local package_version
     local make_command
@@ -193,9 +209,11 @@ run_dkms_recipe() {
     dkms_tree="$tmpdir/dkms"
     # shellcheck disable=SC2034
     R300_RS480_KERNEL_BUILD_ROOT=$kernel_build_root
+    parallel_jobs=$parallel_value
     # shellcheck source=/dev/null
     source "$config"
     unset R300_RS480_KERNEL_BUILD_ROOT
+    unset parallel_jobs
     package_name=$PACKAGE_NAME
     package_version=$PACKAGE_VERSION
     mkdir -p "$dkms_tree/$package_name/$package_version/build"
@@ -209,11 +227,27 @@ run_dkms_recipe() {
         RADEON_DKMS_CAPTURE="$capture" \
         KCFLAGS='-DRADEON_CALLER_SENTINEL=1 -Werror=date-time' \
         CFLAGS='-march=native' \
+        MAKEFLAGS='-j99' \
+        MFLAGS='-k' \
+        GNUMAKEFLAGS='-s' \
+        MAKEFILES='/tmp/untrusted.mk' \
         bash -c "$make_command"
     validate_capture "$capture" '-DRADEON_CALLER_SENTINEL=1' ||
         die "$config does not preserve the KCFLAGS composition contract"
     grep -Fxq "ARG=$kernel_build_root" "$capture" ||
         die "$config does not preserve a quoted kernel build root"
+    if [[ -n $parallel_value ]]; then
+        grep -Fxq "ARG=-j$parallel_value" "$capture" ||
+            die "$config does not preserve the DKMS parallel job count"
+    else
+        grep -Fxq 'ARG=-j' "$capture" ||
+            die "$config does not preserve DKMS unlimited parallelism"
+    fi
+    grep -Fxq 'ARG=KERNELRELEASE=fixture-kernel' "$capture" ||
+        die "$config does not preserve the DKMS kernel release"
+    grep -Fxq "ARG=M=$dkms_tree/$package_name/$package_version/build/radeon" \
+        "$capture" ||
+        die "$config does not preserve a quoted DKMS module path"
 }
 
 primary_capture="$tmpdir/primary.capture"
@@ -222,6 +256,9 @@ run_dkms_recipe "$package_dir/dkms.conf" "$primary_capture"
 run_dkms_recipe \
     "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
     "$legacy_capture"
+run_dkms_recipe "$package_dir/dkms.conf" "$tmpdir/primary-unlimited.capture" ''
+run_dkms_recipe "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
+    "$tmpdir/legacy-unlimited.capture" ''
 
 primary_kcflags=$(sed -n 's/^KCFLAGS=//p' "$primary_capture")
 legacy_kcflags=$(sed -n 's/^KCFLAGS=//p' "$legacy_capture")

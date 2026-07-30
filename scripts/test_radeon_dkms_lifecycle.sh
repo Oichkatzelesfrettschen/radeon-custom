@@ -37,6 +37,12 @@ package_sha256_matches() {
     [[ $actual == "$expected" ]]
 }
 
+valid_kernel_release() {
+    local release=$1
+
+    [[ $release =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]
+}
+
 root_protected_directory() {
     local directory=$1
 
@@ -68,6 +74,16 @@ root_protected_path() {
     done
 }
 
+verify_empty_command_output() {
+    local output_path=$1
+
+    shift
+    if ! "$@" >"$output_path"; then
+        return 2
+    fi
+    [[ ! -s $output_path ]]
+}
+
 retain_failure_evidence() {
     local private_tree=$1
     local output_directory=$2
@@ -76,6 +92,8 @@ retain_failure_evidence() {
     local release=$5
     local make_log
     local make_log_index=0
+    local retained_log_count
+    local manifest="$output_directory/failure-evidence.sha256"
 
     {
         printf 'exit_status=%d\n' "$exit_status"
@@ -90,12 +108,27 @@ retain_failure_evidence() {
         find "$private_tree" -type f -name make.log -print 2>/dev/null |
             sort
     )
+    retained_log_count=$(find "$output_directory" -maxdepth 1 -type f \
+        -name 'failure-make-*.log' -print | wc -l)
+    [[ $retained_log_count -eq $make_log_index ]] || return 1
+    (
+        cd "$output_directory"
+        find . -maxdepth 1 -type f \
+            \( -name 'failure.txt' -o -name 'failure-make-*.log' \) \
+            -printf '%P\0' |
+            sort -z |
+            xargs -0 sha256sum
+    ) >"$manifest"
+    [[ -s $manifest ]] || return 1
+    (cd "$output_directory" && sha256sum -c failure-evidence.sha256) \
+        >/dev/null
 }
 
 run_self_test() {
     local tmpdir
     local found
     local package_sha256
+    local status_result
     local -a retained_logs=()
 
     tmpdir=$(make_temp_dir)
@@ -130,6 +163,25 @@ run_self_test() {
     if package_sha256_matches "$tmpdir/package" "${package_sha256^^}"; then
         die "package digest validator accepts a noncanonical digest"
     fi
+    valid_kernel_release 6.18.38-2-cachyos-lts ||
+        die "kernel release validator rejects its known-good calibration"
+    for invalid_release in \
+        . \
+        .. \
+        /absolute \
+        ../escape \
+        'release/name' \
+        $'release\nname'
+    do
+        if valid_kernel_release "$invalid_release"; then
+            die "kernel release validator accepts: $invalid_release"
+        fi
+    done
+    root_protected_path / ||
+        die "root path validator rejects the filesystem root"
+    if root_protected_path /tmp; then
+        die "root path validator accepts a world-writable directory"
+    fi
     mkdir -p "$tmpdir/private/module/build" "$tmpdir/failure-evidence"
     printf 'decisive failure log\n' \
         >"$tmpdir/private/module/build/make.log"
@@ -148,6 +200,26 @@ run_self_test() {
         die "failure calibration does not retain every make.log"
     grep -Fxq 'decisive failure log' "${retained_logs[0]}" ||
         die "failure calibration changes the retained make.log"
+    (cd "$tmpdir/failure-evidence" &&
+        sha256sum -c failure-evidence.sha256) >/dev/null ||
+        die "failure calibration emits an invalid evidence manifest"
+    : >"$tmpdir/blocked-retention-target"
+    if retain_failure_evidence "$tmpdir/failure-evidence" \
+            "$tmpdir/blocked-retention-target" 10 \
+            "$tmpdir/package" fixture-kernel 2>/dev/null; then
+        die "failure retention accepts a nondirectory output path"
+    fi
+    verify_empty_command_output "$tmpdir/status-empty" true ||
+        die "status calibration rejects successful empty output"
+    if verify_empty_command_output "$tmpdir/status-residual" \
+            printf '%s\n' residual; then
+        die "status calibration accepts residual DKMS state"
+    fi
+    status_result=0
+    verify_empty_command_output "$tmpdir/status-failed" false ||
+        status_result=$?
+    [[ $status_result -eq 2 ]] ||
+        die "status calibration masks command failure"
     printf 'radeon DKMS lifecycle calibration: PASS\n'
 }
 
@@ -194,6 +266,8 @@ if [[ $self_test -eq 1 ]]; then
 fi
 
 [[ -n $kernel_release ]] || die "--kernel-release is required"
+valid_kernel_release "$kernel_release" ||
+    die "kernel release must be one canonical path-free token"
 [[ $EUID -eq 0 ]] ||
     die "the full DKMS install lifecycle requires root"
 [[ -f $package_path && ! -L $package_path ]] ||
@@ -223,9 +297,13 @@ capture_failure_and_cleanup() {
 
     trap - EXIT
     if [[ $exit_status -ne 0 ]]; then
-        retain_failure_evidence "$dkms_tree" "$evidence_dir" \
-            "$exit_status" "$package_path" "$kernel_release" ||
-            true
+        if ! retain_failure_evidence "$dkms_tree" "$evidence_dir" \
+                "$exit_status" "$package_path" "$kernel_release"; then
+            printf '%s\n' \
+                "test_radeon_dkms_lifecycle: failure evidence retention failed; root-private state preserved: $tmpdir" \
+                >&2
+            exit "$exit_status"
+        fi
     fi
     rm -rf "$tmpdir"
     exit "$exit_status"
@@ -243,6 +321,8 @@ package_sha256_matches "$admitted_package" "$expected_sha256" ||
 resolved_kernel_build_root=$(readlink -f "/lib/modules/$kernel_release/build")
 [[ -d $resolved_kernel_build_root ]] ||
     die "resolved kernel build root is absent: $resolved_kernel_build_root"
+root_protected_path "$resolved_kernel_build_root" ||
+    die "resolved kernel build root has non-root or writable ancestry"
 cp -a --reflink=auto "$resolved_kernel_build_root/." "$kernel_build_root/"
 [[ -f $kernel_build_root/include/generated/compile.h ]] ||
     die "disposable kernel build root lacks include/generated/compile.h"
@@ -368,10 +448,23 @@ dkms remove -m "$module_name" -v "$module_version" \
     --all "${dkms_common[@]}" |
     tee "$evidence_dir/dkms-remove.log"
 
-if dkms status -m "$module_name" -v "$module_version" \
-        "${dkms_common[@]}" | grep -q .; then
-    die "DKMS status retains the module after cleanup"
-fi
+status_result=0
+verify_empty_command_output "$evidence_dir/dkms-status.log" \
+    dkms status -m "$module_name" -v "$module_version" \
+    "${dkms_common[@]}" || status_result=$?
+case $status_result in
+    0)
+        ;;
+    1)
+        die "DKMS status retains the module after cleanup"
+        ;;
+    2)
+        die "DKMS status command fails after cleanup"
+        ;;
+    *)
+        die "DKMS status verification returns unexpected status $status_result"
+        ;;
+esac
 
 printf 'radeon DKMS lifecycle: PASS (%s/%s, %s)\n' \
     "$module_name" "$module_version" "$kernel_release"
