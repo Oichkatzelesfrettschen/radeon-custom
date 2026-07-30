@@ -55,15 +55,16 @@ The package verifier binds package metadata, root ownership, regular-file and
 directory member types, directory modes, the complete archive namespace, and
 every installed Radeon byte to the selected recipe and signed driver tree.
 Directory mode 0755 is package policy rather than source identity. The
-verifier's
-calibration rejects source, metadata, member-set, mode, ownership, traversal,
-link-type, and admitted-digest mutations.
+verifier's calibration rejects source, metadata, member-set, mode, ownership,
+traversal, link-type, and admitted-digest mutations.
 
-`radeon-dkms-make` admits printable unquoted KCFLAGS tokens from the trusted
-root build environment, preserves their order, adds `-O2 -pipe` exactly once,
-and removes userspace compiler flags and GNU make control variables before
-Kbuild starts. `test_radeon_dkms_kcflags_composition.sh` calibrates the accepted
-and rejected forms.
+`pre-build.sh` stages `radeon_trace.h` under the private DKMS build tree.
+`radeon-dkms-make` adds that private trace include, admits printable unquoted
+KCFLAGS tokens from the trusted root build environment, preserves their order,
+adds `-O2 -pipe` exactly once, and removes userspace compiler flags and GNU make
+control variables before Kbuild starts. The kernel build root remains
+unchanged. `test_radeon_dkms_kcflags_composition.sh` calibrates the accepted and
+rejected forms.
 
 The disposable lifecycle gate extracts one admitted package into private DKMS
 roots, completes add, build, install, metadata capture, uninstall, unbuild, and
@@ -72,7 +73,8 @@ evidence to reviewed package bytes. It does not authenticate an externally
 obtained package. The gate accepts one canonical path-free kernel release,
 requires root-owned non-writable kernel-root ancestry, distinguishes
 status-command failure from residual DKMS state, and hashes retained failure
-evidence before cleanup.
+evidence before cleanup. It also proves the trace include exists only in the
+private build tree and never enters the kernel root.
 
 The files under `patches/`, `sources/`, and `migration/input/` are immutable
 legacy evidence. The active package does not consume them.

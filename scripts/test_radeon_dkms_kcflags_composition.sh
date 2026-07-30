@@ -24,12 +24,28 @@ count_token() {
     printf '%d\n' "$count"
 }
 
+without_trace_include() {
+    local value=$1
+    local word
+
+    for word in $value; do
+        case "$word" in
+            -I*/.radeon-trace-include/include/trace)
+                continue
+                ;;
+        esac
+        printf '%s\n' "$word"
+    done
+}
+
 validate_capture() {
     local capture=$1
     local required_sentinel=$2
     local kcflags_value
     local cflags_value
     local control_value
+    local trace_include_count=0
+    local word
 
     kcflags_value=$(sed -n 's/^KCFLAGS=//p' "$capture")
     cflags_value=$(sed -n 's/^CFLAGS=//p' "$capture")
@@ -41,6 +57,14 @@ validate_capture() {
     fi
     [[ $(count_token "$kcflags_value" -O2) -eq 1 ]] || return 1
     [[ $(count_token "$kcflags_value" -pipe) -eq 1 ]] || return 1
+    for word in $kcflags_value; do
+        case "$word" in
+            -I*/.radeon-trace-include/include/trace)
+                trace_include_count=$((trace_include_count + 1))
+                ;;
+        esac
+    done
+    [[ $trace_include_count -eq 1 ]] || return 1
     [[ -z $cflags_value ]] || return 1
     for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES; do
         control_value=$(sed -n "s/^${variable}=//p" "$capture")
@@ -145,6 +169,9 @@ assert_helper_rejects duplicate_pipe '-pipe -pipe' \
     'duplicate package KCFLAGS token: -pipe'
 assert_helper_rejects duplicate_o2_mixed '-O2 -pipe -O2' \
     'duplicate package KCFLAGS token: -O2'
+assert_helper_rejects reserved_trace_include \
+    '-I/tmp/.radeon-trace-include/include/trace' \
+    'caller KCFLAGS contains the reserved trace include'
 
 for optimization in -O -O0 -O1 -O3 -Og -Os -Oz -Ofast; do
     name="conflicting_${optimization#-}"
@@ -155,27 +182,27 @@ done
 
 calibration_good="$tmpdir/calibration-good"
 cat >"$calibration_good" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace
 CFLAGS=
 EOF
 calibration_missing="$tmpdir/calibration-missing"
 cat >"$calibration_missing" <<'EOF'
-KCFLAGS=-O2 -pipe
+KCFLAGS=-O2 -pipe -I/tmp/.radeon-trace-include/include/trace
 CFLAGS=
 EOF
 calibration_duplicate="$tmpdir/calibration-duplicate"
 cat >"$calibration_duplicate" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -pipe
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -pipe -I/tmp/.radeon-trace-include/include/trace
 CFLAGS=
 EOF
 calibration_duplicate_sentinel="$tmpdir/calibration-duplicate-sentinel"
 cat >"$calibration_duplicate_sentinel" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -DRADEON_CALLER_SENTINEL=1 -O2 -pipe
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace
 CFLAGS=
 EOF
 calibration_cflags="$tmpdir/calibration-cflags"
 cat >"$calibration_cflags" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace
 CFLAGS=-march=native
 EOF
 
@@ -306,7 +333,8 @@ run_invalid_parallel_recipe \
 
 primary_kcflags=$(sed -n 's/^KCFLAGS=//p' "$primary_capture")
 legacy_kcflags=$(sed -n 's/^KCFLAGS=//p' "$legacy_capture")
-[[ $primary_kcflags == "$legacy_kcflags" ]] ||
+[[ $(without_trace_include "$primary_kcflags") == \
+    "$(without_trace_include "$legacy_kcflags")" ]] ||
     die "the two DKMS recipes compose different KCFLAGS"
 
 printf 'radeon DKMS KCFLAGS composition: PASS\n'

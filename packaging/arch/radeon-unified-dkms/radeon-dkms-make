@@ -4,6 +4,8 @@
 set -eu
 set -f
 
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+trace_include="${script_dir}/.radeon-trace-include/include/trace"
 kcflags=${KCFLAGS-}
 o2_count=0
 pipe_count=0
@@ -26,6 +28,12 @@ for word in $kcflags; do
             ;;
     esac
     case "$word" in
+        -I*/.radeon-trace-include/include/trace)
+            printf '%s\n' \
+                'radeon-dkms-make: caller KCFLAGS contains the reserved trace include' \
+                >&2
+            exit 2
+            ;;
         -O2)
             o2_count=$((o2_count + 1))
             ;;
@@ -56,6 +64,7 @@ fi
     kcflags="${kcflags:+${kcflags} }-O2"
 [ "$pipe_count" -eq 1 ] ||
     kcflags="${kcflags:+${kcflags} }-pipe"
+kcflags="${kcflags:+${kcflags} }-I${trace_include}"
 
 KCFLAGS=$kcflags
 export KCFLAGS

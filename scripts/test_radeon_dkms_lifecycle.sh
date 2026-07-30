@@ -326,6 +326,9 @@ root_protected_path "$resolved_kernel_build_root" ||
 cp -a --reflink=auto "$resolved_kernel_build_root/." "$kernel_build_root/"
 [[ -f $kernel_build_root/include/generated/compile.h ]] ||
     die "disposable kernel build root lacks include/generated/compile.h"
+kernel_trace_header="$kernel_build_root/drivers/gpu/drm/radeon/radeon_trace.h"
+[[ ! -e $kernel_trace_header ]] ||
+    die "disposable kernel build root already contains the external trace header"
 install -Dm755 "$kernel_build_root/scripts/sign-file" \
     "$install_tree/$kernel_release/build/scripts/sign-file"
 
@@ -389,10 +392,20 @@ mapfile -t make_logs < <(
 [[ ${#make_logs[@]} -eq 1 ]] ||
     die "expected one DKMS make.log, observed ${#make_logs[@]}"
 cp "${make_logs[0]}" "$evidence_dir/make.log"
+[[ ! -e $kernel_trace_header ]] ||
+    die "DKMS build writes the external trace header into the kernel root"
+grep -Fq -- \
+    'private trace-include header matches the module source' \
+    "$evidence_dir/make.log" ||
+    die "DKMS pre-build log omits the private trace-header byte comparison"
 grep -Fq -- '-DRADEON_CALLER_SENTINEL=1' "$evidence_dir/make.log" ||
     die "DKMS make invocation omits incoming KCFLAGS"
 grep -Fq -- '-pipe' "$evidence_dir/make.log" ||
     die "DKMS make invocation omits the package -pipe flag"
+grep -Fq -- \
+    "-I$dkms_tree/$module_name/$module_version/build/.radeon-trace-include/include/trace" \
+    "$evidence_dir/make.log" ||
+    die "DKMS make invocation omits the private trace-include path"
 if grep -Eq -- '(^|[[:space:]])-march=native([[:space:]]|$)|(^|[[:space:]])-funsafe-math-optimizations([[:space:]]|$)' \
         "$evidence_dir/make.log"; then
     die "DKMS compiler commands admit userspace CFLAGS"
