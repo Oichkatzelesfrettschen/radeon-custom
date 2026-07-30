@@ -74,3 +74,28 @@ check_recipe() (
 
 check_recipe ./PKGBUILD
 check_recipe ./PKGBUILD.radeon-rs480-safe-regs-0.2
+
+legacy_provide=$(
+    # shellcheck disable=SC2034
+    startdir=$script_dir
+    # shellcheck source=/dev/null
+    source ./PKGBUILD.radeon-rs480-safe-regs-0.2
+    # shellcheck disable=SC2154
+    printf 'radeon-rs480-safe-regs=%s-%s\n' "$pkgver" "$pkgrel"
+)
+(
+    # shellcheck disable=SC2034
+    startdir=$script_dir
+    # shellcheck source=/dev/null
+    source ./PKGBUILD
+    # shellcheck disable=SC2154
+    for provided_capability in "${provides[@]}"; do
+        if [ "$provided_capability" = "$legacy_provide" ]; then
+            printf 'unified legacy provide matches %s\n' "$legacy_provide"
+            exit 0
+        fi
+    done
+    printf 'PKGBUILD: unified provides omit current legacy identity %s\n' \
+        "$legacy_provide" >&2
+    exit 1
+)

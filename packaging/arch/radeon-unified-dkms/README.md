@@ -38,24 +38,37 @@ bash scripts/verify_radeon_unified_dkms_sources.sh \
   makepkg -fC --noconfirm
 )
 
-bash scripts/verify_radeon_unified_dkms_package.sh \
+verifier_output=$(bash scripts/verify_radeon_unified_dkms_package.sh \
   --source-repository "$RADEON_UNIFIED_SOURCE_REPOSITORY" \
-  --package packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-94-x86_64.pkg.tar.zst
+  --package packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-94-x86_64.pkg.tar.zst)
+printf '%s\n' "$verifier_output"
+package_digest=$(printf '%s\n' "$verifier_output" |
+  sed -n 's/^package_sha256=//p')
+RADEON_UNIFIED_SOURCE_REPOSITORY="$RADEON_UNIFIED_SOURCE_REPOSITORY" \
+  bash scripts/test_radeon_dkms_package_verifier.sh \
+    packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-94-x86_64.pkg.tar.zst
 ```
 
-The package verifier compares every installed Radeon path, type, mode, link
-target, and file byte with a fresh archive from the pinned driver tree.
+The package verifier binds package metadata, root ownership, regular-file and
+directory member types, directory modes, the complete archive namespace, and
+every installed Radeon byte to the selected recipe and signed driver tree. Its
+calibration rejects source, metadata, member-set, mode, ownership, traversal,
+link-type, and admitted-digest mutations.
 
-`radeon-dkms-make` admits printable unquoted KCFLAGS tokens, preserves their
-order, adds `-O2 -pipe` exactly once, and removes userspace compiler variables
-before Kbuild starts. `test_radeon_dkms_kcflags_composition.sh` calibrates the
-accepted and rejected forms.
+`radeon-dkms-make` admits printable unquoted KCFLAGS tokens from the trusted
+root build environment, preserves their order, adds `-O2 -pipe` exactly once,
+and removes userspace compiler flags and GNU make control variables before
+Kbuild starts. `test_radeon_dkms_kcflags_composition.sh` calibrates the accepted
+and rejected forms.
 
 The disposable lifecycle gate extracts one admitted package into private DKMS
 roots, completes add, build, install, metadata capture, uninstall, unbuild, and
 remove, then proves no DKMS state remains. The expected SHA-256 binds the
 evidence to reviewed package bytes. It does not authenticate an externally
-obtained package.
+obtained package. The gate accepts one canonical path-free kernel release,
+requires root-owned non-writable kernel-root ancestry, distinguishes
+status-command failure from residual DKMS state, and hashes retained failure
+evidence before cleanup.
 
 The files under `patches/`, `sources/`, and `migration/input/` are immutable
 legacy evidence. The active package does not consume them.

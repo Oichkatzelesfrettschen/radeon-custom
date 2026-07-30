@@ -28,7 +28,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Unified DKMS package 0.3-94 exports the signed legacy-equivalent driver tree and composes caller and package KCFLAGS through one policy helper | compile-verified on 6.18.38-2-cachyos-lts and 7.1.4-1-cachyos; package export and disposable DKMS lifecycle pass; target install and load not run |
+| Unified DKMS package 0.3-94 exports the signed legacy-equivalent driver tree and composes trusted root-build and package KCFLAGS through one policy helper | compile-verified on 6.18.38-2-cachyos-lts and 7.1.4-1-cachyos; package export and disposable DKMS lifecycle pass; target install and load not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
 | RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
@@ -141,26 +141,31 @@ sh scripts/check_radeon_tagged_source_compiles.sh \
   --source-repository /path/to/linux-radeon-gororoba \
   --kernel-build-root /path/to/7.1-build-root
 
-# Both recipes preserve admitted non-conflicting caller KCFLAGS and enforce
+# Both recipes preserve admitted non-conflicting root-build KCFLAGS and enforce
 # the package-owned -O2 -pipe release profile. Duplicate -O2 or -pipe and
-# caller optimization tokens other than -O2 fail before make runs. Quoted
+# root-build optimization tokens other than -O2 fail before make runs. Quoted
 # KCFLAGS tokens and control whitespace fail admission; the DKMS command
 # separately preserves a kernel build-root pathname containing spaces.
 bash scripts/test_radeon_dkms_kcflags_composition.sh
 
-# Run the unprivileged payload verifier first, and use only a package built
-# from a reviewed, clean repository commit. The expected digest binds this
-# lifecycle evidence to the admitted bytes; it does not authenticate an
-# externally obtained package.
-bash scripts/verify_radeon_unified_dkms_package.sh \
+# Run the unprivileged closed-payload verifier first, and use only a package
+# built from a reviewed, clean repository commit. It checks package metadata,
+# archive ownership and member types, directory modes, the complete namespace,
+# and the exact signed Radeon source export.
+verifier_output=$(bash scripts/verify_radeon_unified_dkms_package.sh \
   --source-repository /path/to/linux-radeon-gororoba \
-  --package /path/to/package
+  --package /path/to/package)
+printf '%s\n' "$verifier_output"
+package_digest=$(printf '%s\n' "$verifier_output" |
+  sed -n 's/^package_sha256=//p')
+RADEON_UNIFIED_SOURCE_REPOSITORY=/path/to/linux-radeon-gororoba \
+  bash scripts/test_radeon_dkms_package_verifier.sh /path/to/package
 
 # One trusted package completes disposable add, build, install, metadata, and cleanup
 sudo install -d -m 0755 -o root -g root \
   /var/lib/radeon-dkms-lifecycle-evidence
 sudo bash scripts/test_radeon_dkms_lifecycle.sh --package /path/to/package \
-  --expected-sha256 "$(sha256sum /path/to/package | awk '{print $1}')" \
+  --expected-sha256 "$package_digest" \
   --kernel-release "$(uname -r)" \
   --evidence-dir /var/lib/radeon-dkms-lifecycle-evidence/new-run
 

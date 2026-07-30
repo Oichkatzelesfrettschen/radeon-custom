@@ -1,5 +1,5 @@
 #!/bin/sh
-# Compose package release flags with caller-supplied Kbuild KCFLAGS.
+# Compose package release flags with root-controlled Kbuild KCFLAGS.
 
 set -eu
 set -f
@@ -60,6 +60,7 @@ fi
 KCFLAGS=$kcflags
 export KCFLAGS
 unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS
+unset MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES
 
 if [ "${RADEON_DKMS_MAKE_TRACE:-0}" = 1 ]; then
     printf 'radeon-dkms-make: KCFLAGS=%s\n' "$KCFLAGS" >&2

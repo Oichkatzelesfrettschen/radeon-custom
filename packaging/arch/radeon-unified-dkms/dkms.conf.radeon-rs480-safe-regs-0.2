@@ -2,6 +2,34 @@ PACKAGE_NAME="radeon-rs480-safe-regs"
 PACKAGE_VERSION="0.2"
 radeon_kernel_build_root=${R300_RS480_KERNEL_BUILD_ROOT:-/lib/modules/${kernelver}/build}
 printf -v radeon_kernel_build_root_q '%q' "$radeon_kernel_build_root"
+radeon_dkms_build_root="${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build"
+printf -v radeon_dkms_helper_q '%q' \
+    "${radeon_dkms_build_root}/radeon-dkms-make"
+if grep -q 'clang' \
+        "$radeon_kernel_build_root/include/generated/compile.h" 2>/dev/null; then
+    radeon_dkms_compiler="${radeon_dkms_build_root}/radeon-dkms-ccache-clang"
+else
+    radeon_dkms_compiler="${radeon_dkms_build_root}/radeon-dkms-ccache-gcc"
+fi
+printf -v radeon_dkms_compiler_q '%q' "$radeon_dkms_compiler"
+printf -v radeon_dkms_module_q '%q' "${radeon_dkms_build_root}/radeon"
+printf -v radeon_kernel_release_q '%q' "$kernelver"
+radeon_parallel_arg=
+if [ "${parallel_jobs+x}" = x ]; then
+    case $parallel_jobs in
+        '')
+            radeon_parallel_arg=-j
+            ;;
+        *[!0-9]*)
+            printf 'dkms.conf: invalid DKMS parallel job count: %s\n' \
+                "$parallel_jobs" >&2
+            return 1
+            ;;
+        *)
+            radeon_parallel_arg="-j${parallel_jobs}"
+            ;;
+    esac
+fi
 
 # This DKMS package rebuilds the in-tree radeon driver with one
 # steinmarder patch applied:
@@ -33,7 +61,7 @@ printf -v radeon_kernel_build_root_q '%q' "$radeon_kernel_build_root"
 #   Detected at DKMS build time by reading compile.h from the target kernel.
 #   If compile.h records a clang build, CC=clang (system default Clang).
 #   Otherwise, CC=gcc (system default GCC), which matches GCC-built kernels.
-#   radeon-dkms-make preserves admitted non-conflicting caller KCFLAGS, rejects
+#   radeon-dkms-make preserves trusted non-conflicting root KCFLAGS, rejects
 #   duplicate policy flags and other -O* tokens, adds the missing -O2 and -pipe
 #   release flags, and keeps userspace CFLAGS outside the kernel build.
 #   The CachyOS LTS kernel (6.18.x) is GCC-built; the main kernel is Clang-built.
@@ -53,7 +81,7 @@ DEST_MODULE_LOCATION[0]="/updates/dkms"
 
 # CC detection: read compile.h from the target kernel's build headers.
 # grep exit code 0 = clang built; non-zero = GCC built -> use gcc.
-MAKE[0]="${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-make CC=$(grep -q 'clang' "$radeon_kernel_build_root/include/generated/compile.h" 2>/dev/null && echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-clang || echo ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon-dkms-ccache-gcc) -C ${radeon_kernel_build_root_q} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/radeon modules"
+MAKE[0]="${radeon_dkms_helper_q}${radeon_parallel_arg:+ ${radeon_parallel_arg}} KERNELRELEASE=${radeon_kernel_release_q} CC=${radeon_dkms_compiler_q} -C ${radeon_kernel_build_root_q} M=${radeon_dkms_module_q} modules"
 
 PRE_BUILD="pre-build.sh ${kernelver} ${radeon_kernel_build_root_q}"
 
