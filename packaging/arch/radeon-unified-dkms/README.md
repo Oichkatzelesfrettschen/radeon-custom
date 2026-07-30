@@ -8,8 +8,8 @@ The active constructor is `PKGBUILD` at package revision 0.3-96. It resolves
 commit `9079be562eebd184da9cf891fbc6a72d5ac0d9f3`, verifies the annotated tag
 object and driver tree, and exports `drivers/gpu/drm/radeon` with `git archive`.
 The package applies no patch and changes no source file byte. Git tree objects
-carry no directory objects, so the constructor normalizes deployment directory
-modes to 0755.
+carry no directory objects, so the constructor uses `tar.umask=0022` to emit
+deployment modes 0644 and 0755.
 
 `source-identity.toml` records the source repository, commit, annotated tag
 object, driver tree, migration manifest digest, generated-output proof digest,

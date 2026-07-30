@@ -78,12 +78,11 @@ package() {
   local dkmsdir="${pkgdir}/usr/src/radeon-unified-${pkgver}"
 
   install -d "${dkmsdir}/radeon"
-  git -C "${srcdir}/radeon-source" archive \
+  # Git tree objects carry no directory objects. A fixed archive umask maps
+  # both tree file modes and synthesized directory modes to deployment policy.
+  git -C "${srcdir}/radeon-source" -c tar.umask=0022 archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
     bsdtar -xf - -C "${dkmsdir}/radeon"
-  # Git archives synthesize directory modes outside the Git tree object.
-  # Normalize them so upgrades preserve one deployment mode without warnings.
-  find "${dkmsdir}/radeon" -type d -exec chmod 0755 {} +
 
   install -Dm644 "${srcdir}/source-identity.toml" \
     "${dkmsdir}/source-identity.toml"

@@ -57,7 +57,8 @@ create_package_fixture() {
 mkdir "$tmpdir/source-tree" "$tmpdir/source-mode-tree" \
     "$tmpdir/metadata-tree" "$tmpdir/extra-tree" \
     "$tmpdir/executable-tree" "$tmpdir/excess-executable-tree" \
-    "$tmpdir/source-directory-mode-tree"
+    "$tmpdir/source-directory-mode-tree" \
+    "$tmpdir/group-write-source-mode-tree"
 bsdtar -xpf "$package" -C "$tmpdir/source-tree"
 printf '\n# verifier mutation fixture\n' \
     >>"$tmpdir/source-tree/usr/src/radeon-unified-0.3/radeon/Makefile"
@@ -72,7 +73,16 @@ chmod 0666 \
 create_package_fixture "$tmpdir/excess-source-mode.pkg.tar.zst" \
     "$tmpdir/source-mode-tree"
 expect_rejection excess-source-mode "$tmpdir/excess-source-mode.pkg.tar.zst" \
-    "installed Radeon path, type, mode, or link manifest differs from git archive"
+    "archive regular file mode is neither 644 nor 755"
+
+bsdtar -xpf "$package" -C "$tmpdir/group-write-source-mode-tree"
+chmod 0664 \
+    "$tmpdir/group-write-source-mode-tree/usr/src/radeon-unified-0.3/radeon/Makefile"
+create_package_fixture "$tmpdir/group-write-source-mode.pkg.tar.zst" \
+    "$tmpdir/group-write-source-mode-tree"
+expect_rejection group-write-source-mode \
+    "$tmpdir/group-write-source-mode.pkg.tar.zst" \
+    "archive regular file mode is neither 644 nor 755"
 
 bsdtar -xpf "$package" -C "$tmpdir/metadata-tree"
 sed -i 's/^pkgver = .*/pkgver = 0.3-999/' \
@@ -104,7 +114,7 @@ create_package_fixture "$tmpdir/excess-executable-mode.pkg.tar.zst" \
     "$tmpdir/excess-executable-tree"
 expect_rejection excess-executable-mode \
     "$tmpdir/excess-executable-mode.pkg.tar.zst" \
-    "radeon-dkms-make mode is 777, expected 755"
+    "archive regular file mode is neither 644 nor 755"
 
 mkdir "$tmpdir/directory-mode-tree"
 bsdtar -xpf "$package" -C "$tmpdir/directory-mode-tree"

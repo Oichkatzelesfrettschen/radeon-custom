@@ -53,6 +53,12 @@ preflight_archive() {
             END { exit found ? 0 : 1 }' "$verbose_manifest"; then
         die "archive directory mode is not 755"
     fi
+    if awk '$1 ~ /^-/ &&
+            $1 != "-rw-r--r--" &&
+            $1 != "-rwxr-xr-x" { found = 1 }
+            END { exit found ? 0 : 1 }' "$verbose_manifest"; then
+        die "archive regular file mode is neither 644 nor 755"
+    fi
 
     : >"$normalized_manifest"
     while IFS= read -r member; do
@@ -277,10 +283,9 @@ check_member "$package_dir/radeon-unified-mkinitcpio.conf" \
 check_member "$package_dir/radeon-re.conf" \
     "etc/modprobe.d/radeon-re.conf" 644 radeon-re.conf
 
-git -C "$source_repository" archive \
+git -C "$source_repository" -c tar.umask=0022 archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
     bsdtar -xpf - -C "$expected_radeon"
-find "$expected_radeon" -type d -exec chmod 0755 {} +
 (cd "$expected_radeon" && find . -printf '%y\t%m\t%P\t%l\n' | sort) \
     >"$expected_tree_manifest"
 (cd "$dkms_root/radeon" && find . -printf '%y\t%m\t%P\t%l\n' | sort) \
