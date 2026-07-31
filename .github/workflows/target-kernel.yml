@@ -1,10 +1,11 @@
 # Post-merge qualification on the RS482 machine.
 #
-# This workflow runs on the target host, so it never triggers on pull_request:
-# a PR carries unmerged repository-controlled code, and the target machine is
-# the one piece of hardware this project cannot replace. The single admitted
-# ref is refs/heads/main, asserted in the job below; a dispatch against any
-# other branch or tag fails closed.
+# This workflow runs on the target host after the protected-main gates pass.
+# A pull request carries unmerged repository-controlled code, and the target
+# machine is the one piece of hardware this project cannot replace. The gates
+# workflow supplies its verified production package as an immutable artifact,
+# so the target host needs no checkout or credential for the private source
+# repository.
 #
 # The job compiles and verifies. It loads no module, arms no hazard gate, and
 # performs no register access. Reading PCI identity from sysfs reports the
@@ -14,44 +15,60 @@
 name: target-kernel
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_run:
+    workflows: [gates]
+    types: [completed]
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
   target-kernel:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: [self-hosted, linux, cachyos-target, target-host]
     timeout-minutes: 60
     env:
-      SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
+      GATE_EVENT: ${{ github.event.workflow_run.event }}
+      GATE_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+      GATE_RUN_ID: ${{ github.event.workflow_run.id }}
+      GATE_SHA: ${{ github.event.workflow_run.head_sha }}
+      GATE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      PACKAGE_ARTIFACT: radeon-unified-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
           clean: true
 
-      # A dispatch may name any ref in the repository, so the ref is asserted
-      # rather than trusted. Requiring refs/heads/main admits exactly the code
-      # that passed the pull-request gates and was merged: a push to main
-      # carries that ref, and a dispatch against any branch or tag carries a
-      # different one.
-      #
-      # The check reads the ref rather than computing ancestry, because
-      # checkout persists no credentials here and a private repository refuses
-      # an unauthenticated fetch. Trading a broader ancestry test for a
-      # narrower ref test keeps the boundary fail-closed without handing the
-      # target host a token.
-      - name: Ref is merged main
+      - name: Gate run is successful protected main
         run: |
-          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            echo "ref is refs/heads/main at $GITHUB_SHA"
-          else
-            echo "ref is $GITHUB_REF, and the target host runs merged main only" >&2
-            exit 1
-          fi
+          set -euo pipefail
+          [ "$GATE_EVENT" = push ]
+          [ "$GATE_BRANCH" = main ]
+          [ "$GATE_REPOSITORY" = "$GITHUB_REPOSITORY" ]
+          [ "$(git rev-parse HEAD)" = "$GATE_SHA" ]
+          target_evidence="${RUNNER_TEMP}/radeon-target-evidence"
+          mkdir -p "$target_evidence"
+          {
+            printf 'gate_run_id=%s\n' "$GATE_RUN_ID"
+            printf 'gate_sha=%s\n' "$GATE_SHA"
+            printf 'gate_repository=%s\n' "$GATE_REPOSITORY"
+          } >"$target_evidence/gate-run.txt"
+          echo "successful protected-main gate admitted: $GATE_RUN_ID at $GATE_SHA"
+
+      - name: Download gate-verified package artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ env.PACKAGE_ARTIFACT }}
+          path: ${{ runner.temp }}/radeon-gates-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
 
       # Fail closed. A mislabeled runner, a replaced GPU, or a machine without
       # the part must not produce a green target verdict, so every load-bearing
@@ -85,12 +102,32 @@ jobs:
           echo "target identity confirmed: RS482 1002:5974 on an RS485M platform"
           echo "kernel: $(uname -r)"
 
-      - name: Pinned production source compiles on the target kernel
+      - name: Gate-verified production package compiles on the target kernel
         run: |
-          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
+          set -euo pipefail
+          packages=$(find "${RUNNER_TEMP}/radeon-gates-artifact" -type f \
+            -name 'radeon-unified-dkms-*.pkg.tar.zst' \
+            ! -name 'radeon-unified-dkms-dev-*' | LC_ALL=C sort)
+          [ "$(printf '%s\n' "$packages" | grep -c .)" -eq 1 ] || {
+            echo "artifact does not contain exactly one production package" >&2
+            printf '%s\n' "$packages" >&2
+            exit 1
+          }
+          package_path=$packages
+          target_evidence="${RUNNER_TEMP}/radeon-target-evidence"
+          sha256sum "$package_path" >"$target_evidence/production-package.sha256"
           mkdir -p "$HOME/.cache/gororoba-ci"
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            timeout 20m sh scripts/check_radeon_pinned_source_compiles.sh \
-              --source-repository "$SOURCE_REPOSITORY" \
+            timeout 20m sh scripts/check_radeon_packaged_source_compiles.sh \
+              --package "$package_path" \
               --kernel-build-root "/lib/modules/$(uname -r)/build" \
-              --profile prod
+              | tee "$target_evidence/compile.log"
+
+      - name: Upload target compile evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: radeon-target-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/radeon-target-evidence
+          retention-days: 30
+          if-no-files-found: warn

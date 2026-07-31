@@ -48,6 +48,9 @@ jobs:
       - name: Pinned-source build calibration
         run: sh scripts/check_radeon_pinned_source_compiles.sh --self-test
 
+      - name: Packaged-source build calibration
+        run: sh scripts/check_radeon_packaged_source_compiles.sh --self-test
+
       - name: Base-delta closure calibration
         run: python3 scripts/check_base_delta_map_closure.py --self-test
 
