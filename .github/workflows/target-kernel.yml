@@ -85,11 +85,12 @@ jobs:
           echo "target identity confirmed: RS482 1002:5974 on an RS485M platform"
           echo "kernel: $(uname -r)"
 
-      - name: Tagged source compiles on the target kernel
+      - name: Pinned production source compiles on the target kernel
         run: |
           : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
           mkdir -p "$HOME/.cache/gororoba-ci"
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            timeout 20m sh scripts/check_radeon_tagged_source_compiles.sh \
+            timeout 20m sh scripts/check_radeon_pinned_source_compiles.sh \
               --source-repository "$SOURCE_REPOSITORY" \
-              --kernel-build-root "/lib/modules/$(uname -r)/build"
+              --kernel-build-root "/lib/modules/$(uname -r)/build" \
+              --profile prod

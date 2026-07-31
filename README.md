@@ -28,7 +28,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Unified DKMS package 0.3-96 exports the signed legacy-equivalent driver tree under deployment modes 0644 and 0755, composes trusted KCFLAGS, and resolves the trace include inside the private DKMS build tree | package export, 6.18 and 7.1 compile, and the disposable DKMS lifecycle on 7.1.4-1-cachyos are CI-verified; target installation is staged without retained evidence; target boot, module load, and hardware operation are not run |
+| Radeon DKMS package 0.3-97 exports the protected profiled source as conflicting production and development packages, binds each module to a fixed build profile, and keeps the development runtime profile off | both closed package payloads, production builds on 6.18 and 7.1, the all-development build on 7.1, and both disposable DKMS lifecycles are required; target installation, module load, and hardware operation remain separate evidence |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
 | RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
@@ -129,17 +129,27 @@ arrays, so invoke them with `bash` rather than `sh`:
 # PKGBUILD sha256sums match package-owned inputs
 bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 
-# Verify the signed source pin and package-owned inputs
+# Verify the protected source pin and package-owned inputs
 bash scripts/verify_radeon_unified_dkms_sources.sh \
   --source-repository /path/to/linux-radeon-gororoba
 
 # Build the pinned export against each retained kernel root
-sh scripts/check_radeon_tagged_source_compiles.sh \
+sh scripts/check_radeon_pinned_source_compiles.sh \
   --source-repository /path/to/linux-radeon-gororoba \
-  --kernel-build-root /path/to/6.18-build-root
-sh scripts/check_radeon_tagged_source_compiles.sh \
+  --kernel-build-root /path/to/6.18-build-root \
+  --profile prod
+sh scripts/check_radeon_pinned_source_compiles.sh \
   --source-repository /path/to/linux-radeon-gororoba \
-  --kernel-build-root /path/to/7.1-build-root
+  --kernel-build-root /path/to/7.1-build-root \
+  --profile prod
+sh scripts/check_radeon_pinned_source_compiles.sh \
+  --source-repository /path/to/linux-radeon-gororoba \
+  --kernel-build-root /path/to/7.1-build-root \
+  --profile all-dev
+
+# Verify the split package identities and the runtime selector
+python3 scripts/check_radeon_package_profiles.py
+bash scripts/test_radeon_profile_dev.sh
 
 # Both recipes preserve admitted non-conflicting root-build KCFLAGS and enforce
 # the package-owned -O2 -pipe release profile. Duplicate -O2 or -pipe and
@@ -151,7 +161,7 @@ bash scripts/test_radeon_dkms_kcflags_composition.sh
 # Run the unprivileged closed-payload verifier first, and use only a package
 # built from a reviewed, clean repository commit. It checks package metadata,
 # archive ownership and member types, directory modes, the complete namespace,
-# and the exact signed Radeon source export.
+# and the exact protected Radeon source export.
 verifier_output=$(bash scripts/verify_radeon_unified_dkms_package.sh \
   --source-repository /path/to/linux-radeon-gororoba \
   --package /path/to/package)
@@ -161,7 +171,7 @@ package_digest=$(printf '%s\n' "$verifier_output" |
 RADEON_UNIFIED_SOURCE_REPOSITORY=/path/to/linux-radeon-gororoba \
   bash scripts/test_radeon_dkms_package_verifier.sh /path/to/package
 
-# One trusted package completes disposable add, build, install, metadata, and cleanup
+# Each trusted package completes disposable add, build, install, metadata, and cleanup
 sudo install -d -m 0755 -o root -g root \
   /var/lib/radeon-dkms-lifecycle-evidence
 sudo bash scripts/test_radeon_dkms_lifecycle.sh --package /path/to/package \
@@ -181,11 +191,17 @@ gate:
 # 5 known-bad inputs rejected, 2 known-good inputs cleared
 sh scripts/check_radeon_patch_series_compiles.sh --self-test
 
-# wrong tree and malformed source identities fail
+# Wrong tree and malformed source identities fail
 python3 scripts/check_radeon_source_pin.py --self-test
 
+# A production recipe that compiles development objects fails
+python3 scripts/check_radeon_package_profiles.py --self-test
+
+# Runtime selection defaults closed and mutation requires its preflight
+bash scripts/test_radeon_profile_dev.sh
+
 # clean and allowlisted logs pass, an unapproved warning fails
-sh scripts/check_radeon_tagged_source_compiles.sh --self-test
+sh scripts/check_radeon_pinned_source_compiles.sh --self-test
 
 # known-good prose silent, known-bad prose reported, corpus selection correct
 python3 scripts/check_project_prose_style.py --self-test
@@ -206,13 +222,16 @@ RADEON_UNIFIED_SOURCE_URL=git+file:///path/to/linux-radeon-gororoba \
   makepkg -D packaging/arch/radeon-unified-dkms -fC --noconfirm
 ```
 
-After package artifacts exist, verify each payload and its executable modes
-against the canonical inputs:
+After both package artifacts exist, verify each payload and its executable
+modes against the canonical inputs:
 
 ```bash
 bash scripts/verify_radeon_unified_dkms_package.sh \
   --source-repository /path/to/linux-radeon-gororoba \
   --package /path/to/radeon-unified-dkms.pkg.tar.zst
+bash scripts/verify_radeon_unified_dkms_package.sh \
+  --source-repository /path/to/linux-radeon-gororoba \
+  --package /path/to/radeon-unified-dkms-dev.pkg.tar.zst
 ```
 
 Optional runtime check on a live host (module loaded from the unified package):

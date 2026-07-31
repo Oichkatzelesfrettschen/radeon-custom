@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - cachyos
+    - cachyos-target
+    - primary-compile-host
+    - target-host
+    - workstation-host

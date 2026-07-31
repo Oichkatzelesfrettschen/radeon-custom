@@ -4,7 +4,7 @@ set -euo pipefail
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
 package_dir="$repo_root/packaging/arch/radeon-unified-dkms"
-helper="$package_dir/radeon-dkms-make"
+canonical_helper="$package_dir/radeon-dkms-make"
 
 die() {
     printf 'test_radeon_dkms_kcflags_composition: %s\n' "$*" >&2
@@ -26,11 +26,20 @@ count_token() {
 
 without_trace_include() {
     local value=$1
+    local skip_profile=0
     local word
 
     for word in $value; do
+        if [[ $skip_profile -eq 1 ]]; then
+            skip_profile=0
+            continue
+        fi
         case "$word" in
             -I*/.radeon-trace-include/include/trace)
+                continue
+                ;;
+            -include)
+                skip_profile=1
                 continue
                 ;;
         esac
@@ -45,6 +54,8 @@ validate_capture() {
     local cflags_value
     local control_value
     local trace_include_count=0
+    local profile_header_count=0
+    local previous=
     local word
 
     kcflags_value=$(sed -n 's/^KCFLAGS=//p' "$capture")
@@ -63,8 +74,14 @@ validate_capture() {
                 trace_include_count=$((trace_include_count + 1))
                 ;;
         esac
+        if [[ $previous == -include &&
+            $word == */radeon-build-profile.h ]]; then
+            profile_header_count=$((profile_header_count + 1))
+        fi
+        previous=$word
     done
     [[ $trace_include_count -eq 1 ]] || return 1
+    [[ $profile_header_count -eq 1 ]] || return 1
     [[ -z $cflags_value ]] || return 1
     for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES; do
         control_value=$(sed -n "s/^${variable}=//p" "$capture")
@@ -77,6 +94,11 @@ mkdir -p "$temp_root"
 tmpdir=$(mktemp -d "$temp_root/radeon-kcflags.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 mkdir -p "$tmpdir/bin"
+helper="$tmpdir/radeon-dkms-make"
+cp "$canonical_helper" "$helper"
+cp "$package_dir/radeon-build-profile.prod.h" \
+    "$tmpdir/radeon-build-profile.h"
+chmod 0755 "$helper"
 
 cat >"$tmpdir/bin/make" <<'EOF'
 #!/bin/sh
@@ -172,6 +194,9 @@ assert_helper_rejects duplicate_o2_mixed '-O2 -pipe -O2' \
 assert_helper_rejects reserved_trace_include \
     '-I/tmp/.radeon-trace-include/include/trace' \
     'caller KCFLAGS contains the reserved trace include'
+assert_helper_rejects reserved_profile_include \
+    '-include /tmp/radeon-build-profile.h' \
+    'caller KCFLAGS contains the reserved build profile'
 
 for optimization in -O -O0 -O1 -O3 -Og -Os -Oz -Ofast; do
     name="conflicting_${optimization#-}"
@@ -182,27 +207,27 @@ done
 
 calibration_good="$tmpdir/calibration-good"
 cat >"$calibration_good" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace -include /tmp/radeon-build-profile.h
 CFLAGS=
 EOF
 calibration_missing="$tmpdir/calibration-missing"
 cat >"$calibration_missing" <<'EOF'
-KCFLAGS=-O2 -pipe -I/tmp/.radeon-trace-include/include/trace
+KCFLAGS=-O2 -pipe -I/tmp/.radeon-trace-include/include/trace -include /tmp/radeon-build-profile.h
 CFLAGS=
 EOF
 calibration_duplicate="$tmpdir/calibration-duplicate"
 cat >"$calibration_duplicate" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -pipe -I/tmp/.radeon-trace-include/include/trace
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -pipe -I/tmp/.radeon-trace-include/include/trace -include /tmp/radeon-build-profile.h
 CFLAGS=
 EOF
 calibration_duplicate_sentinel="$tmpdir/calibration-duplicate-sentinel"
 cat >"$calibration_duplicate_sentinel" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace -include /tmp/radeon-build-profile.h
 CFLAGS=
 EOF
 calibration_cflags="$tmpdir/calibration-cflags"
 cat >"$calibration_cflags" <<'EOF'
-KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace
+KCFLAGS=-DRADEON_CALLER_SENTINEL=1 -O2 -pipe -I/tmp/.radeon-trace-include/include/trace -include /tmp/radeon-build-profile.h
 CFLAGS=-march=native
 EOF
 
@@ -249,6 +274,8 @@ run_dkms_recipe() {
     mkdir -p "$dkms_tree/$package_name/$package_version/build"
     cp "$helper" \
         "$dkms_tree/$package_name/$package_version/build/radeon-dkms-make"
+    cp "$package_dir/radeon-build-profile.prod.h" \
+        "$dkms_tree/$package_name/$package_version/build/radeon-build-profile.h"
     chmod 0755 \
         "$dkms_tree/$package_name/$package_version/build/radeon-dkms-make"
     make_command=${MAKE[0]}
@@ -314,25 +341,36 @@ run_invalid_parallel_recipe() {
 }
 
 primary_capture="$tmpdir/primary.capture"
+development_capture="$tmpdir/development.capture"
 legacy_capture="$tmpdir/legacy.capture"
-run_dkms_recipe "$package_dir/dkms.conf" "$primary_capture"
+run_dkms_recipe "$package_dir/dkms.conf.prod" "$primary_capture"
+run_dkms_recipe "$package_dir/dkms.conf.dev" "$development_capture"
 run_dkms_recipe \
     "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
     "$legacy_capture"
-run_dkms_recipe "$package_dir/dkms.conf" "$tmpdir/primary-unlimited.capture" ''
+run_dkms_recipe "$package_dir/dkms.conf.prod" "$tmpdir/primary-unlimited.capture" ''
+run_dkms_recipe "$package_dir/dkms.conf.dev" \
+    "$tmpdir/development-unlimited.capture" ''
 run_dkms_recipe "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
     "$tmpdir/legacy-unlimited.capture" ''
 hostile_release='fixture; printf PREBUILD_INJECTION; #'
-run_dkms_recipe "$package_dir/dkms.conf" "$tmpdir/primary-hostile.capture" \
+run_dkms_recipe "$package_dir/dkms.conf.prod" "$tmpdir/primary-hostile.capture" \
     3 "$hostile_release"
+run_dkms_recipe "$package_dir/dkms.conf.dev" \
+    "$tmpdir/development-hostile.capture" 3 "$hostile_release"
 run_dkms_recipe "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
     "$tmpdir/legacy-hostile.capture" 3 "$hostile_release"
-run_invalid_parallel_recipe "$package_dir/dkms.conf"
+run_invalid_parallel_recipe "$package_dir/dkms.conf.prod"
+run_invalid_parallel_recipe "$package_dir/dkms.conf.dev"
 run_invalid_parallel_recipe \
     "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2"
 
 primary_kcflags=$(sed -n 's/^KCFLAGS=//p' "$primary_capture")
+development_kcflags=$(sed -n 's/^KCFLAGS=//p' "$development_capture")
 legacy_kcflags=$(sed -n 's/^KCFLAGS=//p' "$legacy_capture")
+[[ $(without_trace_include "$primary_kcflags") == \
+    "$(without_trace_include "$development_kcflags")" ]] ||
+    die "the profile DKMS recipes compose different KCFLAGS"
 [[ $(without_trace_include "$primary_kcflags") == \
     "$(without_trace_include "$legacy_kcflags")" ]] ||
     die "the two DKMS recipes compose different KCFLAGS"
