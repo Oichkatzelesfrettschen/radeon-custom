@@ -28,7 +28,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Radeon DKMS package 0.3-97 exports the protected profiled source as conflicting production and development packages, binds each module to a fixed build profile, and keeps the development runtime profile off | both closed package payloads, production builds on 6.18 and 7.1, the all-development build on 7.1, and both disposable DKMS lifecycles are required; target installation, module load, and hardware operation remain separate evidence |
+| Radeon DKMS package 0.4-1 exports the protected profiled source as conflicting production and development packages, binds each module to a fixed build profile, and keeps the development runtime profile off | both closed package payloads, production builds on 6.18 and 7.1, the all-development build on 7.1, and both disposable DKMS lifecycles are required; target installation, module load, and hardware operation remain separate evidence |
 | Unified DKMS package 0.3-96 is the retained target-runtime baseline | installed and runtime-accepted on the RS482 target across a boot with matching module srcversion, `lockup_timeout=0`, and inert hazard interfaces, retained as steinmarder-r300 bundle `cachyos_vostro1000_rs482_radeon_unified_pkgrel96_runtime_20260730T233253Z`; hardware operation beyond debugfs inventory is not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
@@ -150,7 +150,7 @@ sh scripts/check_radeon_pinned_source_compiles.sh \
 
 # Build the exact production source carried by a verified package artifact
 sh scripts/check_radeon_packaged_source_compiles.sh \
-  --package /path/to/radeon-unified-dkms-0.3-97-x86_64.pkg.tar.zst \
+  --package /path/to/radeon-unified-dkms-0.4-1-x86_64.pkg.tar.zst \
   --kernel-build-root /path/to/kernel-build-root
 
 # Verify the split package identities and the runtime selector
