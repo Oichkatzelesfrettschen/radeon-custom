@@ -33,6 +33,9 @@ REQUIRED_KEYS = {
     "upstream_base_path",
     "upstream_commit",
     "upstream_subtree",
+    "profiled_source_tag",
+    "profiled_source_tag_object",
+    "profiled_source_commit",
     "equivalence_tag",
     "equivalence_tag_object",
     "equivalence_commit",
@@ -182,6 +185,8 @@ def load_identity(path: Path) -> dict[str, object]:
         "feature_policy_tree",
         "upstream_commit",
         "upstream_subtree",
+        "profiled_source_tag_object",
+        "profiled_source_commit",
         "equivalence_tag_object",
         "equivalence_commit",
         "migration_input_commit",
@@ -218,6 +223,8 @@ def require_pkgbuild_match(pkgbuild: Path, identity: dict[str, object]) -> None:
         "_source_feature_policy_tree": "feature_policy_tree",
         "_source_feature_policy_sha256": "feature_policy_sha256",
         "_source_upstream_base": "upstream_commit",
+        "_profiled_source_tag": "profiled_source_tag",
+        "_profiled_source_tag_object": "profiled_source_tag_object",
     }
     for shell_name, identity_name in bindings.items():
         pattern = rf"^{re.escape(shell_name)}='([^']+)'$"
@@ -254,6 +261,16 @@ def verify(
         raise PinError("source repository tree does not match repository_tree")
     if git(repository, "cat-file", "-t", tag_object) != "tag":
         raise PinError("equivalence_tag_object is not an annotated tag object")
+    profiled_tag = str(identity["profiled_source_tag"])
+    profiled_tag_object = str(identity["profiled_source_tag_object"])
+    if str(identity["profiled_source_commit"]) != commit:
+        raise PinError("profiled_source_commit disagrees with source_commit")
+    if git(repository, "cat-file", "-t", profiled_tag_object) != "tag":
+        raise PinError("profiled_source_tag_object is not an annotated tag object")
+    if git(repository, "rev-parse", f"refs/tags/{profiled_tag}^{{tag}}") != profiled_tag_object:
+        raise PinError("profiled source tag object does not match the named tag")
+    if git(repository, "rev-parse", f"refs/tags/{profiled_tag}^{{}}") != commit:
+        raise PinError("profiled source tag does not peel to source_commit")
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{tag}}") != tag_object:
         raise PinError("equivalence tag object does not match the named tag")
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{}}") != equivalence_commit:
@@ -414,6 +431,16 @@ def run_self_test() -> None:
             check=True,
         )
         commit = git(repository, "rev-parse", "HEAD")
+        subprocess.run(
+            [
+                "git", "-C", str(repository),
+                "tag", "-am", "profiled fixture", "profiled-fixture-tag",
+            ],
+            check=True,
+        )
+        profiled_tag_object = git(
+            repository, "rev-parse", "profiled-fixture-tag^{tag}"
+        )
         repository_tree = git(repository, "rev-parse", "HEAD^{tree}")
         tree = git(repository, "rev-parse", "HEAD:drivers/gpu/drm/radeon")
         policy_tree = git(repository, "rev-parse", "HEAD:policy")
@@ -438,6 +465,9 @@ def run_self_test() -> None:
                     'upstream_base_path = "UPSTREAM_BASE.toml"',
                     f'upstream_commit = "{upstream_commit}"',
                     f'upstream_subtree = "{upstream_subtree}"',
+                    'profiled_source_tag = "profiled-fixture-tag"',
+                    f'profiled_source_tag_object = "{profiled_tag_object}"',
+                    f'profiled_source_commit = "{commit}"',
                     'equivalence_tag = "fixture-tag"',
                     f'equivalence_tag_object = "{tag_object}"',
                     f'equivalence_commit = "{equivalence_commit}"',
@@ -467,6 +497,17 @@ def run_self_test() -> None:
             pass
         else:
             raise PinError("self-test accepts a wrong driver tree")
+        bad_text = identity_path.read_text(encoding="ascii").replace(
+            f'profiled_source_tag_object = "{profiled_tag_object}"',
+            f'profiled_source_tag_object = "{tag_object}"',
+        )
+        bad_path.write_text(bad_text, encoding="ascii")
+        try:
+            verify(bad_path, repository)
+        except PinError:
+            pass
+        else:
+            raise PinError("self-test accepts a wrong profiled source tag object")
     print("radeon source pin calibration: PASS")
 
 

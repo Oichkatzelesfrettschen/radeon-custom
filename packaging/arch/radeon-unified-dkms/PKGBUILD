@@ -30,6 +30,8 @@ _source_driver_tree='c0ccf1097a8e7900f1c41b49199ea0e330fc4eae'
 _source_feature_policy_tree='a8afcce68414566836ada84adfada8cde5362ea8'
 _source_feature_policy_sha256='1cc57d53a5493ad79d61463960632a3a3ecdbd2b1836e228fc4e74f22421669f'
 _source_upstream_base='7d0a66e4bb9081d75c82ec4957c50034cb0ea449'
+_profiled_source_tag='radeon-unified-0.4-profiled-source'
+_profiled_source_tag_object='a2a4c2cc66bdb8cfd56a0538365d94ba13677cd5'
 _equivalence_tag='radeon-unified-0.3-pkgrel91-source-equivalent'
 _equivalence_tag_object='81a2510e34d1d62f5486683bcd6e240db8223b7d'
 _equivalence_commit='9079be562eebd184da9cf891fbc6a72d5ac0d9f3'
@@ -62,7 +64,7 @@ source=(
 )
 sha256sums=(
   'SKIP'
-  '3f2431f33ec71ea60fd060a217fd2313c65e327af16af68770c1b4fe26c606a7'
+  '96f252f3a22520229f4ed734ba78f9b623d2e1eacb0b53c4177e02fdcbe6c2a5'
   '5cc873c1beed7a99ec44c50824ff32715868bb677133962217741ec98e8653d1'
   '07640c52fc7c8c592affc457ed64155f98d70fc50ee639279a96e961e92ecb0d'
   '448047f6bbcdcee06b092125752c505acdd87298df7f86e9d3e018b3db049b71'
@@ -108,6 +110,14 @@ prepare() {
   actual=${actual%% *}
   [[ ${actual} == "${_source_feature_policy_sha256}" ]] ||
     { printf 'source feature policy mismatch: %s\n' "${actual}" >&2; return 1; }
+  actual=$(git -C "${srcdir}/radeon-source" rev-parse \
+    "refs/tags/${_profiled_source_tag}^{tag}")
+  [[ ${actual} == "${_profiled_source_tag_object}" ]] ||
+    { printf 'profiled source tag object mismatch: %s\n' "${actual}" >&2; return 1; }
+  actual=$(git -C "${srcdir}/radeon-source" rev-parse \
+    "refs/tags/${_profiled_source_tag}^{}")
+  [[ ${actual} == "${_source_commit}" ]] ||
+    { printf 'profiled source tag peel mismatch: %s\n' "${actual}" >&2; return 1; }
   actual=$(git -C "${srcdir}/radeon-source" rev-parse \
     "refs/tags/${_equivalence_tag}^{tag}")
   [[ ${actual} == "${_equivalence_tag_object}" ]] ||
