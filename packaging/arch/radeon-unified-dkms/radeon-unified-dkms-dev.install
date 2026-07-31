@@ -1,0 +1,32 @@
+# shellcheck shell=bash
+# The development runtime-profile override is selector-written state, so the
+# package removes it mechanically at removal time while the canonical
+# templates and the initramfs refresh helper are still installed. Foreign
+# content in the override is operator state and stays in place with a
+# prominent warning.
+
+_override=/etc/modprobe.d/radeon-unified-profile-dev.conf
+_profile_root=/usr/share/radeon-unified/profiles
+_refresh=/usr/src/radeon-unified-0.4/dkms-initramfs-refresh.sh
+
+pre_remove() {
+    [ -e "$_override" ] || return 0
+    if [ -L "$_override" ] || [ ! -f "$_override" ]; then
+        printf 'radeon-unified-dkms-dev: %s is not a regular file; leaving it in place\n' \
+            "$_override" >&2
+        return 0
+    fi
+    for _profile in observe-dev probe-dev mutate-dev; do
+        if cmp -s "$_profile_root/${_profile}.conf" "$_override"; then
+            rm -f -- "$_override"
+            if [ -x "$_refresh" ]; then
+                "$_refresh" || printf \
+                    'radeon-unified-dkms-dev: initramfs refresh failed after override removal\n' >&2
+            fi
+            return 0
+        fi
+    done
+    printf 'radeon-unified-dkms-dev: WARNING: %s carries foreign content and stays in place;\n' \
+        "$_override" >&2
+    printf 'radeon-unified-dkms-dev: WARNING: remove it before installing the production package\n' >&2
+}

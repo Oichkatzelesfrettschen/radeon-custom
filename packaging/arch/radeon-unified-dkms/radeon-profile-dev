@@ -4,7 +4,7 @@
 set -eu
 
 program=${0##*/}
-source_root=/usr/src/radeon-unified-0.3
+source_root=/usr/src/radeon-unified-0.4
 manifest="${source_root}/radeon-build-profile.toml"
 identity="${source_root}/source-identity.toml"
 profile_root=/usr/share/radeon-unified/profiles
@@ -16,22 +16,24 @@ die() {
     exit 1
 }
 
+# tomllib parses the whole document, so a duplicate key, a type mismatch, or
+# malformed TOML fails the read instead of yielding the first line a scanner
+# happens to match.
 toml_value() {
-    key=$1
-    file=$2
-    awk -F '[[:space:]]*=[[:space:]]*' -v key="$key" '
-        $1 == key {
-            value = $2
-            sub(/[[:space:]]+#.*/, "", value)
-            if (value ~ /^".*"$/) {
-                sub(/^"/, "", value)
-                sub(/"$/, "", value)
-            }
-            print value
-            found = 1
-        }
-        END { if (!found) exit 1 }
-    ' "$file"
+    command -v python3 >/dev/null 2>&1 ||
+        die "python3 is required for manifest parsing"
+    python3 - "$1" "$2" <<'EOF' || die "manifest key $1 is absent or invalid in $2"
+import sys
+import tomllib
+
+key, path = sys.argv[1], sys.argv[2]
+with open(path, "rb") as handle:
+    document = tomllib.load(handle)
+value = document.get(key)
+if not isinstance(value, str) or not value:
+    sys.exit(1)
+sys.stdout.write(value + "\n")
+EOF
 }
 
 require_regular() {
@@ -68,7 +70,7 @@ verify_manifest() {
         die "feature policy digest disagrees between installed manifests"
 }
 
-selected_profile() {
+requested_profile() {
     if [ ! -e "$override" ]; then
         printf '%s\n' off
         return
@@ -96,13 +98,65 @@ selected_profile() {
     esac
 }
 
+# modprobe -c resolves every configuration file in modprobe's own search
+# order, so a duplicate or overriding profile_dev row in another file is
+# visible here even though the override file itself looks correct.
+effective_profile() {
+    command -v modprobe >/dev/null 2>&1 ||
+        die "modprobe is required for effective-configuration verification"
+    rows=$(modprobe -c | awk '
+        $1 == "options" && $2 == "radeon" {
+            for (field_index = 3; field_index <= NF; field_index++) {
+                if ($field_index ~ /^profile_dev=/) {
+                    sub(/^profile_dev=/, "", $field_index)
+                    print $field_index
+                }
+            }
+        }')
+    row_count=$(printf '%s' "$rows" | grep -c . || true)
+    if [ "$row_count" -gt 1 ]; then
+        die "effective modprobe configuration carries $row_count profile_dev rows"
+    fi
+    if [ "$row_count" -eq 0 ]; then
+        printf '%s\n' off
+        return
+    fi
+    case "$rows" in
+        off | observe-dev | probe-dev | mutate-dev)
+            printf '%s\n' "$rows"
+            ;;
+        *)
+            die "effective modprobe configuration carries an invalid profile_dev value"
+            ;;
+    esac
+}
+
+verify_effective_matches() {
+    requested=$1
+    effective=$(effective_profile)
+    [ "$effective" = "$requested" ] ||
+        die "effective modprobe profile is ${effective}, not the requested ${requested}"
+}
+
+acknowledge_profile() {
+    profile=$1
+    prompt=$2
+    [ -t 0 ] ||
+        die "${profile} selection requires an interactive acknowledgement"
+    printf '%s: ' "$prompt" >&2
+    IFS= read -r acknowledgement
+    [ "$acknowledgement" = "$profile" ] ||
+        die "${profile} acknowledgement did not match"
+}
+
 show_profile() {
     require_dev_package
     verify_manifest
     printf 'package=radeon-unified-dkms-dev\n'
     printf 'build_profile=%s\n' "$(toml_value build_profile "$manifest")"
     printf 'compiled_ceiling=%s\n' "$(toml_value compiled_ceiling "$manifest")"
-    printf 'selected_profile=%s\n' "$(selected_profile)"
+    printf 'requested_profile=%s\n' "$(requested_profile)"
+    printf 'effective_modprobe_profile=%s\n' "$(effective_profile)"
     if [ -r /sys/module/radeon/parameters/profile_dev ]; then
         printf 'loaded_profile=%s\n' \
             "$(cat /sys/module/radeon/parameters/profile_dev)"
@@ -133,6 +187,28 @@ select_profile() {
     if [ -e "$override" ] && [ ! -f "$override" ]; then
         die "profile override is not a regular file"
     fi
+    # Attended acknowledgements are monotone with hazard: probe-dev confirms
+    # active diagnostic reads, and mutate-dev confirms hardware mutation and
+    # then passes the hazard preflight. Both run before any configuration or
+    # initramfs change so a refused acknowledgement leaves the host untouched.
+    case "$profile" in
+        probe-dev)
+            acknowledge_profile probe-dev \
+                'Type probe-dev to confirm active diagnostic reads'
+            ;;
+        mutate-dev)
+            acknowledge_profile mutate-dev \
+                'Type mutate-dev to confirm hardware-mutating interfaces'
+            command -v rs480-reset-hazard-preflight >/dev/null 2>&1 ||
+                die "mutate-dev requires rs480-reset-hazard-preflight"
+            rs480-reset-hazard-preflight
+            ;;
+        off | observe-dev)
+            ;;
+        *)
+            die "profile must be off, observe-dev, probe-dev, or mutate-dev"
+            ;;
+    esac
     if [ -f "$override" ]; then
         backup=$(mktemp "${override}.backup.XXXXXX")
         install -m 0644 "$override" "$backup"
@@ -146,36 +222,28 @@ select_profile() {
         observe-dev | probe-dev | mutate-dev)
             template="${profile_root}/${profile}.conf"
             require_regular "$template"
-            if [ "$profile" = probe-dev ]; then
-                [ -t 0 ] ||
-                    die "probe-dev selection requires an interactive acknowledgement"
-                printf 'Type probe-dev to confirm active diagnostic reads: ' >&2
-                IFS= read -r acknowledgement
-                [ "$acknowledgement" = probe-dev ] ||
-                    die "probe-dev acknowledgement did not match"
-            fi
-            if [ "$profile" = mutate-dev ]; then
-                command -v rs480-reset-hazard-preflight >/dev/null 2>&1 ||
-                    die "mutate-dev requires rs480-reset-hazard-preflight"
-                rs480-reset-hazard-preflight
-            fi
             temporary=$(mktemp "${override}.XXXXXX")
             install -m 0644 "$template" "$temporary"
             mv -f -- "$temporary" "$override"
             temporary=
             ;;
-        *)
-            die "profile must be off, observe-dev, probe-dev, or mutate-dev"
-            ;;
     esac
-    if ! refresh_initramfs; then
+    restore_prior() {
         if [ "$had_override" -eq 1 ]; then
             mv -f -- "$backup" "$override"
             backup=
         else
             rm -f -- "$override"
         fi
-        refresh_initramfs >/dev/null 2>&1 || true
+    }
+    # The subshells confine each verifier's exit so the rollback branch runs.
+    if ! ( verify_effective_matches "$profile" ); then
+        restore_prior
+        die "effective configuration mismatch and the prior profile was restored"
+    fi
+    if ! ( refresh_initramfs ); then
+        restore_prior
+        ( refresh_initramfs ) >/dev/null 2>&1 || true
         die "initramfs refresh failed and the prior profile was restored"
     fi
     rm -f -- "$backup"
@@ -203,17 +271,40 @@ verify_loaded() {
         die "installed module feature policy disagrees with the manifest"
     [ "$(modinfo -F gororoba_upstream_base radeon)" = "$expected_upstream" ] ||
         die "installed module upstream base disagrees with the manifest"
-    selected=$(selected_profile)
-    if [ -e /sys/module/radeon/parameters/profile_dev ]; then
-        [ -r /sys/module/radeon/parameters/profile_dev ] ||
-            die "loaded profile_dev is unreadable"
-        loaded=$(cat /sys/module/radeon/parameters/profile_dev)
-        [ "$loaded" = "$selected" ] ||
-            die "loaded profile_dev disagrees with the selected profile"
-    elif [ -d /sys/module/radeon ]; then
-        die "loaded development module exposes no profile_dev parameter"
+    installed_srcversion=$(modinfo -F srcversion radeon)
+    [ -n "$installed_srcversion" ] ||
+        die "installed module reports no srcversion"
+    installed_vermagic=$(modinfo -F vermagic radeon)
+    running_release=$(uname -r)
+    case "$installed_vermagic" in
+        "$running_release "*)
+            ;;
+        *)
+            die "installed vermagic ${installed_vermagic%% *} does not match the running kernel ${running_release}"
+            ;;
+    esac
+    printf '%s\n' "installed-attestation: PASS"
+    # modinfo attests the on-disk module; /sys/module/radeon attests the
+    # module the kernel actually loaded. The two diverge across an upgrade
+    # without a reboot, so each attestation reports separately.
+    if [ ! -d /sys/module/radeon ]; then
+        printf '%s\n' "loaded-attestation: NOT RUN (no radeon module is loaded)"
+        return
     fi
-    printf '%s\n' "radeon development package and module attestation: PASS"
+    [ -r /sys/module/radeon/srcversion ] ||
+        die "loaded module srcversion is unreadable"
+    loaded_srcversion=$(cat /sys/module/radeon/srcversion)
+    [ "$loaded_srcversion" = "$installed_srcversion" ] ||
+        die "loaded srcversion ${loaded_srcversion} disagrees with installed ${installed_srcversion}"
+    [ -e /sys/module/radeon/parameters/profile_dev ] ||
+        die "loaded development module exposes no profile_dev parameter"
+    [ -r /sys/module/radeon/parameters/profile_dev ] ||
+        die "loaded profile_dev is unreadable"
+    loaded=$(cat /sys/module/radeon/parameters/profile_dev)
+    effective=$(effective_profile)
+    [ "$loaded" = "$effective" ] ||
+        die "loaded profile_dev ${loaded} disagrees with the effective ${effective}"
+    printf '%s\n' "loaded-attestation: PASS"
 }
 
 [ "$#" -ge 1 ] || die "command must be show, select, or verify"
