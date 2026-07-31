@@ -157,6 +157,16 @@ sh scripts/check_radeon_packaged_source_compiles.sh \
 python3 scripts/check_radeon_package_profiles.py
 bash scripts/test_radeon_profile_dev.sh
 
+# Exercise the pacman-level package transitions in a disposable pacstrap
+# root: production install, production/development replacement in both
+# directions, profile selection, the PreTransaction admission refusal while
+# a development override survives, and override cleanup versus foreign
+# retention at development removal. Requires root, pacstrap, and arch-chroot;
+# module compilation stays in the DKMS lifecycle test.
+sudo bash scripts/test_radeon_package_transitions.sh \
+  --prod-package /path/to/radeon-unified-dkms-0.4-1-x86_64.pkg.tar.zst \
+  --dev-package /path/to/radeon-unified-dkms-dev-0.4-1-x86_64.pkg.tar.zst
+
 # Both recipes preserve admitted non-conflicting root-build KCFLAGS and enforce
 # the package-owned -O2 -pipe release profile. Duplicate -O2 or -pipe and
 # root-build optimization tokens other than -O2 fail before make runs. Quoted
