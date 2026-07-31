@@ -1,0 +1,238 @@
+#!/bin/sh
+# Select and attest the radeon development runtime profile.
+
+set -eu
+
+program=${0##*/}
+source_root=/usr/src/radeon-unified-0.3
+manifest="${source_root}/radeon-build-profile.toml"
+identity="${source_root}/source-identity.toml"
+profile_root=/usr/share/radeon-unified/profiles
+override=/etc/modprobe.d/radeon-unified-profile-dev.conf
+refresh="${source_root}/dkms-initramfs-refresh.sh"
+
+die() {
+    printf '%s: %s\n' "$program" "$*" >&2
+    exit 1
+}
+
+toml_value() {
+    key=$1
+    file=$2
+    awk -F '[[:space:]]*=[[:space:]]*' -v key="$key" '
+        $1 == key {
+            value = $2
+            sub(/[[:space:]]+#.*/, "", value)
+            if (value ~ /^".*"$/) {
+                sub(/^"/, "", value)
+                sub(/"$/, "", value)
+            }
+            print value
+            found = 1
+        }
+        END { if (!found) exit 1 }
+    ' "$file"
+}
+
+require_regular() {
+    [ -f "$1" ] && [ ! -L "$1" ] ||
+        die "required regular file is absent: $1"
+}
+
+require_dev_package() {
+    command -v pacman >/dev/null 2>&1 ||
+        die "pacman is required for package attestation"
+    installed=$(pacman -Qq radeon-unified-dkms-dev 2>/dev/null || true)
+    [ "$installed" = radeon-unified-dkms-dev ] ||
+        die "radeon-unified-dkms-dev is not installed"
+}
+
+verify_manifest() {
+    require_regular "$manifest"
+    require_regular "$identity"
+    [ "$(toml_value package_name "$manifest")" = radeon-unified-dkms-dev ] ||
+        die "installed build manifest names another package"
+    [ "$(toml_value build_profile "$manifest")" = all-dev ] ||
+        die "development package build profile is not all-dev"
+    [ "$(toml_value compiled_ceiling "$manifest")" = mutate-dev ] ||
+        die "development package ceiling is not mutate-dev"
+    for field in source_commit repository_tree driver_tree; do
+        manifest_value=$(toml_value "$field" "$manifest")
+        identity_value=$(toml_value "$field" "$identity")
+        [ "$manifest_value" = "$identity_value" ] ||
+            die "$field disagrees between installed manifests"
+    done
+    manifest_policy=$(toml_value feature_policy_sha256 "$manifest")
+    identity_policy=$(toml_value feature_policy_sha256 "$identity")
+    [ "$manifest_policy" = "$identity_policy" ] ||
+        die "feature policy digest disagrees between installed manifests"
+}
+
+selected_profile() {
+    if [ ! -e "$override" ]; then
+        printf '%s\n' off
+        return
+    fi
+    require_regular "$override"
+    value=$(awk '
+        $1 == "options" && $2 == "radeon" {
+            for (field_index = 3; field_index <= NF; field_index++) {
+                if ($field_index ~ /^profile_dev=/) {
+                    sub(/^profile_dev=/, "", $field_index)
+                    print $field_index
+                    found = 1
+                }
+            }
+        }
+        END { if (!found) exit 1 }
+    ' "$override") || die "override contains no profile_dev selection"
+    case "$value" in
+        observe-dev | probe-dev | mutate-dev)
+            printf '%s\n' "$value"
+            ;;
+        *)
+            die "override contains an invalid profile_dev value"
+            ;;
+    esac
+}
+
+show_profile() {
+    require_dev_package
+    verify_manifest
+    printf 'package=radeon-unified-dkms-dev\n'
+    printf 'build_profile=%s\n' "$(toml_value build_profile "$manifest")"
+    printf 'compiled_ceiling=%s\n' "$(toml_value compiled_ceiling "$manifest")"
+    printf 'selected_profile=%s\n' "$(selected_profile)"
+    if [ -r /sys/module/radeon/parameters/profile_dev ]; then
+        printf 'loaded_profile=%s\n' \
+            "$(cat /sys/module/radeon/parameters/profile_dev)"
+    else
+        printf 'loaded_profile=unavailable\n'
+    fi
+}
+
+refresh_initramfs() {
+    require_regular "$refresh"
+    [ -x "$refresh" ] || die "initramfs refresh helper is not executable"
+    "$refresh"
+}
+
+select_profile() {
+    profile=$1
+    temporary=
+    backup=
+    had_override=0
+    [ "$(id -u)" -eq 0 ] || die "profile selection requires root"
+    require_dev_package
+    verify_manifest
+    [ -d /etc/modprobe.d ] && [ ! -L /etc/modprobe.d ] ||
+        die "/etc/modprobe.d is not a regular directory"
+    if [ -L "$override" ]; then
+        die "profile override is a symbolic link"
+    fi
+    if [ -e "$override" ] && [ ! -f "$override" ]; then
+        die "profile override is not a regular file"
+    fi
+    if [ -f "$override" ]; then
+        backup=$(mktemp "${override}.backup.XXXXXX")
+        install -m 0644 "$override" "$backup"
+        had_override=1
+    fi
+    trap 'rm -f -- "${temporary-}" "${backup-}"' EXIT HUP INT TERM
+    case "$profile" in
+        off)
+            rm -f -- "$override"
+            ;;
+        observe-dev | probe-dev | mutate-dev)
+            template="${profile_root}/${profile}.conf"
+            require_regular "$template"
+            if [ "$profile" = probe-dev ]; then
+                [ -t 0 ] ||
+                    die "probe-dev selection requires an interactive acknowledgement"
+                printf 'Type probe-dev to confirm active diagnostic reads: ' >&2
+                IFS= read -r acknowledgement
+                [ "$acknowledgement" = probe-dev ] ||
+                    die "probe-dev acknowledgement did not match"
+            fi
+            if [ "$profile" = mutate-dev ]; then
+                command -v rs480-reset-hazard-preflight >/dev/null 2>&1 ||
+                    die "mutate-dev requires rs480-reset-hazard-preflight"
+                rs480-reset-hazard-preflight
+            fi
+            temporary=$(mktemp "${override}.XXXXXX")
+            install -m 0644 "$template" "$temporary"
+            mv -f -- "$temporary" "$override"
+            temporary=
+            ;;
+        *)
+            die "profile must be off, observe-dev, probe-dev, or mutate-dev"
+            ;;
+    esac
+    if ! refresh_initramfs; then
+        if [ "$had_override" -eq 1 ]; then
+            mv -f -- "$backup" "$override"
+            backup=
+        else
+            rm -f -- "$override"
+        fi
+        refresh_initramfs >/dev/null 2>&1 || true
+        die "initramfs refresh failed and the prior profile was restored"
+    fi
+    rm -f -- "$backup"
+    backup=
+    trap - EXIT HUP INT TERM
+    printf '%s\n' \
+        "profile_dev=${profile} will take effect after the next safe reboot"
+    printf '%s\n' "the loaded module was not reloaded"
+}
+
+verify_loaded() {
+    require_dev_package
+    verify_manifest
+    command -v modinfo >/dev/null 2>&1 ||
+        die "modinfo is required for module attestation"
+    expected_source=$(toml_value source_commit "$manifest")
+    expected_policy=$(toml_value feature_policy_sha256 "$manifest")
+    expected_upstream=$(toml_value upstream_base "$manifest")
+    [ "$(modinfo -F gororoba_build_profile radeon)" = mutate-dev ] ||
+        die "installed module build profile is not mutate-dev"
+    [ "$(modinfo -F gororoba_source_commit radeon)" = "$expected_source" ] ||
+        die "installed module source commit disagrees with the manifest"
+    [ "$(modinfo -F gororoba_feature_policy_sha256 radeon)" = \
+        "$expected_policy" ] ||
+        die "installed module feature policy disagrees with the manifest"
+    [ "$(modinfo -F gororoba_upstream_base radeon)" = "$expected_upstream" ] ||
+        die "installed module upstream base disagrees with the manifest"
+    selected=$(selected_profile)
+    if [ -e /sys/module/radeon/parameters/profile_dev ]; then
+        [ -r /sys/module/radeon/parameters/profile_dev ] ||
+            die "loaded profile_dev is unreadable"
+        loaded=$(cat /sys/module/radeon/parameters/profile_dev)
+        [ "$loaded" = "$selected" ] ||
+            die "loaded profile_dev disagrees with the selected profile"
+    elif [ -d /sys/module/radeon ]; then
+        die "loaded development module exposes no profile_dev parameter"
+    fi
+    printf '%s\n' "radeon development package and module attestation: PASS"
+}
+
+[ "$#" -ge 1 ] || die "command must be show, select, or verify"
+command=$1
+shift
+case "$command" in
+    show)
+        [ "$#" -eq 0 ] || die "show accepts no arguments"
+        show_profile
+        ;;
+    select)
+        [ "$#" -eq 1 ] || die "select requires one profile"
+        select_profile "$1"
+        ;;
+    verify)
+        [ "$#" -eq 0 ] || die "verify accepts no arguments"
+        verify_loaded
+        ;;
+    *)
+        die "command must be show, select, or verify"
+        ;;
+esac

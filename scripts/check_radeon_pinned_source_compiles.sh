@@ -10,10 +10,11 @@ identity="$package_dir/source-identity.toml"
 pkgbuild="$package_dir/PKGBUILD"
 source_repository=${RADEON_UNIFIED_SOURCE_REPOSITORY:-}
 kernel_build_root=
+requested_profile=prod
 self_test=0
 
 die() {
-    printf 'check_radeon_tagged_source_compiles: %s\n' "$*" >&2
+    printf 'check_radeon_pinned_source_compiles: %s\n' "$*" >&2
     exit 2
 }
 
@@ -46,6 +47,11 @@ while [ "$#" -gt 0 ]; do
             source_repository=$2
             shift 2
             ;;
+        --profile)
+            [ "$#" -ge 2 ] || die "--profile requires prod or all-dev"
+            requested_profile=$2
+            shift 2
+            ;;
         --self-test)
             self_test=1
             shift
@@ -55,6 +61,20 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+case $requested_profile in
+    prod)
+        resolved_profile=prod
+        profile_input=prod
+        ;;
+    all-dev)
+        resolved_profile=mutate-dev
+        profile_input=dev
+        ;;
+    *)
+        die "--profile requires prod or all-dev"
+        ;;
+esac
 
 if [ "$self_test" -eq 1 ]; then
     work=$(make_work_dir)
@@ -68,7 +88,7 @@ if [ "$self_test" -eq 1 ]; then
     if scan_warnings "$work/bad.log" 2>/dev/null; then
         die "warning calibration accepts an unapproved warning"
     fi
-    printf 'tagged source compile calibration: PASS\n'
+    printf 'pinned source compile calibration: PASS\n'
     exit 0
 fi
 
@@ -109,6 +129,11 @@ mkdir -p "$radeon_tree" "$work/include/trace"
 git -C "$source_repository" archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
     tar -x -C "$radeon_tree"
+build_helper="$work/radeon-dkms-make"
+cp "$package_dir/radeon-dkms-make" "$build_helper"
+cp "$package_dir/radeon-build-profile.${profile_input}.h" \
+    "$work/radeon-build-profile.h"
+chmod 0755 "$build_helper"
 
 if grep -q '^CONFIG_CC_IS_CLANG=y' \
         "$kernel_build_root/include/config/auto.conf" 2>/dev/null ||
@@ -123,7 +148,7 @@ build_status=0
 (
     cd "$radeon_tree"
     KCFLAGS="-I$work/include/trace" \
-        "$package_dir/radeon-dkms-make" "$@" \
+        "$build_helper" "$@" RADEON_BUILD_PROFILE="$resolved_profile" \
         -C "$kernel_build_root" M="$PWD" modules
 ) >"$build_log" 2>&1 || build_status=$?
 cat "$build_log"
@@ -140,5 +165,18 @@ find "$radeon_tree" -maxdepth 1 -type f -name '*_reg_safe.h' |
     { printf 'generated register headers are absent\n' >&2; exit 4; }
 [ -x "$radeon_tree/mkregtable" ] ||
     { printf 'generated mkregtable is absent\n' >&2; exit 4; }
+for metadata in \
+    "gororoba_build_profile:$resolved_profile" \
+    "gororoba_source_commit:$_source_commit" \
+    "gororoba_feature_policy_sha256:$_source_feature_policy_sha256" \
+    "gororoba_upstream_base:$_source_upstream_base"
+do
+    field=${metadata%%:*}
+    expected=${metadata#*:}
+    actual=$(modinfo -F "$field" "$radeon_tree/radeon.ko")
+    [ "$actual" = "$expected" ] ||
+        die "module metadata $field is $actual, expected $expected"
+done
 
-printf 'tagged Radeon source build: PASS against %s\n' "$kernel_release"
+printf 'pinned Radeon source build: PASS against %s as %s\n' \
+    "$kernel_release" "$requested_profile"

@@ -6,6 +6,25 @@ die() {
     exit 1
 }
 
+toml_value() {
+    local key=$1
+    local file=$2
+
+    awk -F '[[:space:]]*=[[:space:]]*' -v key="$key" '
+        $1 == key {
+            value = $2
+            sub(/[[:space:]]+#.*/, "", value)
+            if (value ~ /^".*"$/) {
+                sub(/^"/, "", value)
+                sub(/"$/, "", value)
+            }
+            print value
+            found = 1
+        }
+        END { if (!found) exit 1 }
+    ' "$file"
+}
+
 make_temp_dir() {
     local temp_base=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
 
@@ -350,6 +369,25 @@ source_identity="$packaged_source/source-identity.toml"
 [[ -f $source_identity && ! -L $source_identity ]] ||
     die "package source identity is absent or not a regular file"
 cp "$source_identity" "$evidence_dir/source-identity.toml"
+build_manifest="$packaged_source/radeon-build-profile.toml"
+[[ -f $build_manifest && ! -L $build_manifest ]] ||
+    die "package build profile is absent or not a regular file"
+cp "$build_manifest" "$evidence_dir/radeon-build-profile.toml"
+requested_profile=$(toml_value build_profile "$build_manifest")
+case $requested_profile in
+    prod)
+        expected_module_profile=prod
+        ;;
+    all-dev)
+        expected_module_profile=mutate-dev
+        ;;
+    *)
+        die "package build profile is neither prod nor all-dev"
+        ;;
+esac
+expected_source_commit=$(toml_value source_commit "$build_manifest")
+expected_policy=$(toml_value feature_policy_sha256 "$build_manifest")
+expected_upstream=$(toml_value upstream_base "$build_manifest")
 cp -a "$packaged_source" "$source_tree/$module_name-$module_version"
 
 cat >"$stub_bin/limine-mkinitcpio" <<'EOF'
@@ -406,6 +444,13 @@ grep -Fq -- \
     "-I$dkms_tree/$module_name/$module_version/build/.radeon-trace-include/include/trace" \
     "$evidence_dir/make.log" ||
     die "DKMS make invocation omits the private trace-include path"
+grep -Fq -- \
+    "-include $dkms_tree/$module_name/$module_version/build/radeon-build-profile.h" \
+    "$evidence_dir/make.log" ||
+    die "DKMS make invocation omits the package build-profile header"
+grep -Fq -- "RADEON_BUILD_PROFILE=$expected_module_profile" \
+    "$evidence_dir/make.log" ||
+    die "DKMS make invocation omits the selected build profile"
 if grep -Eq -- '(^|[[:space:]])-march=native([[:space:]]|$)|(^|[[:space:]])-funsafe-math-optimizations([[:space:]]|$)' \
         "$evidence_dir/make.log"; then
     die "DKMS compiler commands admit userspace CFLAGS"
@@ -428,12 +473,24 @@ module_path=${modules[0]}
 module_name_actual=$(modinfo -F name "$module_path")
 module_srcversion=$(modinfo -F srcversion "$module_path")
 module_vermagic=$(modinfo -F vermagic "$module_path")
+module_profile=$(modinfo -F gororoba_build_profile "$module_path")
+module_source_commit=$(modinfo -F gororoba_source_commit "$module_path")
+module_policy=$(modinfo -F gororoba_feature_policy_sha256 "$module_path")
+module_upstream=$(modinfo -F gororoba_upstream_base "$module_path")
 [[ $module_name_actual == radeon ]] ||
     die "installed module name is $module_name_actual"
 [[ -n $module_srcversion ]] ||
     die "installed module srcversion is empty"
 [[ $module_vermagic == "$kernel_release "* ]] ||
     die "installed module vermagic does not start with $kernel_release"
+[[ $module_profile == "$expected_module_profile" ]] ||
+    die "installed module build profile disagrees with the package manifest"
+[[ $module_source_commit == "$expected_source_commit" ]] ||
+    die "installed module source commit disagrees with the package manifest"
+[[ $module_policy == "$expected_policy" ]] ||
+    die "installed module feature policy disagrees with the package manifest"
+[[ $module_upstream == "$expected_upstream" ]] ||
+    die "installed module upstream base disagrees with the package manifest"
 
 {
     printf 'package=%s\n' "$package_path"
@@ -447,6 +504,10 @@ module_vermagic=$(modinfo -F vermagic "$module_path")
     printf 'module_name=%s\n' "$module_name_actual"
     printf 'srcversion=%s\n' "$module_srcversion"
     printf 'vermagic=%s\n' "$module_vermagic"
+    printf 'build_profile=%s\n' "$module_profile"
+    printf 'source_commit=%s\n' "$module_source_commit"
+    printf 'feature_policy_sha256=%s\n' "$module_policy"
+    printf 'upstream_base=%s\n' "$module_upstream"
     printf 'sha256=%s\n' "$(sha256sum "$module_path" | awk '{print $1}')"
 } >"$evidence_dir/module-metadata.txt"
 

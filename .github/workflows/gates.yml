@@ -45,8 +45,8 @@ jobs:
       - name: Source-pin gate calibration
         run: python3 scripts/check_radeon_source_pin.py --self-test
 
-      - name: Tagged-source build calibration
-        run: sh scripts/check_radeon_tagged_source_compiles.sh --self-test
+      - name: Pinned-source build calibration
+        run: sh scripts/check_radeon_pinned_source_compiles.sh --self-test
 
       - name: Base-delta closure calibration
         run: python3 scripts/check_base_delta_map_closure.py --self-test
@@ -54,11 +54,24 @@ jobs:
       - name: ruff
         run: ruff check scripts/
 
+      - name: actionlint
+        run: actionlint
+
       - name: shellcheck
         run: |
           shellcheck -S error scripts/*.sh \
             packaging/arch/radeon-unified-dkms/*.sh \
-            packaging/arch/radeon-unified-dkms/radeon-dkms-make
+            packaging/arch/radeon-unified-dkms/radeon-dkms-make \
+            packaging/arch/radeon-unified-dkms/radeon-profile-dev
+
+      - name: Package profile calibration
+        run: python3 scripts/check_radeon_package_profiles.py --self-test
+
+      - name: Package profiles
+        run: python3 scripts/check_radeon_package_profiles.py
+
+      - name: Development profile selector
+        run: bash scripts/test_radeon_profile_dev.sh
 
       - name: DKMS KCFLAGS composition
         run: bash scripts/test_radeon_dkms_kcflags_composition.sh
@@ -100,16 +113,22 @@ jobs:
       # One lock per physical host. Each repository serializes its own jobs,
       # and two runner services share this machine, so the lock is what keeps a
       # source build and a packaging build off the same cores and page cache.
-      - name: Tagged source builds against 7.1
+      - name: Pinned production and development source build against 7.1
         run: |
           : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
           mkdir -p "$HOME/.cache/gororoba-ci"
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            timeout 15m sh scripts/check_radeon_tagged_source_compiles.sh \
+            timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
               --source-repository "$SOURCE_REPOSITORY" \
-              --kernel-build-root "$KERNEL_BUILD_ROOT_71"
+              --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
+              --profile prod
+          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
+              --source-repository "$SOURCE_REPOSITORY" \
+              --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
+              --profile all-dev
 
-      - name: Build and verify legacy-equivalent package
+      - name: Build and verify deterministic split packages
         run: |
           set -euo pipefail
           PACKAGE_WORK="${RUNNER_TEMP}/radeon-package-artifacts"
@@ -121,45 +140,71 @@ jobs:
             RADEON_UNIFIED_SOURCE_URL="git+file://${SOURCE_REPOSITORY}" \
               makepkg -fC --noconfirm
           )
-          package_path=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
-            -name 'radeon-unified-dkms-*.pkg.tar.zst' | sort | tail -n 1)
-          [ -n "$package_path" ] || {
-            echo "makepkg produced no radeon-unified-dkms package" >&2
+          # shellcheck disable=SC2034
+          startdir=packaging/arch/radeon-unified-dkms
+          source packaging/arch/radeon-unified-dkms/PKGBUILD
+          prod_package=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
+            -name "radeon-unified-dkms-${pkgver}-${pkgrel}-*.pkg.tar.zst")
+          dev_package=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
+            -name "radeon-unified-dkms-dev-${pkgver}-${pkgrel}-*.pkg.tar.zst")
+          [ -f "$prod_package" ] && [ -f "$dev_package" ] || {
+            echo "makepkg did not produce both split packages" >&2
             exit 1
           }
-          printf 'PACKAGE_PATH=%s\n' "$package_path" >>"$GITHUB_ENV"
-          verifier_output=$(bash scripts/verify_radeon_unified_dkms_package.sh \
-            --source-repository "$SOURCE_REPOSITORY" \
-            --package "$package_path")
-          printf '%s\n' "$verifier_output"
-          package_sha256=$(printf '%s\n' "$verifier_output" |
-            sed -n 's/^package_sha256=//p')
-          if [ "$(printf '%s\n' "$package_sha256" | wc -l)" -ne 1 ] ||
-              ! printf '%s\n' "$package_sha256" |
-                grep -Eq '^[0-9a-f]{64}$'; then
-            echo "package verifier emitted no unique canonical digest" >&2
-            exit 1
-          fi
-          printf 'PACKAGE_SHA256=%s\n' "$package_sha256" >>"$GITHUB_ENV"
-          RADEON_UNIFIED_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" \
-            bash scripts/test_radeon_dkms_package_verifier.sh "$package_path"
+          for profile in prod dev; do
+            if [ "$profile" = prod ]; then
+              package_path=$prod_package
+            else
+              package_path=$dev_package
+            fi
+            verifier_output=$(bash scripts/verify_radeon_unified_dkms_package.sh \
+              --source-repository "$SOURCE_REPOSITORY" \
+              --package "$package_path")
+            printf '%s\n' "$verifier_output"
+            package_sha256=$(printf '%s\n' "$verifier_output" |
+              sed -n 's/^package_sha256=//p')
+            if [ "$(printf '%s\n' "$package_sha256" | wc -l)" -ne 1 ] ||
+                ! printf '%s\n' "$package_sha256" |
+                  grep -Eq '^[0-9a-f]{64}$'; then
+              echo "$profile verifier emitted no unique canonical digest" >&2
+              exit 1
+            fi
+            upper_profile=${profile^^}
+            printf '%s_PACKAGE_PATH=%s\n' "$upper_profile" "$package_path" \
+              >>"$GITHUB_ENV"
+            printf '%s_PACKAGE_SHA256=%s\n' "$upper_profile" "$package_sha256" \
+              >>"$GITHUB_ENV"
+            RADEON_UNIFIED_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" \
+              bash scripts/test_radeon_dkms_package_verifier.sh "$package_path"
+          done
 
-      - name: Exercise disposable DKMS lifecycle
+      - name: Exercise both disposable DKMS lifecycles
         run: |
           set -euo pipefail
           evidence_parent=/var/lib/gororoba-ci/radeon-dkms-lifecycle
-          evidence_dir="${evidence_parent}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           sudo install -d -m 0755 -o root -g root "$evidence_parent"
-          lifecycle_status=0
-          sudo bash scripts/test_radeon_dkms_lifecycle.sh \
-            --package "$PACKAGE_PATH" \
-            --expected-sha256 "$PACKAGE_SHA256" \
-            --kernel-release "$(uname -r)" \
-            --evidence-dir "$evidence_dir" ||
-            lifecycle_status=$?
-          sudo cp -a "$evidence_dir" "$PACKAGE_WORK/lifecycle-evidence"
-          sudo chown -R "$(id -u):$(id -g)" "$PACKAGE_WORK/lifecycle-evidence"
-          exit "$lifecycle_status"
+          for profile in prod dev; do
+            if [ "$profile" = prod ]; then
+              package_path=$PROD_PACKAGE_PATH
+              package_sha256=$PROD_PACKAGE_SHA256
+            else
+              package_path=$DEV_PACKAGE_PATH
+              package_sha256=$DEV_PACKAGE_SHA256
+            fi
+            evidence_dir="${evidence_parent}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${profile}"
+            lifecycle_status=0
+            sudo bash scripts/test_radeon_dkms_lifecycle.sh \
+              --package "$package_path" \
+              --expected-sha256 "$package_sha256" \
+              --kernel-release "$(uname -r)" \
+              --evidence-dir "$evidence_dir" ||
+              lifecycle_status=$?
+            sudo cp -a "$evidence_dir" \
+              "$PACKAGE_WORK/lifecycle-evidence-${profile}"
+            sudo chown -R "$(id -u):$(id -g)" \
+              "$PACKAGE_WORK/lifecycle-evidence-${profile}"
+            [ "$lifecycle_status" -eq 0 ] || exit "$lifecycle_status"
+          done
 
       - name: Legacy tree manifest reproduces
         run: |
@@ -386,9 +431,10 @@ jobs:
 
           mkdir -p "$HOME/.cache/gororoba-ci"
           flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
-            timeout 15m sh scripts/check_radeon_tagged_source_compiles.sh \
+            timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
               --source-repository "$SOURCE_REPOSITORY" \
-              --kernel-build-root "$KERNEL_BUILD_ROOT" | tee "$work/compile.log"
+              --kernel-build-root "$KERNEL_BUILD_ROOT" \
+              --profile prod | tee "$work/compile.log"
 
           grep -Eq 'CC \[M\][[:space:]]+radeon_gem\.o' "$work/compile.log" || {
             echo "radeon_gem.o did not reach the compiler, so no branch was built" >&2

@@ -48,6 +48,8 @@ python3 "$repo_root/scripts/check_radeon_source_pin.py" \
     --identity "$identity" \
     --repository "$source_repository" \
     --pkgbuild "$pkgbuild"
+python3 "$repo_root/scripts/check_radeon_package_profiles.py" --self-test
+python3 "$repo_root/scripts/check_radeon_package_profiles.py"
 bash "$repo_root/scripts/test_radeon_dkms_kcflags_composition.sh"
 
 # PKGBUILD consumes startdir and declares source and sha256sums when sourced.
@@ -85,9 +87,11 @@ done
 [[ $vcs_sources -eq 1 ]] ||
     die "PKGBUILD must declare exactly one VCS source"
 
-if grep -Eq '^[[:space:]]*PATCH(_MATCH)?\[' "$package_dir/dkms.conf"; then
-    die "active dkms.conf retains a patch phase"
-fi
+for config in "$package_dir/dkms.conf.prod" "$package_dir/dkms.conf.dev"; do
+    if grep -Eq '^[[:space:]]*PATCH(_MATCH)?\[' "$config"; then
+        die "$(basename "$config") retains a patch phase"
+    fi
+done
 if grep -Eq 'patch[[:space:]]+-p|git[[:space:]]+apply|canonical-source\\.tar' \
         "$pkgbuild"; then
     die "active PKGBUILD retains package-time source mutation"

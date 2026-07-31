@@ -146,6 +146,7 @@ python3 "$repo_root/scripts/check_radeon_source_pin.py" \
     --identity "$identity" \
     --repository "$source_repository" \
     --pkgbuild "$pkgbuild"
+python3 "$repo_root/scripts/check_radeon_package_profiles.py" >/dev/null
 
 # shellcheck disable=SC2034
 startdir=$package_dir
@@ -153,10 +154,17 @@ startdir=$package_dir
 source "$pkgbuild"
 
 if [[ -z $package_path ]]; then
-    package_path=$(find "$package_dir" -maxdepth 1 -type f \
-        \( -name "${pkgname}-${pkgver}-${pkgrel}-*.pkg.tar.zst" -o \
-        -name "${pkgname}-${pkgver}-${pkgrel}-*.pkg.tar.xz" \) |
-        sort | tail -n 1)
+    mapfile -t package_candidates < <(
+        find "$package_dir" -maxdepth 1 -type f \
+            \( -name "radeon-unified-dkms-${pkgver}-${pkgrel}-*.pkg.tar.zst" -o \
+            -name "radeon-unified-dkms-dev-${pkgver}-${pkgrel}-*.pkg.tar.zst" -o \
+            -name "radeon-unified-dkms-${pkgver}-${pkgrel}-*.pkg.tar.xz" -o \
+            -name "radeon-unified-dkms-dev-${pkgver}-${pkgrel}-*.pkg.tar.xz" \) |
+            sort
+    )
+    [[ ${#package_candidates[@]} -eq 1 ]] ||
+        die "pass --package when zero or multiple split packages are present"
+    package_path=${package_candidates[0]}
 fi
 [[ -n $package_path && -f $package_path && ! -L $package_path ]] ||
     die "built package is absent or not a regular file"
@@ -197,10 +205,31 @@ for metadata_file in .BUILDINFO .MTREE .PKGINFO; do
     [[ $(stat -c %a "$metadata_path") == 644 ]] ||
         die "package metadata mode is not 644: $metadata_file"
 done
-assert_pkginfo_scalar pkgname "$pkgname" "$pkginfo"
-assert_pkginfo_scalar pkgbase "${pkgbase:-$pkgname}" "$pkginfo"
+mapfile -t actual_package_names < <(pkginfo_values pkgname "$pkginfo")
+[[ ${#actual_package_names[@]} -eq 1 ]] ||
+    die ".PKGINFO does not contain exactly one package name"
+actual_package_name=${actual_package_names[0]}
+case $actual_package_name in
+    radeon-unified-dkms)
+        profile_suffix=prod
+        expected_pkgdesc=$_prod_pkgdesc
+        expected_optdepends=()
+        expected_conflicts=('radeon-unified-dkms-dev' "${_legacy_conflicts[@]}")
+        ;;
+    radeon-unified-dkms-dev)
+        profile_suffix=dev
+        expected_pkgdesc=$_dev_pkgdesc
+        expected_optdepends=("${_dev_optdepends[@]}")
+        expected_conflicts=('radeon-unified-dkms' "${_legacy_conflicts[@]}")
+        ;;
+    *)
+        die "unexpected split package name: $actual_package_name"
+        ;;
+esac
+assert_pkginfo_scalar pkgname "$actual_package_name" "$pkginfo"
+assert_pkginfo_scalar pkgbase "$pkgbase" "$pkginfo"
 assert_pkginfo_scalar pkgver "${pkgver}-${pkgrel}" "$pkginfo"
-assert_pkginfo_scalar pkgdesc "$pkgdesc" "$pkginfo"
+assert_pkginfo_scalar pkgdesc "$expected_pkgdesc" "$pkginfo"
 assert_pkginfo_scalar url "$url" "$pkginfo"
 assert_pkginfo_array arch "$pkginfo" "$tmpdir/arch.expected" \
     "$tmpdir/arch.actual" "${arch[@]}"
@@ -209,15 +238,15 @@ assert_pkginfo_array license "$pkginfo" "$tmpdir/license.expected" \
 assert_pkginfo_array depend "$pkginfo" "$tmpdir/depend.expected" \
     "$tmpdir/depend.actual" "${depends[@]}"
 assert_pkginfo_array optdepend "$pkginfo" "$tmpdir/optdepend.expected" \
-    "$tmpdir/optdepend.actual" "${optdepends[@]}"
+    "$tmpdir/optdepend.actual" "${expected_optdepends[@]}"
 assert_pkginfo_array makedepend "$pkginfo" "$tmpdir/makedepend.expected" \
     "$tmpdir/makedepend.actual" "${makedepends[@]}"
 assert_pkginfo_array provides "$pkginfo" "$tmpdir/provides.expected" \
-    "$tmpdir/provides.actual" "${provides[@]}"
+    "$tmpdir/provides.actual" "${_common_provides[@]}"
 assert_pkginfo_array conflict "$pkginfo" "$tmpdir/conflict.expected" \
-    "$tmpdir/conflict.actual" "${conflicts[@]}"
+    "$tmpdir/conflict.actual" "${expected_conflicts[@]}"
 assert_pkginfo_array replaces "$pkginfo" "$tmpdir/replaces.expected" \
-    "$tmpdir/replaces.actual" "${replaces[@]}"
+    "$tmpdir/replaces.actual" "${_legacy_replaces[@]}"
 
 mapfile -t source_roots < <(
     find "$extracted_root/usr/src" -mindepth 1 -maxdepth 1 -type d \
@@ -259,7 +288,13 @@ check_member() {
 
 check_member "$package_dir/source-identity.toml" \
     "$dkms_relative/source-identity.toml" 644 source-identity.toml
-check_member "$package_dir/dkms.conf" "$dkms_relative/dkms.conf" 644 dkms.conf
+check_member "$package_dir/dkms.conf.${profile_suffix}" \
+    "$dkms_relative/dkms.conf" 644 dkms.conf
+check_member "$package_dir/radeon-build-profile.${profile_suffix}.toml" \
+    "$dkms_relative/radeon-build-profile.toml" 644 \
+    radeon-build-profile.toml
+check_member "$package_dir/radeon-build-profile.${profile_suffix}.h" \
+    "$dkms_relative/radeon-build-profile.h" 644 radeon-build-profile.h
 check_member "$package_dir/pre-build.sh" \
     "$dkms_relative/pre-build.sh" 755 pre-build.sh
 check_member "$package_dir/dkms-initramfs-refresh.sh" \
@@ -282,6 +317,17 @@ check_member "$package_dir/radeon-unified-mkinitcpio.conf" \
     radeon-unified-mkinitcpio.conf
 check_member "$package_dir/radeon-re.conf" \
     "etc/modprobe.d/radeon-re.conf" 644 radeon-re.conf
+if [[ $profile_suffix == dev ]]; then
+    check_member "$package_dir/radeon-dev.conf" \
+        "etc/modprobe.d/radeon-unified-dev.conf" 644 radeon-dev.conf
+    for profile in observe-dev probe-dev mutate-dev; do
+        check_member "$package_dir/${profile}.conf" \
+            "usr/share/radeon-unified/profiles/${profile}.conf" 644 \
+            "${profile}.conf"
+    done
+    check_member "$package_dir/radeon-profile-dev" \
+        "usr/bin/radeon-profile-dev" 755 radeon-profile-dev
+fi
 
 git -C "$source_repository" -c tar.umask=0022 archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
@@ -320,8 +366,11 @@ cmp "$expected_members" "$archive_manifest" ||
     die "archive member manifest differs from the closed package payload"
 
 entry_count=$(find "$dkms_root/radeon" -type f | wc -l)
-[[ $entry_count -eq 214 ]] ||
-    die "installed Radeon archive has $entry_count entries, expected 214"
+expected_entry_count=$(git -C "$source_repository" ls-tree -r --name-only \
+    "${_source_commit}:drivers/gpu/drm/radeon" | wc -l)
+[[ $entry_count -eq $expected_entry_count ]] ||
+    die "installed Radeon archive has $entry_count entries, expected $expected_entry_count"
 
 printf 'package_sha256=%s\n' "$package_sha256"
+printf 'package_profile=%s\n' "$profile_suffix"
 printf 'radeon unified DKMS package source export: PASS (%s)\n' "$package_path"
