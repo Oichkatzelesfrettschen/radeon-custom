@@ -329,6 +329,16 @@ if [[ $profile_suffix == dev ]]; then
         "usr/bin/radeon-profile-dev" 755 radeon-profile-dev
 fi
 
+if [[ $profile_suffix == dev ]]; then
+    expected_install="$package_dir/radeon-unified-dkms-dev.install"
+else
+    expected_install="$package_dir/radeon-unified-dkms.install"
+fi
+[[ -f "$extracted_root/.INSTALL" ]] ||
+    die "package carries no .INSTALL transition script"
+cmp "$expected_install" "$extracted_root/.INSTALL" ||
+    die ".INSTALL bytes differ from the packaged transition script"
+
 git -C "$source_repository" -c tar.umask=0022 archive \
     "${_source_commit}:drivers/gpu/drm/radeon" |
     bsdtar -xpf - -C "$expected_radeon"
@@ -350,7 +360,7 @@ while IFS= read -r -d '' source_path; do
 done < <(find "$expected_radeon" -type f -print0 | sort -z)
 
 {
-    printf '%s\n' .BUILDINFO .MTREE .PKGINFO
+    printf '%s\n' .BUILDINFO .INSTALL .MTREE .PKGINFO
     while IFS= read -r path; do
         [[ -n $path ]] || continue
         printf '%s\n' "$path"
