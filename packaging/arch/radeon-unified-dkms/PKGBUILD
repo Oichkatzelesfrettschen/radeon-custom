@@ -54,6 +54,8 @@ source=(
   'radeon-dkms-make'
   'radeon-unified-mkinitcpio.conf'
   'radeon-re.conf'
+  'radeon-production-admission'
+  'radeon-production-admission.hook'
   'radeon-dev.conf'
   'observe-dev.conf'
   'probe-dev.conf'
@@ -79,11 +81,13 @@ sha256sums=(
   '42a1da0ac3578507138a4b9546a607551aa73c4ac364407a78b72ee21e3da6ea'
   'b9804f15603da32c4e6254466a1b24975d7c67fbb1194c72f7b6995da005201e'
   '538d6d5764362d624fba1bc2e5512576dec705e7ac7c37f4232b4675c7cf1781'
+  'aa77b3767be0cf2ec2fa9484e3187ec82fcbe8b3fcec05e66f49098bc8572a10'
+  '92f868bf7c1349b97f81fab072af088b9dec26217611ea3c1b46ff98ec60ca73'
   'a3f8628a3350bd1603c26f85b8cb298710e130da12d1c8ec3c01a8183a3a4acb'
   '9405011491bd33e960b855579af73a3ae3a2a5de4600251094774fc95dba6526'
   'ed339b0b6483e36add069f884263bea486e5d7b5c8823c3d04da0476e31be671'
   'b4638dab3ea64284f1f3f3572ea8bf782e818035e7ee946a5edff46069cacb08'
-  '96eccf8ea7424ebe0d7962562ef873272c3d9552e1cfafe88ca685ab6b70ba02'
+  '943062fa7819de86909677369bb5dc69161bb17605eb902b80e4cee7bcd95b8f'
   '4654ac693bd3fd00da36779ed9ec5b10a61ab84fd4fef5a6addcf85a2fe988e7'
   '9a1e4041c958ae1fe12ded548cb0d334a5833c0d4a29bb20ba3e64cf8a9b381a'
 )
@@ -166,6 +170,10 @@ _package_common() {
     "${pkgdir}/etc/mkinitcpio.conf.d/radeon-unified.conf"
   install -Dm644 "${srcdir}/radeon-re.conf" \
     "${pkgdir}/etc/modprobe.d/radeon-re.conf"
+  install -Dm755 "${srcdir}/radeon-production-admission" \
+    "${pkgdir}/usr/share/radeon-unified/radeon-production-admission"
+  install -Dm644 "${srcdir}/radeon-production-admission.hook" \
+    "${pkgdir}/usr/share/libalpm/hooks/radeon-production-admission.hook"
 }
 
 package_radeon-unified-dkms() {

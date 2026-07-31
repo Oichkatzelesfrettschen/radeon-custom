@@ -317,6 +317,12 @@ check_member "$package_dir/radeon-unified-mkinitcpio.conf" \
     radeon-unified-mkinitcpio.conf
 check_member "$package_dir/radeon-re.conf" \
     "etc/modprobe.d/radeon-re.conf" 644 radeon-re.conf
+check_member "$package_dir/radeon-production-admission" \
+    "usr/share/radeon-unified/radeon-production-admission" 755 \
+    radeon-production-admission
+check_member "$package_dir/radeon-production-admission.hook" \
+    "usr/share/libalpm/hooks/radeon-production-admission.hook" 644 \
+    radeon-production-admission.hook
 if [[ $profile_suffix == dev ]]; then
     check_member "$package_dir/radeon-dev.conf" \
         "etc/modprobe.d/radeon-unified-dev.conf" 644 radeon-dev.conf

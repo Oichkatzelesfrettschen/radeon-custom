@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = radeon-unified-dkms
+
+[Action]
+Description = Refusing production radeon-unified while development configuration survives
+When = PreTransaction
+Exec = /usr/share/radeon-unified/radeon-production-admission
+AbortOnFail

@@ -99,8 +99,11 @@ requested_profile() {
 }
 
 # modprobe -c resolves every configuration file in modprobe's own search
-# order, so a duplicate or overriding profile_dev row in another file is
-# visible here even though the override file itself looks correct.
+# order, and the kernel takes the last occurrence of a repeated option, so
+# the final profile_dev row is the value the next module load receives. The
+# package default radeon-unified-dev.conf row (profile_dev=off) sorts before
+# the selector override, so both legitimately coexist. Every row must still
+# carry a valid value: an unknown value anywhere is foreign configuration.
 effective_profile() {
     command -v modprobe >/dev/null 2>&1 ||
         die "modprobe is required for effective-configuration verification"
@@ -113,22 +116,22 @@ effective_profile() {
                 }
             }
         }')
-    row_count=$(printf '%s' "$rows" | grep -c . || true)
-    if [ "$row_count" -gt 1 ]; then
-        die "effective modprobe configuration carries $row_count profile_dev rows"
-    fi
-    if [ "$row_count" -eq 0 ]; then
+    if [ -z "$rows" ]; then
         printf '%s\n' off
         return
     fi
-    case "$rows" in
-        off | observe-dev | probe-dev | mutate-dev)
-            printf '%s\n' "$rows"
-            ;;
-        *)
-            die "effective modprobe configuration carries an invalid profile_dev value"
-            ;;
-    esac
+    last=
+    for row in $rows; do
+        case "$row" in
+            off | observe-dev | probe-dev | mutate-dev)
+                last=$row
+                ;;
+            *)
+                die "effective modprobe configuration carries an invalid profile_dev value: $row"
+                ;;
+        esac
+    done
+    printf '%s\n' "$last"
 }
 
 verify_effective_matches() {

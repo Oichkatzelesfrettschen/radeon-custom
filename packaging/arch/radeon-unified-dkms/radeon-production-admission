@@ -1,0 +1,37 @@
+#!/bin/sh
+# Refuse a production radeon-unified-dkms transaction while development
+# module configuration survives. A PreTransaction hook with AbortOnFail runs
+# this before any package change, so the refusal lands while the host still
+# runs its previous working configuration; a plain .install scriptlet cannot
+# abort a pacman transaction because libalpm ignores scriptlet exit codes.
+set -eu
+
+blocked=0
+override=/etc/modprobe.d/radeon-unified-profile-dev.conf
+if [ -e "$override" ]; then
+    printf 'radeon-unified-dkms: development profile override %s is present\n' \
+        "$override" >&2
+    blocked=1
+fi
+if command -v modprobe >/dev/null 2>&1; then
+    rows=$(modprobe -c 2>/dev/null | awk '
+        $1 == "options" && $2 == "radeon" {
+            for (i = 3; i <= NF; i++) {
+                if ($i ~ /^profile_dev=/ ||
+                    $i ~ /^rs480_/ ||
+                    $i ~ /^radeon_rs480_/ ||
+                    $i ~ /^palm_pci_reset_unsafe=/)
+                    print $i
+            }
+        }' | grep -v '^profile_dev=off$' || true)
+    if [ -n "$rows" ]; then
+        printf 'radeon-unified-dkms: effective modprobe configuration carries development options:\n' >&2
+        printf '%s\n' "$rows" >&2
+        blocked=1
+    fi
+fi
+if [ "$blocked" -ne 0 ]; then
+    printf 'radeon-unified-dkms: select the off profile or remove the development configuration, then retry\n' >&2
+    exit 1
+fi
+exit 0

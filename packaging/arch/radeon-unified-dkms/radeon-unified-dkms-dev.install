@@ -16,8 +16,12 @@ pre_remove() {
             "$_override" >&2
         return 0
     fi
+    _override_digest=$(sha256sum "$_override")
+    _override_digest=${_override_digest%% *}
     for _profile in observe-dev probe-dev mutate-dev; do
-        if cmp -s "$_profile_root/${_profile}.conf" "$_override"; then
+        _template_digest=$(sha256sum "$_profile_root/${_profile}.conf")
+        _template_digest=${_template_digest%% *}
+        if [ "$_override_digest" = "$_template_digest" ]; then
             rm -f -- "$_override"
             if [ -x "$_refresh" ]; then
                 "$_refresh" || printf \
