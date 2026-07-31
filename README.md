@@ -148,6 +148,11 @@ sh scripts/check_radeon_pinned_source_compiles.sh \
   --kernel-build-root /path/to/7.1-build-root \
   --profile all-dev
 
+# Build the exact production source carried by a verified package artifact
+sh scripts/check_radeon_packaged_source_compiles.sh \
+  --package /path/to/radeon-unified-dkms-0.3-97-x86_64.pkg.tar.zst \
+  --kernel-build-root /path/to/kernel-build-root
+
 # Verify the split package identities and the runtime selector
 python3 scripts/check_radeon_package_profiles.py
 bash scripts/test_radeon_profile_dev.sh
@@ -203,6 +208,9 @@ bash scripts/test_radeon_profile_dev.sh
 
 # clean and allowlisted logs pass, an unapproved warning fails
 sh scripts/check_radeon_pinned_source_compiles.sh --self-test
+
+# Production policy drift and unapproved warnings fail
+sh scripts/check_radeon_packaged_source_compiles.sh --self-test
 
 # known-good prose silent, known-bad prose reported, corpus selection correct
 python3 scripts/check_project_prose_style.py --self-test
