@@ -15,6 +15,10 @@ upstream_base_path = "UPSTREAM_BASE.toml"
 upstream_commit = "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
 upstream_subtree = "06a00c78fc5be13ed90c2a2c6973f272d993b6a3"
 
+profiled_source_tag = "radeon-unified-0.4-profiled-source"
+profiled_source_tag_object = "a2a4c2cc66bdb8cfd56a0538365d94ba13677cd5"
+profiled_source_commit = "9f74840dcc542f84bf396247ee4aba6de52e24f4"
+
 equivalence_tag = "radeon-unified-0.3-pkgrel91-source-equivalent"
 equivalence_tag_object = "81a2510e34d1d62f5486683bcd6e240db8223b7d"
 equivalence_commit = "9079be562eebd184da9cf891fbc6a72d5ac0d9f3"
