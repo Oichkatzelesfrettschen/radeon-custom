@@ -1,0 +1,44 @@
+# shellcheck shell=bash
+# The production module compiles no development interfaces, so a surviving
+# development module option would reject production module insertion. The
+# admission check fails the pacman transaction while the host still runs its
+# previous working configuration.
+
+_admit_production() {
+    _blocked=0
+    if [ -e /etc/modprobe.d/radeon-unified-profile-dev.conf ]; then
+        printf 'radeon-unified-dkms: development profile override %s is present\n' \
+            /etc/modprobe.d/radeon-unified-profile-dev.conf >&2
+        _blocked=1
+    fi
+    if command -v modprobe >/dev/null 2>&1; then
+        _rows=$(modprobe -c 2>/dev/null | awk '
+            $1 == "options" && $2 == "radeon" {
+                for (i = 3; i <= NF; i++) {
+                    if ($i ~ /^profile_dev=/ ||
+                        $i ~ /^rs480_/ ||
+                        $i ~ /^radeon_rs480_/ ||
+                        $i ~ /^palm_pci_reset_unsafe=/)
+                        print $i
+                }
+            }')
+        if [ -n "$_rows" ]; then
+            printf 'radeon-unified-dkms: effective modprobe configuration carries development options:\n' >&2
+            printf '%s\n' "$_rows" >&2
+            _blocked=1
+        fi
+    fi
+    if [ "$_blocked" -ne 0 ]; then
+        printf 'radeon-unified-dkms: remove the development configuration and retry\n' >&2
+        return 1
+    fi
+    return 0
+}
+
+pre_install() {
+    _admit_production
+}
+
+pre_upgrade() {
+    _admit_production
+}

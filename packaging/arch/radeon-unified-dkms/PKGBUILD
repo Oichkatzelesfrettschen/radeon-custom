@@ -81,7 +81,7 @@ sha256sums=(
   '9405011491bd33e960b855579af73a3ae3a2a5de4600251094774fc95dba6526'
   'ed339b0b6483e36add069f884263bea486e5d7b5c8823c3d04da0476e31be671'
   'b4638dab3ea64284f1f3f3572ea8bf782e818035e7ee946a5edff46069cacb08'
-  '8cca4dee1fbf74faaad91de0ba7b9a3f1492320d91338ad49fbb0fb1923bdb65'
+  '3692650d60ea70f6fadf8c70d30374c618321070caf18b7fe469becf634fd290'
   '4654ac693bd3fd00da36779ed9ec5b10a61ab84fd4fef5a6addcf85a2fe988e7'
   '9a1e4041c958ae1fe12ded548cb0d334a5833c0d4a29bb20ba3e64cf8a9b381a'
 )
@@ -160,6 +160,7 @@ _package_common() {
 
 package_radeon-unified-dkms() {
   pkgdesc=${_prod_pkgdesc}
+  install=radeon-unified-dkms.install
   provides=("${_common_provides[@]}")
   conflicts=('radeon-unified-dkms-dev' "${_legacy_conflicts[@]}")
   replaces=("${_legacy_replaces[@]}")
@@ -170,6 +171,7 @@ package_radeon-unified-dkms() {
 
 package_radeon-unified-dkms-dev() {
   pkgdesc=${_dev_pkgdesc}
+  install=radeon-unified-dkms-dev.install
   provides=("${_common_provides[@]}")
   conflicts=('radeon-unified-dkms' "${_legacy_conflicts[@]}")
   replaces=("${_legacy_replaces[@]}")
