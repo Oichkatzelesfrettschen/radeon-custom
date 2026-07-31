@@ -28,7 +28,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Unified DKMS package 0.3-96 exports the signed legacy-equivalent driver tree under deployment modes 0644 and 0755, composes trusted KCFLAGS, and resolves the trace include inside the private DKMS build tree | package export, 6.18 and 7.1 compile, and the disposable DKMS lifecycle on 7.1.4-1-cachyos are CI-verified; target installation is staged without retained evidence; target boot, module load, and hardware operation are not run |
+| Unified DKMS package 0.3-96 exports the signed legacy-equivalent driver tree under deployment modes 0644 and 0755, composes trusted KCFLAGS, and resolves the trace include inside the private DKMS build tree | package export, 6.18 and 7.1 compile, and the disposable DKMS lifecycle on 7.1.4-1-cachyos are CI-verified; installed and runtime-accepted on the RS482 target across a boot with matching module srcversion, `lockup_timeout=0`, and inert hazard interfaces, retained as steinmarder-r300 bundle `cachyos_vostro1000_rs482_radeon_unified_pkgrel96_runtime_20260730T233253Z`; hardware operation beyond debugfs inventory is not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
 | RS482 GPU resumes accelerated work after reset | not achieved; GA-rooted wedge remains |
