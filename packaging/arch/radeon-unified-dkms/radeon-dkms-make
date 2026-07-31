@@ -6,6 +6,7 @@ set -f
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 trace_include="${script_dir}/.radeon-trace-include/include/trace"
+profile_header="${script_dir}/radeon-build-profile.h"
 kcflags=${KCFLAGS-}
 o2_count=0
 pipe_count=0
@@ -31,6 +32,12 @@ for word in $kcflags; do
         -I*/.radeon-trace-include/include/trace)
             printf '%s\n' \
                 'radeon-dkms-make: caller KCFLAGS contains the reserved trace include' \
+                >&2
+            exit 2
+            ;;
+        -include | */radeon-build-profile.h)
+            printf '%s\n' \
+                'radeon-dkms-make: caller KCFLAGS contains the reserved build profile' \
                 >&2
             exit 2
             ;;
@@ -65,6 +72,9 @@ fi
 [ "$pipe_count" -eq 1 ] ||
     kcflags="${kcflags:+${kcflags} }-pipe"
 kcflags="${kcflags:+${kcflags} }-I${trace_include}"
+if [ -f "$profile_header" ]; then
+    kcflags="${kcflags} -include ${profile_header}"
+fi
 
 KCFLAGS=$kcflags
 export KCFLAGS

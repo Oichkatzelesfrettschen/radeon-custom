@@ -88,8 +88,10 @@ legacy_provide=$(
     startdir=$script_dir
     # shellcheck source=/dev/null
     source ./PKGBUILD
+    # The split recipe declares the shared functional identities once and
+    # assigns them inside both package functions.
     # shellcheck disable=SC2154
-    for provided_capability in "${provides[@]}"; do
+    for provided_capability in "${_common_provides[@]}"; do
         if [ "$provided_capability" = "$legacy_provide" ]; then
             printf 'unified legacy provide matches %s\n' "$legacy_provide"
             exit 0

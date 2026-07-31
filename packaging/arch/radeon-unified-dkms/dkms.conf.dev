@@ -1,0 +1,40 @@
+PACKAGE_NAME="radeon-unified"
+PACKAGE_VERSION="0.3"
+radeon_kernel_build_root=${R300_RS480_KERNEL_BUILD_ROOT:-/lib/modules/${kernelver}/build}
+printf -v radeon_kernel_build_root_q '%q' "$radeon_kernel_build_root"
+radeon_dkms_build_root="${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build"
+printf -v radeon_dkms_helper_q '%q' \
+    "${radeon_dkms_build_root}/radeon-dkms-make"
+printf -v radeon_dkms_compiler_q '%q' \
+    "${radeon_dkms_build_root}/radeon-dkms-compiler"
+printf -v radeon_dkms_module_q '%q' "${radeon_dkms_build_root}/radeon"
+printf -v radeon_kernel_release_q '%q' "$kernelver"
+radeon_parallel_arg=
+radeon_parallel_valid=1
+if [ "${parallel_jobs+x}" = x ]; then
+    case $parallel_jobs in
+        '')
+            radeon_parallel_arg=-j
+            ;;
+        *[!0-9]*)
+            radeon_parallel_valid=0
+            ;;
+        *)
+            radeon_parallel_arg="-j${parallel_jobs}"
+            ;;
+    esac
+fi
+
+BUILT_MODULE_NAME[0]="radeon"
+BUILT_MODULE_LOCATION[0]="radeon"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+
+MAKE[0]="R300_RS480_KERNEL_BUILD_ROOT=${radeon_kernel_build_root_q} ${radeon_dkms_helper_q}${radeon_parallel_arg:+ ${radeon_parallel_arg}} RADEON_BUILD_PROFILE=mutate-dev KERNELRELEASE=${radeon_kernel_release_q} CC=${radeon_dkms_compiler_q} -C ${radeon_kernel_build_root_q} M=${radeon_dkms_module_q} modules"
+if [ "$radeon_parallel_valid" -ne 1 ]; then
+    MAKE[0]="printf '%s\\n' 'dkms.conf: invalid DKMS parallel job count' >&2; false"
+fi
+
+PRE_BUILD="pre-build.sh ${radeon_kernel_release_q} ${radeon_kernel_build_root_q}"
+POST_INSTALL="dkms-initramfs-refresh.sh"
+
+AUTOINSTALL="yes"
