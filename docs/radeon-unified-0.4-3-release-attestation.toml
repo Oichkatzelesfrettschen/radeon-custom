@@ -1,0 +1,44 @@
+# Release identity for the exact 0.4-2 package artifacts.
+
+schema = 1
+release = "radeon-unified-0.4-3"
+
+packaging_commit = "d838320224c80e7fd1824ec0547efd04e5263fb1"
+profiled_source_tag = "radeon-unified-0.4-profiled-source"
+profiled_source_tag_object = "a2a4c2cc66bdb8cfd56a0538365d94ba13677cd5"
+source_commit = "9f74840dcc542f84bf396247ee4aba6de52e24f4"
+repository_tree = "eaf29987f8ea814044ed154876736a51b07baf6c"
+driver_tree = "c0ccf1097a8e7900f1c41b49199ea0e330fc4eae"
+feature_policy_tree = "a8afcce68414566836ada84adfada8cde5362ea8"
+feature_policy_sha256 = "1cc57d53a5493ad79d61463960632a3a3ecdbd2b1836e228fc4e74f22421669f"
+
+prod_package = "radeon-unified-dkms-0.4-3-x86_64.pkg.tar.zst"
+prod_package_sha256 = "0839d7c1f2255e7d91b1b83ea9aae3667a603f4635e3b5a2509500601513ba9f"
+prod_buildinfo_sha256 = "bee7e2fe0e959a56d56c973bd9a3af8861c2fcaa1996f1530241c3e95e18605a"
+prod_pkginfo_sha256 = "a61800dfb3aa9106b5fa91b6e40c8203134e8b25fd3feab3eb2e9a45d876338a"
+prod_signature_sha256 = "6cc4e88f1f6f47ab2089456e6c4ce88fcecd4c00976333c3868c2f9472d61eba"
+
+dev_package = "radeon-unified-dkms-dev-0.4-3-x86_64.pkg.tar.zst"
+dev_package_sha256 = "f2fc30f52d064d2186f6ad2f1c275c6dc4c358d0fb309f1db2b8e0101fe4be2c"
+dev_buildinfo_sha256 = "e15dc2d7ddd82c019a675454aa09a54243d385662616f7b2091c0a7a8674cac0"
+dev_pkginfo_sha256 = "1f180f9720ab91c323fa64b5977124c36488e747d8085df5a9f59bbaa5250296"
+dev_signature_sha256 = "03323abe99931bd623c90446bbb66180f17a313a1dc557a816bb03e5f7fff198"
+
+policy_package = "radeon-rs482-policy-0.4-3-x86_64.pkg.tar.zst"
+policy_package_sha256 = "bdd4f4d46f13b780365dd61d3601d87c7d59ef0ef1013ab38719924ab6b0d5a1"
+policy_buildinfo_sha256 = "fa3b876ed53901367879a6138fa7c0f3ba8602da4b608d525fa9a5edc6ace256"
+policy_pkginfo_sha256 = "d396197a14b67366b646fb70a8c05e7c4e934530b2d3e88513549fb92569d3cb"
+policy_signature_sha256 = "0ae5580430e60e50dea7c1aea47bcc5da687bb3e929c095eb20330f065c1d739"
+
+signing_format = "ssh"
+signing_namespace = "radeon-unified-release"
+signer_principal = "151315375+Oichkatzelesfrettschen@users.noreply.github.com"
+signer_fingerprint = "SHA256:wD1s3tsUVHvjrLUruNtYVv/K1/4b7sJA4W7DTdMn8SA"
+verification_command = "ssh-keygen -Y verify -f release-allowed-signers -I 151315375+Oichkatzelesfrettschen@users.noreply.github.com -n radeon-unified-release -s PACKAGE.sig < PACKAGE"
+
+protected_main_workflow_run = 30679711688
+protected_main_artifact = "radeon-unified-d838320224c80e7fd1824ec0547efd04e5263fb1-30679711688"
+protected_main_artifact_id = 8811921667
+target_compile_workflow_run = 30680189505
+target_kernel_release = "7.1.3-2-cachyos"
+release_archive = "https://github.com/Oichkatzelesfrettschen/radeon-custom/releases/tag/radeon-unified-0.4-3"
