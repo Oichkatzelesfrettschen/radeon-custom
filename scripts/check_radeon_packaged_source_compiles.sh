@@ -10,7 +10,6 @@ expected_identity="$package_dir/source-identity.toml"
 expected_profile="$package_dir/radeon-build-profile.prod.toml"
 expected_header="$package_dir/radeon-build-profile.prod.h"
 expected_dkms="$package_dir/dkms.conf.prod"
-expected_policy="$package_dir/radeon-re.conf"
 package_path=
 kernel_build_root=
 self_test=0
@@ -163,8 +162,11 @@ cmp "$source_root/radeon-build-profile.h" "$expected_header" ||
     die "package build header differs from the production declaration"
 cmp "$source_root/dkms.conf" "$expected_dkms" ||
     die "package DKMS recipe differs from the production declaration"
-cmp "$package_root/etc/modprobe.d/radeon-re.conf" "$expected_policy" ||
-    die "package runtime policy differs from the production declaration"
+# Board policy ships in radeon-rs482-policy, so the module package carries
+# no radeon-re.conf; a stray copy here would reintroduce board-global
+# options into the capability package.
+[ ! -e "$package_root/etc/modprobe.d/radeon-re.conf" ] ||
+    die "module package carries board policy radeon-re.conf"
 
 for development_path in \
     "$package_root/etc/modprobe.d/radeon-unified-dev.conf" \
