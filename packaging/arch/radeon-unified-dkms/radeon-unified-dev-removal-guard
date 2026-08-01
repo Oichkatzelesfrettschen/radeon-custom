@@ -1,0 +1,38 @@
+#!/bin/sh
+# Guard development-package removal against orphaning a profile override.
+#
+# The development package owns the only tooling that understands the
+# selector-written override, so the package must not disappear while that
+# configuration survives. A PreTransaction hook with AbortOnFail runs this
+# before any package change: a canonical selector-written override is
+# retired through the selector's own off path while the selector still
+# exists, and foreign content refuses the removal for operator cleanup.
+set -eu
+
+override=/etc/modprobe.d/radeon-unified-profile-dev.conf
+profile_root=/usr/share/radeon-unified/profiles
+
+[ -e "$override" ] || exit 0
+
+if [ -L "$override" ] || [ ! -f "$override" ]; then
+    printf 'radeon-unified-dkms-dev: %s is not a regular file; remove it and retry\n' \
+        "$override" >&2
+    exit 1
+fi
+
+override_digest=$(sha256sum "$override")
+override_digest=${override_digest%% *}
+for profile in observe-dev probe-dev mutate-dev; do
+    template="$profile_root/${profile}.conf"
+    [ -f "$template" ] || continue
+    template_digest=$(sha256sum "$template")
+    template_digest=${template_digest%% *}
+    if [ "$override_digest" = "$template_digest" ]; then
+        radeon-profile-dev select off
+        exit 0
+    fi
+done
+
+printf 'radeon-unified-dkms-dev: %s carries foreign content\n' "$override" >&2
+printf 'radeon-unified-dkms-dev: remove or correct it, then retry the removal\n' >&2
+exit 1

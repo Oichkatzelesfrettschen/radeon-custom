@@ -1,0 +1,45 @@
+#!/bin/sh
+# Admit the RS482 board policy only on its target platform.
+#
+# The policy file sets global radeon module options measured on one board:
+# the RS482 IGP 1002:5974 with Dell subsystem 1028:022a behind the 1002:5950
+# host bridge in the Dell Vostro 1000. A PreTransaction hook with AbortOnFail
+# runs this before the policy lands, so another machine refuses the package
+# instead of inheriting board-specific power, reset, and display choices.
+set -eu
+
+fail() {
+    printf 'radeon-rs482-policy: %s\n' "$*" >&2
+    printf 'radeon-rs482-policy: this package configures the RS482 Dell Vostro 1000 alone\n' >&2
+    exit 1
+}
+
+[ -d /sys/bus/pci/devices ] || fail "PCI device inventory is unavailable"
+
+gpu=
+for device in /sys/bus/pci/devices/*; do
+    [ -r "$device/vendor" ] && [ -r "$device/device" ] || continue
+    [ "$(cat "$device/vendor")" = 0x1002 ] || continue
+    case "$(cat "$device/device")" in
+        0x5974)
+            gpu=$device
+            ;;
+        0x5950)
+            host_bridge=1
+            ;;
+    esac
+done
+[ -n "$gpu" ] || fail "RS482 GPU 1002:5974 is absent"
+[ "${host_bridge:-0}" -eq 1 ] || fail "RS480 host bridge 1002:5950 is absent"
+[ "$(cat "$gpu/subsystem_vendor")" = 0x1028 ] ||
+    fail "GPU subsystem vendor is not Dell 1028"
+[ "$(cat "$gpu/subsystem_device")" = 0x022a ] ||
+    fail "GPU subsystem device is not 022a"
+
+if [ -r /sys/class/dmi/id/product_name ]; then
+    product=$(tr -s ' ' <"/sys/class/dmi/id/product_name")
+    [ "$product" = "Vostro 1000" ] ||
+        fail "DMI product is not the Vostro 1000: $product"
+fi
+
+exit 0
