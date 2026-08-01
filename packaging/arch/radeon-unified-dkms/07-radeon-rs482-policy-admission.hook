@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = radeon-rs482-policy
+
+[Action]
+Description = Refusing RS482 board policy on a non-target platform
+When = PreTransaction
+Exec = /usr/share/radeon-unified/radeon-rs482-policy-admission
+AbortOnFail

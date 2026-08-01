@@ -315,14 +315,18 @@ check_member "$package_dir/radeon-dkms-ccache-clang" \
 check_member "$package_dir/radeon-unified-mkinitcpio.conf" \
     "etc/mkinitcpio.conf.d/radeon-unified.conf" 644 \
     radeon-unified-mkinitcpio.conf
-check_member "$package_dir/radeon-re.conf" \
-    "etc/modprobe.d/radeon-re.conf" 644 radeon-re.conf
 check_member "$package_dir/radeon-production-admission" \
     "usr/share/radeon-unified/radeon-production-admission" 755 \
     radeon-production-admission
-check_member "$package_dir/radeon-production-admission.hook" \
-    "usr/share/libalpm/hooks/radeon-production-admission.hook" 644 \
-    radeon-production-admission.hook
+check_member "$package_dir/05-radeon-production-admission.hook" \
+    "usr/share/libalpm/hooks/05-radeon-production-admission.hook" 644 \
+    05-radeon-production-admission.hook
+check_member "$package_dir/radeon-rs482-policy-admission" \
+    "usr/share/radeon-unified/radeon-rs482-policy-admission" 755 \
+    radeon-rs482-policy-admission
+check_member "$package_dir/07-radeon-rs482-policy-admission.hook" \
+    "usr/share/libalpm/hooks/07-radeon-rs482-policy-admission.hook" 644 \
+    07-radeon-rs482-policy-admission.hook
 if [[ $profile_suffix == dev ]]; then
     check_member "$package_dir/radeon-dev.conf" \
         "etc/modprobe.d/radeon-unified-dev.conf" 644 radeon-dev.conf
@@ -333,6 +337,12 @@ if [[ $profile_suffix == dev ]]; then
     done
     check_member "$package_dir/radeon-profile-dev" \
         "usr/bin/radeon-profile-dev" 755 radeon-profile-dev
+    check_member "$package_dir/radeon-unified-dev-removal-guard" \
+        "usr/share/radeon-unified/radeon-unified-dev-removal-guard" 755 \
+        radeon-unified-dev-removal-guard
+    check_member "$package_dir/06-radeon-unified-dev-removal-guard.hook" \
+        "usr/share/libalpm/hooks/06-radeon-unified-dev-removal-guard.hook" 644 \
+        06-radeon-unified-dev-removal-guard.hook
 fi
 
 if [[ $profile_suffix == dev ]]; then

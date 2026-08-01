@@ -209,6 +209,30 @@ jobs:
             [ "$lifecycle_status" -eq 0 ] || exit "$lifecycle_status"
           done
 
+      - name: Exercise the pacman transition matrix
+        run: |
+          set -euo pipefail
+          policy_package=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
+            -name 'radeon-rs482-policy-*.pkg.tar.zst' | head -n 1)
+          [ -n "$policy_package" ] ||
+            { echo 'policy package artifact not found' >&2; exit 1; }
+          sudo bash scripts/test_radeon_package_transitions.sh \
+            --prod-package "$PROD_PACKAGE_PATH" \
+            --dev-package "$DEV_PACKAGE_PATH" \
+            --policy-package "$policy_package" \
+            --log-dir "$PACKAGE_WORK/transition-matrix-logs"
+          sudo chown -R "$(id -u):$(id -g)" \
+            "$PACKAGE_WORK/transition-matrix-logs"
+
+      - name: Upload transition matrix logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transition-matrix-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.PACKAGE_WORK }}/transition-matrix-logs
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Legacy tree manifest reproduces
         run: |
           # RUNNER_TEMP is per-job, so a cancelled run leaves nothing a later

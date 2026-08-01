@@ -91,7 +91,10 @@ def verify(package_dir: Path, prod_config: Path | None = None) -> None:
     pkgver = shell_scalar(pkgbuild, "pkgver")
     pkgrel = shell_integer(pkgbuild, "pkgrel")
 
-    required_names = "pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev')"
+    required_names = (
+        "pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev' "
+        "'radeon-rs482-policy')"
+    )
     if required_names not in pkgbuild:
         raise ProfileError("PKGBUILD does not declare both split packages")
     if "conflicts=('radeon-unified-dkms-dev'" not in pkgbuild:

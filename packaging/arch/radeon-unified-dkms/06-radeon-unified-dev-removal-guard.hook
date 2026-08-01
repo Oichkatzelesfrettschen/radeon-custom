@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Remove
+Type = Package
+Target = radeon-unified-dkms-dev
+
+[Action]
+Description = Retiring or refusing the development profile override before removal
+When = PreTransaction
+Exec = /usr/share/radeon-unified/radeon-unified-dev-removal-guard
+AbortOnFail
