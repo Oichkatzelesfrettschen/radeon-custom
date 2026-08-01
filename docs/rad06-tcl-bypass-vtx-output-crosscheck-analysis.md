@@ -1,9 +1,14 @@
 # RAD-06 analysis: TCL-bypass VAP_VTX_SIZE vs VAP_OUT_VTX_FMT cross-check
 
-Companion to the tracked draft
-`patches/rs480/drafts/rad06-tcl-bypass-vtx-output-crosscheck.draft.patch`,
-which stands outside the DKMS series until `dkms.conf` wires it in.  Paths below are relative to the
-unpacked DKMS source tree
+The draft this analysis produced converted into the native source
+repository: linux-radeon-gororoba commit 70ee0de ("radeon: reject
+TCL-bypass draws that underfeed the GA tuple") lands the tracker cases,
+the reg_srcs trims, and the draw-time cross-check, tightened to the
+proven position-plus-texcoord shape with declines for color and
+point-size presence and for PRIM_WALK 3 immediate draws.
+`policy/rs4xx-guard-scope.tsv` row M25 there records the execution
+scope.  This analysis remains the derivation record; paths below are
+relative to the unpacked DKMS source tree
 `packaging/arch/radeon-unified-dkms/pkg/radeon-unified-dkms/usr/src/radeon-unified-0.3/`.
 
 ## Register-identity correction
