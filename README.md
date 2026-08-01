@@ -28,7 +28,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 
 | Property | Current status |
 | --- | --- |
-| Radeon DKMS package 0.4-2 exports the protected profiled source as conflicting production and development packages plus the separate radeon-rs482-policy board package, binds each module to a fixed build profile, keeps the development runtime profile off, and admits the board policy on the RS482 Vostro 1000 alone | both closed package payloads, production builds on 6.18 and 7.1, the all-development build on 7.1, and both disposable DKMS lifecycles are required; target installation, module load, and hardware operation remain separate evidence |
+| Radeon DKMS package 0.4-3 exports the protected profiled source as conflicting production and development packages plus the separate radeon-rs482-policy board package, binds each module to a fixed build profile, keeps the development runtime profile off, and admits the board policy on the RS482 Vostro 1000 alone | both closed package payloads, production builds on 6.18 and 7.1, the all-development build on 7.1, and both disposable DKMS lifecycles are required; target installation, module load, and hardware operation remain separate evidence |
 | Unified DKMS package 0.3-96 is the retained target-runtime baseline | installed and runtime-accepted on the RS482 target across a boot with matching module srcversion, `lockup_timeout=0`, and inert hazard interfaces, retained as steinmarder-r300 bundle `cachyos_vostro1000_rs482_radeon_unified_pkgrel96_runtime_20260730T233253Z`; hardware operation beyond debugfs inventory is not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
@@ -150,7 +150,7 @@ sh scripts/check_radeon_pinned_source_compiles.sh \
 
 # Build the exact production source carried by a verified package artifact
 sh scripts/check_radeon_packaged_source_compiles.sh \
-  --package /path/to/radeon-unified-dkms-0.4-2-x86_64.pkg.tar.zst \
+  --package /path/to/radeon-unified-dkms-0.4-3-x86_64.pkg.tar.zst \
   --kernel-build-root /path/to/kernel-build-root
 
 # Verify the split package identities and the runtime selector
@@ -164,8 +164,8 @@ bash scripts/test_radeon_profile_dev.sh
 # retention at development removal. Requires root, pacstrap, and arch-chroot;
 # module compilation stays in the DKMS lifecycle test.
 sudo bash scripts/test_radeon_package_transitions.sh \
-  --prod-package /path/to/radeon-unified-dkms-0.4-2-x86_64.pkg.tar.zst \
-  --dev-package /path/to/radeon-unified-dkms-dev-0.4-2-x86_64.pkg.tar.zst
+  --prod-package /path/to/radeon-unified-dkms-0.4-3-x86_64.pkg.tar.zst \
+  --dev-package /path/to/radeon-unified-dkms-dev-0.4-3-x86_64.pkg.tar.zst
 
 # Both recipes preserve admitted non-conflicting root-build KCFLAGS and enforce
 # the package-owned -O2 -pipe release profile. Duplicate -O2 or -pipe and

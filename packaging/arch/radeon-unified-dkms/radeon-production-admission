@@ -13,23 +13,39 @@ if [ -e "$override" ]; then
         "$override" >&2
     blocked=1
 fi
-if command -v modprobe >/dev/null 2>&1; then
-    rows=$(modprobe -c 2>/dev/null | awk '
-        $1 == "options" && $2 == "radeon" {
-            for (i = 3; i <= NF; i++) {
-                if ($i ~ /^profile_dev=/ ||
-                    $i ~ /^rs480_/ ||
-                    $i ~ /^radeon_rs480_/ ||
-                    $i ~ /^palm_pci_reset_unsafe=/)
-                    print $i
-            }
-        }' | grep -v '^profile_dev=off$' || true)
-    if [ -n "$rows" ]; then
-        printf 'radeon-unified-dkms: effective modprobe configuration carries development options:\n' >&2
-        printf '%s\n' "$rows" >&2
-        blocked=1
-    fi
-fi
+# A development option row blocks admission only when the transaction does
+# not govern its file: rows in configuration owned by a radeon-unified
+# package are replaced atomically by the same transaction that installs
+# production, while unowned or foreign-owned rows survive it and would
+# reject the production module at the next load.
+for conf_dir in /etc/modprobe.d /usr/lib/modprobe.d; do
+    [ -d "$conf_dir" ] || continue
+    for conf in "$conf_dir"/*.conf; do
+        [ -f "$conf" ] || continue
+        case $(pacman -Qoq "$conf" 2>/dev/null || printf unowned) in
+            radeon-unified-dkms | radeon-unified-dkms-dev | \
+            radeon-rs482-policy)
+                continue
+                ;;
+        esac
+        rows=$(awk '
+            $1 == "options" && $2 == "radeon" {
+                for (i = 3; i <= NF; i++) {
+                    if ($i ~ /^profile_dev=/ ||
+                        $i ~ /^rs480_/ ||
+                        $i ~ /^radeon_rs480_/ ||
+                        $i ~ /^palm_pci_reset_unsafe=/)
+                        print $i
+                }
+            }' "$conf" | grep -v '^profile_dev=off$' || true)
+        if [ -n "$rows" ]; then
+            printf 'radeon-unified-dkms: %s carries development options:\n' \
+                "$conf" >&2
+            printf '%s\n' "$rows" >&2
+            blocked=1
+        fi
+    done
+done
 if [ "$blocked" -ne 0 ]; then
     printf 'radeon-unified-dkms: select the off profile or remove the development configuration, then retry\n' >&2
     exit 1
