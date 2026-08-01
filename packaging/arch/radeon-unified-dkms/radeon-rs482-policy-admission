@@ -37,7 +37,10 @@ done
     fail "GPU subsystem device is not 022a"
 
 if [ -r /sys/class/dmi/id/product_name ]; then
-    product=$(tr -s ' ' <"/sys/class/dmi/id/product_name")
+    # The board reports "Vostro   1000" with interior and trailing padding,
+    # so the comparison squeezes repeats and strips edge whitespace.
+    product=$(tr -s ' ' <"/sys/class/dmi/id/product_name" |
+        sed 's/^ *//; s/ *$//')
     [ "$product" = "Vostro 1000" ] ||
         fail "DMI product is not the Vostro 1000: $product"
 fi
