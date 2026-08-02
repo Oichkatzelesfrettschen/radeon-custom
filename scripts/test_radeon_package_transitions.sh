@@ -468,6 +468,8 @@ else
 fi
 
 if [[ $with_kernel -eq 0 ]]; then
-    log "kernel rows: not run (pass --with-kernel for a real DKMS kernel target)"
+    log "kernel rows: not run (pass --with-kernel for a real DKMS kernel target;" \
+        "a --with-kernel run covers every package row too, so one invocation" \
+        "attests the full matrix)"
 fi
 log "radeon package transition matrix: PASS"
