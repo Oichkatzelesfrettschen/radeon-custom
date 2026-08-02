@@ -21,6 +21,40 @@ permissions:
   contents: read
 
 jobs:
+  # Resolve whether a pull request changes anything the kernel-build and
+  # packaging jobs must recompile or reproduce. A Markdown-only change is
+  # documentation and skips those jobs; every other path builds. package and
+  # compat-6-18 are required ruleset contexts, and a required job skipped by a
+  # job-level condition is treated as passing, so a documentation change still
+  # merges. The dependent jobs read this output fail-closed: a failed or empty
+  # classification builds rather than silencing the gate.
+  changes:
+    runs-on: [self-hosted, linux, cachyos, workstation-host]
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.classify.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          clean: true
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: classify
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo "non-PR event ${{ github.event_name }}: full build"
+            echo "build=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base='${{ github.event.pull_request.base.sha }}'
+          verdict=$(git diff --name-only "$base" HEAD \
+            | sh scripts/classify_build_relevance.sh)
+          echo "classification: $verdict"
+          echo "$verdict" >>"$GITHUB_OUTPUT"
+
   static:
     runs-on: [self-hosted, linux, cachyos, workstation-host]
     timeout-minutes: 20
@@ -33,6 +67,9 @@ jobs:
 
       # Each verdict-producing gate proves itself on known-good and known-bad
       # inputs before its tree verdict is trusted.
+      - name: Build-relevance classifier calibration
+        run: sh scripts/classify_build_relevance.sh --self-test
+
       - name: Prose gate calibration
         run: python3 scripts/check_project_prose_style.py --self-test
 
@@ -92,6 +129,8 @@ jobs:
           echo "checked-in text is plain ASCII"
 
   package:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.build != 'false' }}
     runs-on: [self-hosted, linux, cachyos, primary-compile-host]
     timeout-minutes: 45
     env:
@@ -391,6 +430,8 @@ jobs:
   # into the temporary Radeon source tree, so the job needs no write access to
   # it and holds none.
   compat-6-18:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.build != 'false' }}
     runs-on: [self-hosted, linux, cachyos, primary-compile-host]
     timeout-minutes: 45
     env:
