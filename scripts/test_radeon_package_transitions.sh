@@ -24,6 +24,8 @@ prod_package=
 dev_package=
 legacy_package=
 policy_package=
+hazard_package=
+watchdog_package=
 keep_root=0
 with_kernel=0
 cleanup_root=
@@ -48,6 +50,16 @@ while [[ $# -gt 0 ]]; do
         --policy-package)
             [[ $# -ge 2 ]] || die "--policy-package requires a path"
             policy_package=$2
+            shift 2
+            ;;
+        --hazard-package)
+            [[ $# -ge 2 ]] || die "--hazard-package requires a path"
+            hazard_package=$2
+            shift 2
+            ;;
+        --watchdog-package)
+            [[ $# -ge 2 ]] || die "--watchdog-package requires a path"
+            watchdog_package=$2
             shift 2
             ;;
         --keep-root)
@@ -81,6 +93,12 @@ done
     die "legacy package is absent: $legacy_package"
 [[ -z $policy_package || -f $policy_package ]] ||
     die "policy package is absent: $policy_package"
+[[ -z $hazard_package || -f $hazard_package ]] ||
+    die "hazard package is absent: $hazard_package"
+[[ -z $watchdog_package || -f $watchdog_package ]] ||
+    die "watchdog package is absent: $watchdog_package"
+[[ -z $hazard_package || -n $watchdog_package ]] ||
+    die "--hazard-package requires --watchdog-package for its dependency"
 [[ $(id -u) -eq 0 ]] || die "the disposable root requires root"
 command -v pacstrap >/dev/null 2>&1 || die "pacstrap is required"
 command -v arch-chroot >/dev/null 2>&1 || die "arch-chroot is required"
@@ -203,6 +221,12 @@ fi
 if [[ -n $policy_package ]]; then
     install -m 0644 "$policy_package" \
         "$root/transition-packages/policy.pkg.tar.zst"
+fi
+if [[ -n $hazard_package ]]; then
+    install -m 0644 "$hazard_package" \
+        "$root/transition-packages/hazard.pkg.tar.zst"
+    install -m 0644 "$watchdog_package" \
+        "$root/transition-packages/watchdog.pkg.tar.zst"
 fi
 
 in_root() {
@@ -399,6 +423,34 @@ if [[ -n $policy_package ]]; then
 fi
 
 transaction row8c-remove pacman -R --noconfirm radeon-unified-dkms
+
+if [[ -n $hazard_package ]]; then
+    # The hazard stack depends on the shared radeon-unified capability, so
+    # the prod<->dev module swap keeps it installed; a literal module-name
+    # dependency would let pacman drop the safety stack in the exact
+    # transition a mutation campaign requires.
+    log "row 11: hazard stack survives the prod<->dev module swap"
+    transaction row11-prod pacman -U --noconfirm \
+        /transition-packages/prod.pkg.tar.zst
+    transaction row11-substrate pacman -U --noconfirm \
+        /transition-packages/watchdog.pkg.tar.zst \
+        /transition-packages/hazard.pkg.tar.zst
+    in_root pacman -Qq rs480-reset-hazard-stack >/dev/null ||
+        die "row11: hazard stack did not install alongside production"
+    transaction row11-to-dev pacman -U /transition-packages/dev.pkg.tar.zst
+    in_root pacman -Qq rs480-reset-hazard-stack >/dev/null ||
+        die "row11: hazard stack was removed by the prod-to-dev swap"
+    in_root pacman -Qq radeon-unified-dkms-dev >/dev/null ||
+        die "row11: development module is absent after the swap"
+    transaction row11-to-prod pacman -U /transition-packages/prod.pkg.tar.zst
+    in_root pacman -Qq rs480-reset-hazard-stack >/dev/null ||
+        die "row11: hazard stack was removed by the dev-to-prod swap"
+    log "row11-hazard-stack-survival: PASS"
+    transaction row11-remove pacman -R --noconfirm \
+        rs480-reset-hazard-stack sp5100-tco-ioapic-dkms radeon-unified-dkms
+else
+    log "row 11 hazard-stack survival: not run (pass --hazard-package and --watchdog-package)"
+fi
 
 if [[ -n $legacy_package ]]; then
     log "row 9: roll production back to the legacy package"

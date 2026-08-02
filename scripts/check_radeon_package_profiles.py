@@ -178,6 +178,33 @@ def verify(package_dir: Path, prod_config: Path | None = None) -> None:
             raise ProfileError(f"{profile} template has unexpected options")
 
 
+def verify_hazard_stack(pkgbuild_text: str) -> None:
+    """The hazard stack rides through the prod<->dev module swap.
+
+    The production and development module packages conflict with each
+    other and share the radeon-unified capability. A hazard-stack
+    dependency naming a literal module package would make pacman remove
+    the stack during the swap a mutation campaign requires, so the
+    driver dependency binds to the shared capability.
+    """
+    match = re.search(r"^depends=\(([^)]*)\)", pkgbuild_text, re.MULTILINE)
+    if match is None:
+        raise ProfileError("hazard-stack PKGBUILD omits depends")
+    depends = re.findall(r"'([^']+)'", match.group(1))
+    for dep in depends:
+        name = re.split(r"[<>=]", dep, maxsplit=1)[0]
+        if name in ("radeon-unified-dkms", "radeon-unified-dkms-dev"):
+            raise ProfileError(
+                f"hazard-stack depends on literal module package {name}; "
+                "the prod<->dev swap removes it -- depend on the shared "
+                "radeon-unified capability"
+            )
+    if not any(dep.startswith("radeon-unified") for dep in depends):
+        raise ProfileError(
+            "hazard-stack lacks a radeon-unified capability dependency"
+        )
+
+
 def run_self_test(package_dir: Path, fixture: Path) -> None:
     verify(package_dir)
     try:
@@ -186,6 +213,17 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
         pass
     else:
         raise ProfileError("negative production fixture passes")
+    hazard_dir = package_dir.parent / "rs480-reset-hazard-stack"
+    verify_hazard_stack(read_ascii(hazard_dir / "PKGBUILD"))
+    known_bad = (
+        "depends=('radeon-unified-dkms' 'sp5100-tco-ioapic-dkms>=0.4-4')\n"
+    )
+    try:
+        verify_hazard_stack(known_bad)
+    except ProfileError:
+        pass
+    else:
+        raise ProfileError("literal module dependency fixture passes")
     print("radeon package profile calibration: PASS")
 
 
@@ -207,6 +245,12 @@ def main() -> int:
             run_self_test(package_dir, fixture)
         else:
             verify(package_dir)
+            verify_hazard_stack(
+                read_ascii(
+                    package_dir.parent
+                    / "rs480-reset-hazard-stack/PKGBUILD"
+                )
+            )
     except ProfileError as error:
         print(f"check_radeon_package_profiles: {error}", file=sys.stderr)
         return 1
