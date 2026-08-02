@@ -14,7 +14,7 @@ temp_root=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
 tmpdir=$(mktemp -d "$temp_root/radeon-profile-dev.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 fixture_root="$tmpdir/root"
-source_root="$fixture_root/usr/src/radeon-unified-0.4"
+source_root="$fixture_root/usr/src/radeon-unified-0.5"
 profile_root="$fixture_root/usr/share/radeon-unified/profiles"
 modprobe_root="$fixture_root/etc/modprobe.d"
 sys_root="$fixture_root/sys/module/radeon"
