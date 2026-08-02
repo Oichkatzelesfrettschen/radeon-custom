@@ -36,7 +36,7 @@ license=('GPL-2.0-only')
 # development module (radeon-unified-dkms-dev) provide; the two module packages
 # conflict with each other, so a literal package-name dependency here would
 # remove this stack during the prod<->dev swap that a mutation campaign
-# requires -- exactly the transition the stack exists to guard.
+# requires, which is exactly the transition the stack exists to guard.
 # sp5100-tco-ioapic-dkms>=0.4-4 guarantees the warm-boot latch clear that
 # keeps a watchdog-fired reboot from immediately retriggering reset.
 depends=('radeon-unified>=0.4' 'sp5100-tco-ioapic-dkms>=0.4-4')
