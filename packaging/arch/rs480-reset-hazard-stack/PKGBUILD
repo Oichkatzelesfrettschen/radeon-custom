@@ -25,15 +25,21 @@
 
 pkgname=rs480-reset-hazard-stack
 pkgver=0.2
-pkgrel=4
+pkgrel=5
 pkgdesc='RS480 failed-reset hazardous-fire safety stack: radeon-under-test + SB600 watchdog + runtime preflight'
 arch=('any')
 url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
 license=('GPL-2.0-only')
 # Hard chain: the driver under test and the SB600 watchdog substrate with the
-# fired-latch fix. sp5100-tco-ioapic-dkms>=0.4-4 guarantees the warm-boot latch
-# clear that keeps a watchdog-fired reboot from immediately retriggering reset.
-depends=('radeon-unified-dkms' 'sp5100-tco-ioapic-dkms>=0.4-4')
+# fired-latch fix. The driver dependency names the shared radeon-unified
+# capability, which both the production module (radeon-unified-dkms) and the
+# development module (radeon-unified-dkms-dev) provide; the two module packages
+# conflict with each other, so a literal package-name dependency here would
+# remove this stack during the prod<->dev swap that a mutation campaign
+# requires, which is exactly the transition the stack exists to guard.
+# sp5100-tco-ioapic-dkms>=0.4-4 guarantees the warm-boot latch clear that
+# keeps a watchdog-fired reboot from immediately retriggering reset.
+depends=('radeon-unified>=0.4' 'sp5100-tco-ioapic-dkms>=0.4-4')
 optdepends=('rs480-wd-feeder: compiled watchdog arming tool for SB600 research only, RETIRED for RAD-05 fire timing (the reset is not deferrable via WDIOC_SETTIMEOUT/WDIOC_KEEPALIVE/magic close); not a dead-man feeder for wedge fires'
             'socat: workstation-side netconsole listener for off-box capture')
 # Mechanism-name migration: supersede the old rad05-* package cleanly.
