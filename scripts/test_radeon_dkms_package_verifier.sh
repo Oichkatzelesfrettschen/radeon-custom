@@ -60,8 +60,9 @@ mkdir "$tmpdir/source-tree" "$tmpdir/source-mode-tree" \
     "$tmpdir/source-directory-mode-tree" \
     "$tmpdir/group-write-source-mode-tree"
 bsdtar -xpf "$package" -C "$tmpdir/source-tree"
+pkg_source_dir=$(cd "$tmpdir/source-tree/usr/src" && echo radeon-unified-*)
 printf '\n# verifier mutation fixture\n' \
-    >>"$tmpdir/source-tree/usr/src/radeon-unified-0.4/radeon/Makefile"
+    >>"$tmpdir/source-tree/usr/src/${pkg_source_dir}/radeon/Makefile"
 create_package_fixture "$tmpdir/mutated-source.pkg.tar.zst" \
     "$tmpdir/source-tree"
 expect_rejection source-mutation "$tmpdir/mutated-source.pkg.tar.zst" \
@@ -69,7 +70,7 @@ expect_rejection source-mutation "$tmpdir/mutated-source.pkg.tar.zst" \
 
 bsdtar -xpf "$package" -C "$tmpdir/source-mode-tree"
 chmod 0666 \
-    "$tmpdir/source-mode-tree/usr/src/radeon-unified-0.4/radeon/Makefile"
+    "$tmpdir/source-mode-tree/usr/src/${pkg_source_dir}/radeon/Makefile"
 create_package_fixture "$tmpdir/excess-source-mode.pkg.tar.zst" \
     "$tmpdir/source-mode-tree"
 expect_rejection excess-source-mode "$tmpdir/excess-source-mode.pkg.tar.zst" \
@@ -77,7 +78,7 @@ expect_rejection excess-source-mode "$tmpdir/excess-source-mode.pkg.tar.zst" \
 
 bsdtar -xpf "$package" -C "$tmpdir/group-write-source-mode-tree"
 chmod 0664 \
-    "$tmpdir/group-write-source-mode-tree/usr/src/radeon-unified-0.4/radeon/Makefile"
+    "$tmpdir/group-write-source-mode-tree/usr/src/${pkg_source_dir}/radeon/Makefile"
 create_package_fixture "$tmpdir/group-write-source-mode.pkg.tar.zst" \
     "$tmpdir/group-write-source-mode-tree"
 expect_rejection group-write-source-mode \
@@ -93,7 +94,7 @@ expect_rejection metadata-mutation "$tmpdir/mutated-metadata.pkg.tar.zst" \
     ".PKGINFO pkgver does not equal the selected PKGBUILD value"
 
 bsdtar -xpf "$package" -C "$tmpdir/extra-tree"
-: >"$tmpdir/extra-tree/usr/src/radeon-unified-0.4/unexpected"
+: >"$tmpdir/extra-tree/usr/src/${pkg_source_dir}/unexpected"
 create_package_fixture "$tmpdir/extra-file.pkg.tar.zst" \
     "$tmpdir/extra-tree"
 expect_rejection extra-member "$tmpdir/extra-file.pkg.tar.zst" \
@@ -101,7 +102,7 @@ expect_rejection extra-member "$tmpdir/extra-file.pkg.tar.zst" \
 
 bsdtar -xpf "$package" -C "$tmpdir/executable-tree"
 chmod 0644 \
-    "$tmpdir/executable-tree/usr/src/radeon-unified-0.4/radeon-dkms-make"
+    "$tmpdir/executable-tree/usr/src/${pkg_source_dir}/radeon-dkms-make"
 create_package_fixture "$tmpdir/nonexecutable-helper.pkg.tar.zst" \
     "$tmpdir/executable-tree"
 expect_rejection executable-mode "$tmpdir/nonexecutable-helper.pkg.tar.zst" \
@@ -109,7 +110,7 @@ expect_rejection executable-mode "$tmpdir/nonexecutable-helper.pkg.tar.zst" \
 
 bsdtar -xpf "$package" -C "$tmpdir/excess-executable-tree"
 chmod 0777 \
-    "$tmpdir/excess-executable-tree/usr/src/radeon-unified-0.4/radeon-dkms-make"
+    "$tmpdir/excess-executable-tree/usr/src/${pkg_source_dir}/radeon-dkms-make"
 create_package_fixture "$tmpdir/excess-executable-mode.pkg.tar.zst" \
     "$tmpdir/excess-executable-tree"
 expect_rejection excess-executable-mode \
@@ -118,7 +119,7 @@ expect_rejection excess-executable-mode \
 
 mkdir "$tmpdir/directory-mode-tree"
 bsdtar -xpf "$package" -C "$tmpdir/directory-mode-tree"
-chmod 0777 "$tmpdir/directory-mode-tree/usr/src/radeon-unified-0.4/radeon"
+chmod 0777 "$tmpdir/directory-mode-tree/usr/src/${pkg_source_dir}/radeon"
 create_package_fixture "$tmpdir/directory-mode.pkg.tar.zst" \
     "$tmpdir/directory-mode-tree"
 expect_rejection directory-mode "$tmpdir/directory-mode.pkg.tar.zst" \
@@ -126,7 +127,7 @@ expect_rejection directory-mode "$tmpdir/directory-mode.pkg.tar.zst" \
 
 bsdtar -xpf "$package" -C "$tmpdir/source-directory-mode-tree"
 chmod 0775 \
-    "$tmpdir/source-directory-mode-tree/usr/src/radeon-unified-0.4/radeon/reg_srcs"
+    "$tmpdir/source-directory-mode-tree/usr/src/${pkg_source_dir}/radeon/reg_srcs"
 create_package_fixture "$tmpdir/source-directory-mode.pkg.tar.zst" \
     "$tmpdir/source-directory-mode-tree"
 expect_rejection source-directory-mode \

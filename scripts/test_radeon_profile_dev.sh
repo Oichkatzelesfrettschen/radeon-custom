@@ -14,7 +14,7 @@ temp_root=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
 tmpdir=$(mktemp -d "$temp_root/radeon-profile-dev.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 fixture_root="$tmpdir/root"
-source_root="$fixture_root/usr/src/radeon-unified-0.4"
+source_root="$fixture_root/usr/src/radeon-unified-0.5"
 profile_root="$fixture_root/usr/share/radeon-unified/profiles"
 modprobe_root="$fixture_root/etc/modprobe.d"
 sys_root="$fixture_root/sys/module/radeon"
@@ -57,10 +57,10 @@ case $2 in
         printf '%s\n' mutate-dev
         ;;
     gororoba_source_commit)
-        printf '%s\n' 9f74840dcc542f84bf396247ee4aba6de52e24f4
+        printf '%s\n' 1b1f515d300f6590eb822c3e8a127e8dfc9a9abb
         ;;
     gororoba_feature_policy_sha256)
-        printf '%s\n' 1cc57d53a5493ad79d61463960632a3a3ecdbd2b1836e228fc4e74f22421669f
+        printf '%s\n' 8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd
         ;;
     gororoba_upstream_base)
         printf '%s\n' 7d0a66e4bb9081d75c82ec4957c50034cb0ea449

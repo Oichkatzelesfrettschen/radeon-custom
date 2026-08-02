@@ -127,6 +127,17 @@ fi
 [[ -n $prod_package && -n $dev_package ]] ||
     die "--prod-package and --dev-package are required"
 
+# The installed source root and dkms version follow the packaged pkgver, so
+# derive them from the prod package basename rather than pinning a release.
+pkgver=$(basename "$prod_package" | sed -E 's/^radeon-unified-dkms-([^-]+)-.*/\1/')
+[[ -n $pkgver ]] || die "cannot derive pkgver from $prod_package"
+src_root="radeon-unified-${pkgver}"
+if [[ -n $legacy_package ]]; then
+    legacy_pkgver=$(basename "$legacy_package" |
+        sed -E 's/^radeon-unified-dkms-([^-]+)-.*/\1/')
+    [[ -n $legacy_pkgver ]] || die "cannot derive pkgver from $legacy_package"
+fi
+
 temp_base=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
 root=$(mktemp -d "$temp_base/radeon-package-transitions.XXXXXX")
 matrix_status=0
@@ -255,8 +266,8 @@ assert_kernel_module() {
     actual=$(in_root modinfo -F vermagic "$module")
     [[ $actual == "$release "* ]] ||
         die "$label: module vermagic ${actual%% *} does not match $release"
-    in_root dkms status | grep -q 'radeon-unified/0.4.*installed' ||
-        die "$label: dkms does not report radeon-unified/0.4 installed"
+    in_root dkms status | grep -q "radeon-unified/${pkgver}.*installed" ||
+        die "$label: dkms does not report radeon-unified/${pkgver} installed"
     log "$label: PASS (kernel $release)"
 }
 
@@ -293,20 +304,20 @@ assert_state() {
 
 log "row 1: install the production package"
 transaction row1 pacman -U --noconfirm /transition-packages/prod.pkg.tar.zst
-assert_state row1-prod-install radeon-unified-dkms radeon-unified-0.4 \
+assert_state row1-prod-install radeon-unified-dkms "$src_root" \
     absent 0
 assert_kernel_module row1-prod-module prod
 
 log "row 2: replace production with development"
 transaction row2 pacman -U /transition-packages/dev.pkg.tar.zst
-assert_state row2-prod-to-dev radeon-unified-dkms-dev radeon-unified-0.4 \
+assert_state row2-prod-to-dev radeon-unified-dkms-dev "$src_root" \
     absent 1
 assert_kernel_module row2-dev-module mutate-dev
 
 log "row 3: select the observe-dev runtime profile"
 in_root radeon-profile-dev select observe-dev >/dev/null
 assert_state row3-observe-selected radeon-unified-dkms-dev \
-    radeon-unified-0.4 present 2
+    "$src_root" present 2
 
 log "row 4: production admission refuses the surviving override"
 if transaction row4 pacman -U /transition-packages/prod.pkg.tar.zst \
@@ -314,16 +325,16 @@ if transaction row4 pacman -U /transition-packages/prod.pkg.tar.zst \
     die "row4: production install succeeds over a development override"
 fi
 assert_state row4-admission-refusal radeon-unified-dkms-dev \
-    radeon-unified-0.4 present 2
+    "$src_root" present 2
 
 log "row 5: select off removes the override"
 in_root radeon-profile-dev select off >/dev/null
-assert_state row5-profile-off radeon-unified-dkms-dev radeon-unified-0.4 \
+assert_state row5-profile-off radeon-unified-dkms-dev "$src_root" \
     absent 1
 
 log "row 6: replace development with production"
 transaction row6 pacman -U /transition-packages/prod.pkg.tar.zst
-assert_state row6-dev-to-prod radeon-unified-dkms radeon-unified-0.4 \
+assert_state row6-dev-to-prod radeon-unified-dkms "$src_root" \
     absent 0
 assert_kernel_module row6-prod-module prod
 
@@ -361,7 +372,7 @@ assert_state row8b-removal-after-cleanup none none absent 0
 log "row 8c: production installs on the emptied configuration"
 transaction row8c pacman -U --noconfirm /transition-packages/prod.pkg.tar.zst
 assert_state row8c-prod-after-cleanup radeon-unified-dkms \
-    radeon-unified-0.4 absent 0
+    "$src_root" absent 0
 if [[ -n $policy_package ]]; then
     # arch-chroot binds the host /sys, so the board-policy admission sees
     # the real PCI inventory: the target host admits the policy package and
@@ -395,9 +406,9 @@ if [[ -n $legacy_package ]]; then
     transaction row9-legacy pacman -U /transition-packages/legacy.pkg.tar.zst
     actual_src=$(find "$root/usr/src" -mindepth 1 -maxdepth 1 \
         -name 'radeon-unified-*' -printf '%f\n' | sort | paste -sd, -)
-    [[ $actual_src == radeon-unified-0.3 ]] ||
+    [[ $actual_src == "radeon-unified-${legacy_pkgver}" ]] ||
         die "row9: rollback source roots are ${actual_src:-none}"
-    [[ ! -d "$root/usr/src/radeon-unified-0.4" ]] ||
+    [[ ! -d "$root/usr/src/${src_root}" ]] ||
         die "row9: profiled source root survives the rollback"
     log "row9-legacy-rollback: PASS"
 else

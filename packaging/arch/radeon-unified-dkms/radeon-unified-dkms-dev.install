@@ -7,7 +7,7 @@
 
 _override=/etc/modprobe.d/radeon-unified-profile-dev.conf
 _profile_root=/usr/share/radeon-unified/profiles
-_refresh=/usr/src/radeon-unified-0.4/dkms-initramfs-refresh.sh
+_refresh=/usr/src/radeon-unified-0.5/dkms-initramfs-refresh.sh
 
 pre_remove() {
     [ -e "$_override" ] || return 0
