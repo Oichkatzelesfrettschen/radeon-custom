@@ -3,6 +3,9 @@ src/
 *.pkg.tar*
 *.log
 
+# makepkg clones the pinned source through git+file:// into this working dir
+radeon-source/
+
 # Python and lint caches
 __pycache__/
 .ruff_cache/
