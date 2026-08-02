@@ -222,6 +222,59 @@ targeted immediate-mode positive control plus a malformed negative control.
 Applying a rejection rule to an unresolved draw mode contradicts the draft's
 own false-negative-over-false-positive posture.
 
+## Cross-check execution record
+
+The semantic audit and the offline gates from the acceptance contract ran
+against linux-radeon-gororoba main (`1b1f515`, which carries `70ee0de` and
+the position-presence tightening `5bbc12f`), the commit the DKMS
+`source-identity.toml` pins as `radeon-unified 0.5` profiled source.
+
+Color and point-size semantics: mesa r300g SWTCL emission is the strongest
+available source for the GUESSed FMT_0 dword weights.
+`r300_draw_emit_all_attribs` (`src/gallium/drivers/r300/r300_state_derived.c`)
+emits position `EMIT_4F` (4 dwords), each color and back-color `EMIT_4F`
+(4 dwords), and point size `EMIT_1F_PSIZE` (1 dword), and
+`r300_swtcl_vertex_psc` derives `VAP_VTX_SIZE` from that same
+`vinfo->size` sum.  That is rank-4 driver evidence, not a silicon
+measurement, so the GUESS marks in `radeon/r300_reg.h:116-119` stand and
+the checker keeps the decline for any FMT_0 bit beyond position.
+Immediate-draw semantics stay declined on the same posture:
+`r100_cs_track_check` consumes `vtx_size` itself in its `PRIM_WALK == 3`
+branch, and the GA starvation shape there is uncharacterized.
+
+Offline replay: `scripts/replay_r300_tcl_bypass_ib.c` in the native tree
+walks a raw PM4 dword stream (bare or `R3RKIB1`-wrapped retained capture)
+with the same register tracking `r300_packet0_check` keeps and evaluates
+the shared `r300_tcl_bypass_vtx_check.h` decision at each of the six draw
+opcodes, taking `VAP_VF_CNTL` from the draw packet payload as
+`r300_packet3_check` does.  Calibration: a synthetic fully pinned
+position-plus-two-texcoord stream returns REJECT at `VTX_SIZE` 8 and PASS
+at `VTX_SIZE` 12 (the anchor tuple).  The retained RS482 no-submit
+capture
+`cachyos_vostro1000_r300vk_nosubmit_triangle_pm4_capture_20260525T023522Z`
+(`1779676213-79574-3/pre_ib.bin`, TCL_BYPASS set, position-only tuple,
+`3D_DRAW_IMMD_2`, one of eight PSC EXT words written) replays to DECLINE,
+and stays DECLINE under a forced `VAP_VTX_SIZE` 0 mutation: the
+fail-closed arms hold on genuine capture bytes, and an underfeed inside
+an unpinned premise set never escalates to a false rejection.
+
+Generated bitmaps: `mkregtable` over `reg_srcs/{r300,rs480,r420,rv515,rs600}`
+routes 0x2084, 0x2090, 0x2094, 0x20B4, 0x2140, and 0x21E0-0x21FC to the
+packet0 check callback (bitmap bit set) in all five headers, and the
+`reg_srcs/r300` versus `reg_srcs/rs480` diff is exactly the gated R400-US
+allowlist, so the ordinary and the armed RS482 parse paths carry the same
+tracking.
+
+Build matrix: `check_radeon_pinned_source_compiles.sh` passes against the
+declared 6.18.38-2-cachyos-lts build root and against the RS482 host's
+installed 7.1.3-2-cachyos build root, both from the pinned source, with
+the warning scan clean.
+
+The ioctl-level negative/positive replay and the regression sweep on
+silicon remain with the parked kernel-baseline-equivalence work; the
+offline record above covers the source, generated-state, and build gates
+only.
+
 ## Claim boundary
 
 The check is submission-local. Its tracking structure zeroes for each CS, and
