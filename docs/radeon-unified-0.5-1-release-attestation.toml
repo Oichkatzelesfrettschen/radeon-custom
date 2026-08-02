@@ -1,0 +1,77 @@
+# Signed-release identity for the exact radeon-unified 0.5-1 package artifacts.
+# This record binds the detached SSH signatures and their verification to the
+# exact archive bytes. It carries release identity and makes no installation or
+# silicon claim; the exact packages, signatures, allowed-signers file, full
+# attestation, and signing transcript are retained in the durable private
+# build-host release store.
+
+schema = 1
+release = "radeon-unified-0.5-1"
+
+# The producing packaging tree is named by the last commit that changed the
+# package payload at or before the .BUILDINFO builddate (2026-08-02T20:33:37Z).
+# The payload-defining files are byte-identical from that commit to current
+# main, so the archives are reproducible from it. The two later packaging
+# commits add documentation and do not touch payload.
+payload_defining_commit = "a5ceb76de5a575c0c2b8a0696c1a2576aae59b8d"
+build_attestation = "packaging/arch/radeon-unified-dkms/release-0.5-1-attestation.md"
+
+profiled_source_tag = "radeon-unified-0.5-profiled-source"
+profiled_source_tag_object = "b6d737acd0a03657bfd60ce0a9ccbe5438a7102d"
+source_commit = "1b1f515d300f6590eb822c3e8a127e8dfc9a9abb"
+repository_tree = "1d7d9bfb95b4f83a69462b05bb4c0f7a0cdd3346"
+driver_tree = "20eacccb61205fd1476d3c915f95cbe2b12d272e"
+feature_policy_tree = "89dd4e9135f1578220d7ca66a8b4590281f214d3"
+feature_policy_sha256 = "8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd"
+
+prod_package = "radeon-unified-dkms-0.5-1-x86_64.pkg.tar.zst"
+prod_package_profile = "prod"
+prod_package_sha256 = "3ce6a5250b4496aa9a3dd7a9f372a6e120d4bd78d836f3fe8be60bfec532db53"
+prod_pkginfo_sha256 = "e01d27607afec3e6feb814337ead4d90225747cea70d987d753fba85144eee02"
+prod_buildinfo_sha256 = "84f1363d921cd8a0470eb1e010605e0e21c7f422f91d00a68b9a657f8a68d886"
+prod_signature_sha256 = "531d2e971e635b796d1a952b0afd339571b19d0d72ff3359858603f2d684ef9b"
+
+dev_package = "radeon-unified-dkms-dev-0.5-1-x86_64.pkg.tar.zst"
+dev_package_profile = "dev"
+dev_compiled_ceiling = "mutate-dev"
+dev_runtime_default = "off"
+dev_package_sha256 = "d0828701fff50c32d5b6c1992fdbf2398ef69d2e87637c1a5d3d8853993c952c"
+dev_pkginfo_sha256 = "193fc4c78a0e3914524e810a5072e34547ba8e9d13fbeeb3927529ca03edefb7"
+dev_buildinfo_sha256 = "cab66e79be331f1e76b4689d1c55e245837491650d379675a3c90511ef7db10b"
+dev_signature_sha256 = "70515df3d803722e6a63ac682c8924d89369e75e6ddacd975517b57f4f5bae50"
+
+policy_package = "radeon-rs482-policy-0.5-1-x86_64.pkg.tar.zst"
+policy_depends = "radeon-unified=0.5-1"
+policy_package_sha256 = "6d9a2250c9452bb2158b2ced1aacf472e835ec9f76148fcf292bbcec8df19272"
+policy_pkginfo_sha256 = "bf5ef4d6f231745e9668b32328e78883e3dc1750c73dc0f4195751bdca8b103a"
+policy_buildinfo_sha256 = "82482da646af77a72c11faa3df4ad7ad72f6ff69d9a5b9cf86609df86105b0ac"
+policy_signature_sha256 = "9a2ec13ad6ac5af0961a8b74d84f82c67b07bd712efc4dc2f1a2f60578840e09"
+
+signing_format = "ssh"
+signing_namespace = "radeon-unified-release"
+signer_principal = "151315375+Oichkatzelesfrettschen@users.noreply.github.com"
+signer_fingerprint = "SHA256:wD1s3tsUVHvjrLUruNtYVv/K1/4b7sJA4W7DTdMn8SA"
+verification_command = "ssh-keygen -Y verify -f release-allowed-signers -I 151315375+Oichkatzelesfrettschen@users.noreply.github.com -n radeon-unified-release -s PACKAGE.sig < PACKAGE"
+
+# The allowed-signers file used for verification was reconstructed from the
+# signer public key, whose fingerprint equals signer_fingerprint. The
+# established retained copy lives with the target rollback set. Verification
+# depends on the key rather than the file's byte layout, so all three
+# signatures verify against the reconstructed file.
+allowed_signers_reconstructed = true
+allowed_signers_sha256 = "d43493989e9302704862e38667f78283f608173c283be93122e92d3af42c8cff"
+
+# Transition-matrix results carried from the artifact-build attestation. Rows
+# 1-8c and 10 PASS in both the package-only and with-kernel (7.1.5-arch1-2)
+# runs; row 6 kernel legs PASS; row 11 hazard-stack swap survival PASS. Row 9
+# legacy rollback stays NOT RUN: the exact signed 0.4-3 rollback artifacts
+# reside with the target rollback set, and this signing operation makes no
+# target contact, so the row is not promoted.
+transition_rows_pass = "1-8c,10 (both runs); 6 kernel legs; 11 hazard-stack survival"
+transition_row_9_legacy_rollback = "NOT RUN: 0.4-3 rollback artifacts held with the target; no target contact"
+
+signed_artifact_set = "PASS"
+target_contact = "NOT RUN"
+package_installation = "NOT RUN"
+module_load = "NOT RUN"
+hardware_operation = "NOT RUN"
