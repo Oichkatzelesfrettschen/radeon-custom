@@ -2,17 +2,23 @@
 
 This contract fixes the boot state, install sequence, and rollback authority
 for running the radeon-unified 0.5-1 development module at runtime profile
-`profile_dev=mutate-dev` on the RS482 target. Every fact below was read from
-the live target; the install sequence itself executes only under separate
-explicit user authorization.
+`profile_dev=mutate-dev` on the RS482 target. The verified radeon state below
+comes from the live target and the retained 0.5-1 acceptance bundle; the
+install sequence itself executes only under separate explicit user
+authorization.
 
-## Verified target state (2026-08-02)
+## Verified target state (0.5-1 prod acceptance, bundle cachyos_vostro1000_rs482_radeon_unified_0.5-1_prod_runtime_20260803T010326Z)
 
-- Installed: `radeon-unified-dkms 0.4-3` (prod), loaded module srcversion
-  `414694187A1E399BBE6DA26`, `gororoba_build_profile=prod`,
-  `lockup_timeout=0`, `rs480_reset_mask` absent (prod registers no
-  wedge-induction surface). `sp5100-tco-ioapic-dkms 0.4-4`.
-  `rs480-reset-hazard-stack 0.2-1`.
+- Installed: `radeon-unified-dkms 0.5-1` (prod) and `radeon-rs482-policy
+  0.5-1`, loaded module srcversion `31F533E702034AA5546BF48` bonded to source
+  commit `1b1f515d300f6590eb822c3e8a127e8dfc9a9abb`,
+  `gororoba_build_profile=prod`, `lockup_timeout=0`, `profile_dev` and every
+  fork development parameter and debugfs node absent (prod registers no
+  wedge-induction surface). The signed 0.4-3 set stays the rollback authority,
+  so the next dev transition is prod 0.5-1 to dev 0.5-1. The
+  `sp5100-tco-ioapic-dkms` and `rs480-reset-hazard-stack` platform packages
+  carry from the pre-reboot record; the passive acceptance capture did not
+  re-verify their versions.
 - Boot: Limine with two independent kernel entries, `linux-cachyos`
   7.1.3-2 (running) and `linux-cachyos-lts` 6.18.38-2. DKMS builds the
   radeon module for every installed kernel, so the LTS entry is a kernel
