@@ -275,6 +275,31 @@ silicon remain with the parked kernel-baseline-equivalence work; the
 offline record above covers the source, generated-state, and build gates
 only.
 
+## Measured firing coverage over the retained corpus
+
+A reason-coded replay of the shared decision function over the whole retained
+RS482 corpus revises the test-plan item-2 expectation. Item 2 expected the
+archived malformed delivery capture to reject with -EINVAL. The measurement
+finds the opposite: across 8537 real draw packets in 2405 retained IBs the
+decision returns 8535 DECLINE and exactly one PASS and one REJECT, both the
+synthetic `known_good`/`known_bad` fixtures that were never submitted. No
+retained `.bin` corresponds to the item-2 malformed capture: the
+`recur40`/`spill1` delivery-capture directory holds only text `.raw_ib.log`
+logs, and its RCA concerns a different wedge, the HBTCL-04f fence-wedge, which
+it records as invariant HOLD and register EQUIVALENT with the cause below the
+command stream. The retained `.bin` closest to the anchor, the nosubmit triangle
+capture, declines. The decline is dominated by `no_vtx_size`, 7091 of 8535:
+the real producer inherits `VAP_VTX_SIZE` across submissions rather than
+re-emitting it in each draw CS, and the real full-EXT draws write non-identity
+PSC, so the fully witnessed identity underfeed shape is not a natural producer
+output.
+
+The check stays source-correct and compile-verified but dormant over the
+retained corpus, so the live ioctl campaign is parked pending coverage redesign.
+The census tool is
+`linux-radeon-gororoba/scripts/rad06_corpus_reason_census.sh`, and the finding
+is `steinmarder-r300:src/re/r300/findings/active/2026-08-03-rad06-empty-firing-surface-retained-rs482-corpus.md`.
+
 ## Claim boundary
 
 The check is submission-local. Its tracking structure zeroes for each CS, and
