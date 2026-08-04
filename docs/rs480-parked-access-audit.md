@@ -109,10 +109,13 @@ evidence.
 
 Closed by a static dominance proof (docs/rs480-0060-sigbus-dominance-proof.md):
 in `radeon_gem_fault` the `gpu_parked && mem_type == TTM_PL_VRAM` gate returns
-SIGBUS before the first lock (`down_read(mclk_lock)`), the first sleeping BO
-reservation (`ttm_bo_vm_reserve`), the first TTM driver callback
+SIGBUS before the first TTM driver callback
 (`radeon_bo_fault_reserve_notify`), the aperture/PTE map
-(`ttm_bo_vm_fault_reserved`), and any register access; and the park-path
+(`ttm_bo_vm_fault_reserved`), and any register access. Since 0070 the gate runs
+under `down_read(mclk_lock)` and after `ttm_bo_vm_reserve`, so the SIGBUS
+decision and the fault path share one reserved view; the parked-window tracer
+records both VRAM clients taking `ttm_bo_vm_reserve` with no
+`ttm_bo_vm_fault_reserved` call. The park-path
 `unmap_mapping_range(anon_inode->i_mapping, 0, 0, 1)` tears down every PTE in the
 device GEM address space (COW included), so every later touch refaults into that
 gate. GTT/system BOs fall through (placement-scoped to VRAM), which is correct for the
