@@ -100,11 +100,21 @@ for the Fire 28 host-survival pass. Evidence class: hardware-pass for host
 survival under the Fire 28 procedure. Falsifier: an attended repeat of the Fire
 28 procedure in which `boot_id` changes or SSH stops answering.
 
-The achieved property is host survival alone. GPU recovery, display recovery,
-and a demonstrated SIGBUS firing line each remain open, and Fire 28 does not
-isolate the causal contribution of the 0060 gate from the client freeze and thaw
-procedure it also changed. That attribution gap is a property of the run design,
-so closing it requires a run that varies one factor.
+Fire 28 achieved host survival alone and did not isolate the 0060 gate from the
+client freeze and thaw procedure it also changed. A later targeted refault fire
+directly demonstrates the SIGBUS firing: it drives one SIGUSR1 re-touch into the
+zapped mapping and returns SIGBUS (si_code BUS_ADRERR, breadcrumb match, boot_id
+stable), retained as steinmarder-r300 bundle
+`rs480_sigbus_refault_fire_rs482_20260803T030621Z`. The fire ran on the
+dev-profile module, whose 0060 gate source is identical to the prod module, and
+park is reachable only through the armed dev reset node, so this is the only
+obtainable evidence. A second fire measures the gate's placement scope, retained
+as `rs480_parked_gem_placement_discriminator_rs482_20260804T041115Z`: across one
+park, a held VRAM mapping took SIGBUS while a held GTT mapping completed its
+touch, and the placement of each buffer object was measured by bracketing its
+create with `RADEON_INFO_VRAM_USAGE` and `RADEON_INFO_GTT_USAGE` rather than
+inferred from the requested domain. GPU recovery, display recovery, and the
+attribution of Fire 28 host survival to the 0060 gate remain open.
 
 ## Register evidence partition
 
@@ -266,16 +276,26 @@ classes.
 
 ## Open claims
 
-Five properties remain unproven, and each names what would close it.
+Five properties stay open, four unproven and one refuted, and each names what
+would close it or what the refutation left behind.
 
 - GPU recovery after a failed reset. GA holds the wedge. Closing it requires an
   attended run in which `RBBM_STATUS` shows GA clearing.
 - Display recovery without reboot. The parked GPU keeps a black or frozen
   display. Closing it requires a retained run in which KMS scanout returns.
-- A demonstrated SIGBUS isolation firing. The 0060 gate is installed and armed,
-  and `docs/rs480-0060-sigbus-dominance-proof.md` argues static dominance, but
-  no firing line is retained. Closing it requires a retained run in which a
-  client re-faults a zapped VRAM mapping and receives SIGBUS.
+- A parked device that refuses fresh client admission. Refuted rather than open:
+  the discriminator fire found a fresh client admitted through `open`,
+  `GEM_CREATE`, and `GEM_MMAP` on the parked device, retained as steinmarder-r300
+  bundle `rs480_parked_gem_placement_discriminator_rs482_20260804T041115Z`.
+  Containment on that path is carried by placement, since the fresh VRAM request
+  allocated in VRAM and took SIGBUS at the 0060 gate while the fresh GTT request
+  completed against system RAM. The create-path refusal
+  `radeon_gem_object_create` returns -EIO under `gpu_parked` landed upstream in
+  linux-radeon-gororoba (commit `ca70647`), is absent from the pinned checkpoint,
+  and prevents no failure the fire observed. What stays open is narrower: the
+  degradation path a request larger than free VRAM would enter, and the actor
+  behind an R-state spin that four clients across both placements did not
+  reproduce.
 - Attribution of the Fire 28 survival. The run changed both the 0060 gate and
   the client freeze and thaw procedure. Closing it requires a single-factor
   repeat.

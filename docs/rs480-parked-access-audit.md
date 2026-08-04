@@ -97,22 +97,40 @@ parked-module unload is not a campaign path (the box reboots). No fire.
 ### 3. Userspace VRAM mmap SIGBUS gate (0060), covered by static dominance proof
 
 0060 zaps userspace GEM PTEs (`unmap_mapping_range`) and returns `VM_FAULT_SIGBUS`
-for VRAM-placed BOs in `radeon_gem_fault`. Fire 28 proved host survival but no
-thawed client re-faulted a zapped VRAM mapping, so the SIGBUS arm was never
-observed at runtime.
+for VRAM-placed BOs in `radeon_gem_fault`. Fire 28 proved host survival but
+changed both the gate and the client freeze/thaw procedure, so it did not isolate
+the SIGBUS arm. A later targeted refault fire on RS482 drove one SIGUSR1
+re-touch into a zapped mapping and observed the arm (si_code BUS_ADRERR,
+breadcrumb match, boot_id stable), retained as steinmarder-r300 bundle
+`rs480_sigbus_refault_fire_rs482_20260803T030621Z`. The fire ran on the
+dev-profile module, whose 0060 gate source is identical to prod, and park is
+reachable only through the armed dev reset node, so this is the only obtainable
+evidence.
 
 Closed by a static dominance proof (docs/rs480-0060-sigbus-dominance-proof.md):
 in `radeon_gem_fault` the `gpu_parked && mem_type == TTM_PL_VRAM` gate returns
-SIGBUS before the first lock (`down_read(mclk_lock)`), the first sleeping BO
-reservation (`ttm_bo_vm_reserve`), the first TTM driver callback
+SIGBUS before the first TTM driver callback
 (`radeon_bo_fault_reserve_notify`), the aperture/PTE map
-(`ttm_bo_vm_fault_reserved`), and any register access; and the park-path
+(`ttm_bo_vm_fault_reserved`), and any register access. Since 0070 the gate runs
+under `down_read(mclk_lock)` and after `ttm_bo_vm_reserve`, so the SIGBUS
+decision and the fault path share one reserved view; the parked-window tracer
+records both VRAM clients taking `ttm_bo_vm_reserve` with no
+`ttm_bo_vm_fault_reserved` call. The park-path
 `unmap_mapping_range(anon_inode->i_mapping, 0, 0, 1)` tears down every PTE in the
 device GEM address space (COW included), so every later touch refaults into that
-gate. GTT/system BOs correctly fall through (placement-scoped to VRAM). One
-stated residual: the unlocked placement read is stable because no BO migration
-runs post-park. Covered by static dominance; hardware-fire not required; runtime
-SIGBUS not observed in Fire 28 because no client refaulted VRAM. No code change.
+gate. GTT/system BOs fall through (placement-scoped to VRAM), which is correct for the
+gate and for containment. A later discriminator fire measured that scope on the
+same silicon
+(`rs480_parked_gem_placement_discriminator_rs482_20260804T041115Z`): a held VRAM
+mapping took SIGBUS while a held GTT mapping completed its touch, and no client
+in the parked window returned `VM_FAULT_RETRY`, so the fall-through terminates
+rather than spinning. A client opened after park is admitted through `open`,
+`GEM_CREATE`, and `GEM_MMAP`, and its placement decides its fate: a VRAM request
+free VRAM can satisfy lands in VRAM and meets the gate, and only a request
+larger than free VRAM would enter the degradation the create path addresses (see
+the create/evict residual below). The unlocked-placement residual is closed by
+0070, which reserves the BO before the placement test. Covered by static
+dominance and by the two retained fires. No code change.
 
 ## Enforcement going forward
 
@@ -141,6 +159,13 @@ invariant.
 - **Modeset vs reset race**: a modeset that passed the parked check can still
   race a concurrent park before set_config MMIO; exclusive_lock recheck is
   not yet shared across that path.
-- **TTM create/evict after park**: userspace GEM create can still enter TTM;
-  ring.ready is cleared in 0071 to stop blit moves, but full ioctl gating is
-  not claimed.
+- **TTM create/evict after park**: userspace GEM create enters TTM in the pinned
+  checkpoint, and 0071 clears ring.ready to stop blit moves. The discriminator
+  fire measured the funnel: a fresh post-park create is admitted and allocates in
+  the requested manager, VRAM included, because the park frees no VRAM and
+  fences none off. The create-path refusal `radeon_gem_object_create` returns
+  -EIO under `gpu_parked` landed upstream in linux-radeon-gororoba (commit
+  `ca70647`) and needs a new signed checkpoint and package re-pin to reach this
+  series. It narrows the fresh-client supply without claiming full ioctl gating,
+  and it prevents no failure either fire observed, because the fresh VRAM client
+  was already terminated by the 0060 gate.
