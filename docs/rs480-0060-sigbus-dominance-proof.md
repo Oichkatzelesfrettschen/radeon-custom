@@ -68,7 +68,15 @@ unmap_mapping_range(rdev_to_drm(rdev)->anon_inode->i_mapping, 0, 0, 1);
 - **GTT / system-memory BOs:** the gate is `TTM_PL_VRAM`-only, so a GTT
   (`TTM_PL_TT`) or system BO falls through and faults normally; its pages are
   plain system RAM, no aperture read. They do NOT SIGBUS merely because the GPU
-  is parked; only VRAM does. Correct by the placement predicate.
+  is parked; only VRAM does. Correct by the placement predicate. The fall-through
+  is correct for the gate and for containment, because a non-VRAM BO touches
+  system RAM and reads no aperture, so the host survives; it is not a claim that
+  every post-park fault resolves. A client opened after park whose
+  `RADEON_GEM_DOMAIN_VRAM` request degrades to GTT holds exactly such a non-VRAM
+  BO and takes this same fall-through, and that fresh-client admission is a
+  separate bounded-termination concern from this gate; its analysis and the
+  create-path refusal live in steinmarder-r300 finding
+  `src/re/r300/findings/active/2026-08-03-parked-device-fresh-client-fault-placement-rca.md`.
 - **Non-fault paths (`mmap` setup, `ioctl`, `read`, `write`):** `mmap(2)` setup
   (`drm_gem_mmap`) only builds the vma; it establishes no PTE and touches no
   VRAM, so the first access faults lazily into `radeon_gem_fault` (gated). A
@@ -93,10 +101,12 @@ is safe because there is no VRAM page to touch.
 
 The gate statically dominates every VRAM-mmap refault path: the zap guarantees a
 refault, and the fault handler returns SIGBUS for a parked VRAM BO before any
-lock, reservation, TTM callback, GART/aperture op, or register access. No WD3B
-fire is required to establish this; the fire only failed to *observe* the SIGBUS
-because no client happened to re-touch VRAM in that run. Edge 3 is closed by this
-static dominance argument, no code change.
+lock, reservation, TTM callback, GART/aperture op, or register access. A
+single-factor refault fire on RS482 corroborates the static argument: it drove
+one SIGUSR1 re-touch into a zapped mapping and observed the SIGBUS return
+(si_code BUS_ADRERR, breadcrumb match, boot_id stable), retained as
+steinmarder-r300 bundle `rs480_sigbus_refault_fire_rs482_20260803T030621Z`. Edge
+3 holds by static dominance and now by that retained firing line, no code change.
 
 
 ## Remaining proof residuals
@@ -104,6 +114,10 @@ static dominance argument, no code change.
 - Pre-zap window: 0071 zaps immediately after latching `gpu_parked` and
   free_irq, before the drain sleeps. A PTE touch strictly between latch and
   zap remains a theoretical race; the window is milliseconds of pure software.
-- Post-park TTM create/migrate: GEM create ioctls are not fully gated; 0071
-  clears `ring.ready` to stop blit moves. Full quiescence of TTM is residual.
+- Post-park TTM create/migrate: GEM create ioctls are not gated in the pinned
+  checkpoint, and 0071 clears `ring.ready` to stop blit moves. The create-path
+  refusal `radeon_gem_object_create` returns -EIO under `gpu_parked` landed
+  upstream in linux-radeon-gororoba (commit `ca70647`); pinning it here needs a
+  new signed checkpoint and package re-pin, and it removes the fresh-client
+  supply of a degraded non-VRAM BO without proving full TTM quiescence.
 - fbdev `/dev/fb0` mmap is outside the GEM offset zap (see parked-access audit).

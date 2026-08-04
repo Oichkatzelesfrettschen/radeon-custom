@@ -100,11 +100,15 @@ for the Fire 28 host-survival pass. Evidence class: hardware-pass for host
 survival under the Fire 28 procedure. Falsifier: an attended repeat of the Fire
 28 procedure in which `boot_id` changes or SSH stops answering.
 
-The achieved property is host survival alone. GPU recovery, display recovery,
-and a demonstrated SIGBUS firing line each remain open, and Fire 28 does not
-isolate the causal contribution of the 0060 gate from the client freeze and thaw
-procedure it also changed. That attribution gap is a property of the run design,
-so closing it requires a run that varies one factor.
+Fire 28 achieved host survival alone and did not isolate the 0060 gate from the
+client freeze and thaw procedure it also changed. A later single-factor refault
+fire isolates the SIGBUS firing specifically: it drives one SIGUSR1 re-touch into
+the zapped mapping and returns SIGBUS (si_code BUS_ADRERR, breadcrumb match,
+boot_id stable), so the SIGBUS firing line is demonstrated on RS482 silicon and
+retained as steinmarder-r300 bundle
+`rs480_sigbus_refault_fire_rs482_20260803T030621Z`. GPU recovery, display
+recovery, and the attribution of Fire 28 host survival to the 0060 gate remain
+open.
 
 ## Register evidence partition
 
@@ -272,10 +276,15 @@ Five properties remain unproven, and each names what would close it.
   attended run in which `RBBM_STATUS` shows GA clearing.
 - Display recovery without reboot. The parked GPU keeps a black or frozen
   display. Closing it requires a retained run in which KMS scanout returns.
-- A demonstrated SIGBUS isolation firing. The 0060 gate is installed and armed,
-  and `docs/rs480-0060-sigbus-dominance-proof.md` argues static dominance, but
-  no firing line is retained. Closing it requires a retained run in which a
-  client re-faults a zapped VRAM mapping and receives SIGBUS.
+- A parked device that refuses fresh client admission. The 0060 gate covers a
+  re-faulted pre-park VRAM mapping, while a client opened after park still
+  admits through `open(/dev/dri/renderD128)`. The create-path refusal
+  `radeon_gem_object_create` returns -EIO under `gpu_parked` landed upstream in
+  linux-radeon-gororoba (commit `ca70647`) and is absent from the pinned
+  checkpoint, so no package here carries it. Closing it requires the source
+  refusal pinned into a package, a retained run in which a fresh allocation and
+  mmap fail closed, and a pre-park GTT-mapping discriminator cell that proves the
+  refusal suffices rather than only removing the fresh-client supply.
 - Attribution of the Fire 28 survival. The run changed both the 0060 gate and
   the client freeze and thaw procedure. Closing it requires a single-factor
   repeat.
