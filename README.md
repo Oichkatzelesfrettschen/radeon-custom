@@ -240,11 +240,25 @@ python3 scripts/check_base_delta_map_closure.py --self-test
 Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with
 the intended kernel trees available:
 
+`makepkg -D` resolves its directory after changing away from the invocation
+directory, so a relative argument exits 1 with no diagnostic under makepkg
+7.1.0. Pass an absolute path, and direct the build products outside the package
+directory so the checked-in tree stays clean:
+
 ```bash
-# keep the shell at the repository root for the checks below
+repo_root=$(git rev-parse --show-toplevel)
+build_root=$(mktemp -d)
 RADEON_UNIFIED_SOURCE_URL=git+file:///path/to/linux-radeon-gororoba \
-  makepkg -D packaging/arch/radeon-unified-dkms -fC --noconfirm
+  BUILDDIR="$build_root/build" \
+  PKGDEST="$build_root/pkgdest" \
+  SRCDEST="$build_root/srcdest" \
+  makepkg -D "$repo_root/packaging/arch/radeon-unified-dkms" -fC --noconfirm
 ```
+
+The exported driver source and the DKMS build tree together exceed a gigabyte,
+so `build_root` belongs on a filesystem with that headroom. A quota-bounded
+`tmpfs` reports `Disk quota exceeded` mid-archive and leaves a partial package
+directory.
 
 After both package artifacts exist, verify each payload and its executable
 modes against the canonical inputs:
