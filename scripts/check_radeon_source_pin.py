@@ -18,6 +18,8 @@ from pathlib import Path
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+SSH_SIGNATURE_OPEN = "-----BEGIN SSH SIGNATURE-----"
+SSH_SIGNATURE_CLOSE = "-----END SSH SIGNATURE-----"
 REQUIRED_KEYS = {
     "schema",
     "constructor",
@@ -64,6 +66,21 @@ def git(repository: Path, *arguments: str) -> str:
         detail = result.stderr.strip() or result.stdout.strip()
         raise PinError(f"git {' '.join(arguments)} failed: {detail}")
     return result.stdout.strip()
+
+
+def require_signed_tag(repository: Path, tag_object: str, field: str) -> None:
+    """Require the tag object to carry an inline SSH signature.
+
+    A tag object records the signature in its own body, so reading the object
+    settles the question without an allowed-signers file: ssh-keygen verifies
+    the signer, and a missing signature is absent bytes rather than an
+    unverifiable one. The release convention signs every profiled source
+    checkpoint, so a pin naming an unsigned tag names an object no signer
+    vouched for.
+    """
+    body = git(repository, "cat-file", "-p", tag_object)
+    if SSH_SIGNATURE_OPEN not in body or SSH_SIGNATURE_CLOSE not in body:
+        raise PinError(f"{field} names a tag object carrying no SSH signature")
 
 
 def digest_blob(repository: Path, revision_path: str) -> str:
@@ -271,6 +288,7 @@ def verify(
         raise PinError("profiled source tag object does not match the named tag")
     if git(repository, "rev-parse", f"refs/tags/{profiled_tag}^{{}}") != commit:
         raise PinError("profiled source tag does not peel to source_commit")
+    require_signed_tag(repository, profiled_tag_object, "profiled_source_tag_object")
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{tag}}") != tag_object:
         raise PinError("equivalence tag object does not match the named tag")
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{}}") != equivalence_commit:
@@ -431,15 +449,39 @@ def run_self_test() -> None:
             check=True,
         )
         commit = git(repository, "rev-parse", "HEAD")
+        # The signature assertion needs a signed known-good tag, and an
+        # ephemeral key supplies one without the release key: git records the
+        # signature in the tag object either way, so the fixture exercises the
+        # same bytes the checker reads.
+        signing_key = repository / "fixture-signing-key"
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C",
+             "pin fixture", "-f", str(signing_key)],
+            check=True,
+        )
         subprocess.run(
             [
                 "git", "-C", str(repository),
-                "tag", "-am", "profiled fixture", "profiled-fixture-tag",
+                "-c", "gpg.format=ssh",
+                "-c", f"user.signingkey={signing_key}.pub",
+                "tag", "-sm", "profiled fixture", "profiled-fixture-tag",
             ],
             check=True,
         )
         profiled_tag_object = git(
             repository, "rev-parse", "profiled-fixture-tag^{tag}"
+        )
+        # The unsigned twin names the same commit, so a pin naming it fails on
+        # the missing signature alone rather than on tag identity or peel.
+        subprocess.run(
+            [
+                "git", "-C", str(repository),
+                "tag", "-am", "unsigned twin", "unsigned-profiled-fixture-tag",
+            ],
+            check=True,
+        )
+        unsigned_tag_object = git(
+            repository, "rev-parse", "unsigned-profiled-fixture-tag^{tag}"
         )
         repository_tree = git(repository, "rev-parse", "HEAD^{tree}")
         tree = git(repository, "rev-parse", "HEAD:drivers/gpu/drm/radeon")
@@ -508,6 +550,24 @@ def run_self_test() -> None:
             pass
         else:
             raise PinError("self-test accepts a wrong profiled source tag object")
+        bad_text = (
+            identity_path.read_text(encoding="ascii")
+            .replace(
+                'profiled_source_tag = "profiled-fixture-tag"',
+                'profiled_source_tag = "unsigned-profiled-fixture-tag"',
+            )
+            .replace(
+                f'profiled_source_tag_object = "{profiled_tag_object}"',
+                f'profiled_source_tag_object = "{unsigned_tag_object}"',
+            )
+        )
+        bad_path.write_text(bad_text, encoding="ascii")
+        try:
+            verify(bad_path, repository)
+        except PinError:
+            pass
+        else:
+            raise PinError("self-test accepts an unsigned profiled source tag")
     print("radeon source pin calibration: PASS")
 
 
