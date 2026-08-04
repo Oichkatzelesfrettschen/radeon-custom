@@ -1,0 +1,119 @@
+# Signed-release identity for the exact radeon-unified 0.6-1 package artifacts.
+# This record binds the detached SSH signatures and their verification to the
+# exact archive bytes, and to the packaging and source identity those bytes were
+# built from. It carries package release identity and makes no installation or
+# silicon claim; the exact packages, signatures, allowed-signers file, signing
+# transcript, and lifecycle evidence are retained in the durable private
+# build-host release store.
+#
+# The source-side attestation in linux-radeon-gororoba covers the signed source
+# tag alone and keeps its own NOT RUN fields. This record is the separate
+# package authority; neither one speaks for the other.
+
+schema = 1
+release = "radeon-unified-0.6-1"
+
+packaging_commit = "1ef106feb6572463472b5db4cf77cafb67fc6f0e"
+packaging_tree = "77caecdb763a2daface5de950d1e60ef10913cb2"
+build_provenance = "release-store 0.6-1 build-provenance.toml"
+
+profiled_source_tag = "radeon-unified-0.6-profiled-source"
+profiled_source_tag_object = "7a011a561c38258180e1f3083a0e5d8e74f5c1dd"
+source_commit = "7a8dfb50cc4861ebd2c33a2d96cd19f961443c8e"
+repository_tree = "6381d07288c9832b2853574b83a661837b1d959a"
+driver_tree = "84b3c5c0282bf37236f2c4fda80eb17048bdd1ed"
+feature_policy_tree = "cd068fc17d3380160baa8a76fc1b3765509dd800"
+feature_policy_sha256 = "8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd"
+
+prod_package = "radeon-unified-dkms-0.6-1-x86_64.pkg.tar.zst"
+prod_package_profile = "prod"
+prod_package_sha256 = "4779c7d2ee668fcd9887261f56b78072fcda7b17c8004ebc290745cc1588c552"
+prod_pkginfo_sha256 = "8ba7a21fbf7126e596a34a118936c175e3f93c8acea3846316a547b231743249"
+prod_buildinfo_sha256 = "207583a1da5d543c124f9d67d2762c7c669ec5267903ac58ecd38eb2e617157c"
+prod_mtree_sha256 = "94399f3a1923c185f2909513b5c51c78a7e05bf70dae71b35a0175c73d12a6ba"
+prod_signature_sha256 = "2c26e2715ac4994d11e53b95f50f0ade414da662884c6f51638fa6f2d2fd850f"
+
+dev_package = "radeon-unified-dkms-dev-0.6-1-x86_64.pkg.tar.zst"
+dev_package_profile = "all-dev"
+dev_compiled_ceiling = "mutate-dev"
+dev_runtime_default = "off"
+dev_package_sha256 = "d8fb3d104c8cb3b4373d14bff67c1e6e545d127c492ca886daade4f22b82c819"
+dev_pkginfo_sha256 = "c831709e86cfb87a578a6e855ec106b37f2334a1d4657a40169e771ec3585569"
+dev_buildinfo_sha256 = "d83da6f0cf87e7b74f5d9787d76a9b6fda8464abf41c151914d5872e962c05bd"
+dev_mtree_sha256 = "4497a09e961765fb5190c344d00ba98cbe9a8870d0772ed6756c322df1559bb2"
+dev_signature_sha256 = "78234e5739cb86caef1cc3d2ec32a281c1e1e06a53b1fc3e594dcedf365f6462"
+
+policy_package = "radeon-rs482-policy-0.6-1-x86_64.pkg.tar.zst"
+policy_depends = "radeon-unified=0.6-1"
+policy_package_sha256 = "bd2e4bffbb739258a7c3d2e60712672a9bd1be754ba3c868504a363e8ff4008d"
+policy_pkginfo_sha256 = "2e89fb94333db0bf293096208a72bffdc155e2e361915c484c283bab33ec6a0a"
+policy_buildinfo_sha256 = "1267798a59ed6fe06079ac0ad2a2e6976162afb8214e7c77179f52b5d63907a5"
+policy_mtree_sha256 = "682724ef3bddabe5ad0f3a7a3bbf98d0394dc26e3b317200a658665103966d85"
+policy_signature_sha256 = "b51041e5ba7cb300bce89c0c149b71d1137ad13e5c0de7109df07b761c6eb155"
+
+signing_format = "ssh"
+signing_namespace = "radeon-unified-release"
+signer_principal = "151315375+Oichkatzelesfrettschen@users.noreply.github.com"
+signer_fingerprint = "SHA256:wD1s3tsUVHvjrLUruNtYVv/K1/4b7sJA4W7DTdMn8SA"
+verification_command = "ssh-keygen -Y verify -f release-allowed-signers -I 151315375+Oichkatzelesfrettschen@users.noreply.github.com -n radeon-unified-release -s PACKAGE.sig < PACKAGE"
+
+# The allowed-signers file is the exact one the 0.5-1 release used, copied
+# byte-for-byte from that release store rather than rebuilt from the public key.
+# Its namespaces= restriction is load-bearing: a signature made outside
+# radeon-unified-release fails against it.
+allowed_signers_reconstructed = false
+allowed_signers_sha256 = "d43493989e9302704862e38667f78283f608173c283be93122e92d3af42c8cff"
+signing_transcript = "release-store 0.6-1 signing-transcript.txt"
+
+# Module identity recorded at build time rather than recovered from a later
+# runtime check. srcversion digests the module source, so it is stable across
+# kernel lines and identifies the package; vermagic and the object digest are
+# per-kernel.
+prod_srcversion = "EA8E3BBBBA9E5580BDA7553"
+prod_module_sha256_7_1 = "9d014c11fcfac2e7ddd7b8288bd1c06bd228527c73bb609d87152baaad5288ca"
+prod_module_sha256_6_18 = "e02e230bce4f9323a68e92b984c61f01c88361299792974f31ce79fd11b5bf80"
+prod_vermagic_7_1 = "7.1.4-1-cachyos SMP preempt mod_unload"
+prod_vermagic_6_18 = "6.18.38-2-cachyos-lts SMP preempt mod_unload"
+dev_srcversion = "5834C69D07FBB06F5FB924E"
+dev_module_sha256_7_1 = "4140cd9196bc7a8b3bbb4e5a4049af9574b3bdca793e90ffa3fdf4e495bf102d"
+dev_module_sha256_6_18 = "5e4e3373f4d63084aeb21838c1aced3e7fd4377d3f4bf3143019220cb0e86a9d"
+dev_vermagic_7_1 = "7.1.4-1-cachyos SMP preempt mod_unload"
+dev_vermagic_6_18 = "6.18.38-2-cachyos-lts SMP preempt mod_unload"
+module_build_kernels = "7.1.4-1-cachyos, 6.18.38-2-cachyos-lts"
+
+# Local gates run against these exact bytes at the frozen packaging commit.
+source_pin = "PASS"
+source_pin_self_test = "PASS"
+trusted_tag_signer_verification = "PASS"
+pkgbuild_checksums = "PASS"
+pinned_source_builds = "PASS on 6.18.38-2-cachyos-lts and 7.1.4-1-cachyos, prod and all-dev"
+closed_production_payload = "PASS"
+closed_development_payload = "PASS"
+payload_absence_assertions = "PASS by direct payload inspection"
+package_profile_checker = "PASS"
+profile_selector_calibration = "PASS"
+parked_admission_checker = "PASS"
+parked_admission_checker_self_test = "PASS"
+prod_dkms_lifecycle = "PASS on both kernel lines"
+dev_dkms_lifecycle = "PASS on both kernel lines"
+ruff = "PASS"
+shellcheck = "PASS at the repository gate scope, severity error"
+prose_gate = "PASS"
+
+# Rows 1 through 8c, 6k, and 10 PASS. Row 9 rolls 0.6-1 production back to the
+# exact signed 0.5-1 production archive retained in the release store, so it
+# carries evidence the 0.5-1 release recorded as NOT RUN.
+transition_rows_pass = "1-8c, 6k, 10"
+transition_row_9_legacy_rollback = "PASS against the signed 0.5-1 production archive"
+transition_row_11_hazard_stack_survival = "NOT RUN: sp5100-tco-ioapic-dkms has no constructor in radeon-custom and no built artifact on the build host"
+# The matrix chroot carries its own kernel, which is neither the build host nor
+# the RS482 target, so its module rows attest profile, vermagic, and DKMS
+# behavior rather than target-kernel identity.
+transition_matrix_chroot_kernel = "7.1.5-arch1-2"
+
+signed_artifact_set = "PASS"
+target_contact = "NOT RUN"
+target_compile = "NOT RUN"
+package_installation = "NOT RUN"
+module_load = "NOT RUN"
+hardware_operation = "NOT RUN"
