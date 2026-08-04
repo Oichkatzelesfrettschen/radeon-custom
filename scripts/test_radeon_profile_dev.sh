@@ -57,7 +57,7 @@ case $2 in
         printf '%s\n' mutate-dev
         ;;
     gororoba_source_commit)
-        printf '%s\n' 1b1f515d300f6590eb822c3e8a127e8dfc9a9abb
+        printf '%s\n' 5df0aec3b7ad96b78c4f8cbb9bc4096571f8ebc2
         ;;
     gororoba_feature_policy_sha256)
         printf '%s\n' 8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd

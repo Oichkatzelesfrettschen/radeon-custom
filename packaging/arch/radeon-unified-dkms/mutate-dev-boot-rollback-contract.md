@@ -11,7 +11,7 @@ authorization.
 
 - Installed: `radeon-unified-dkms 0.5-1` (prod) and `radeon-rs482-policy
   0.5-1`, loaded module srcversion `31F533E702034AA5546BF48` bonded to source
-  commit `1b1f515d300f6590eb822c3e8a127e8dfc9a9abb`,
+  commit `5df0aec3b7ad96b78c4f8cbb9bc4096571f8ebc2`,
   `gororoba_build_profile=prod`, `lockup_timeout=0`, `profile_dev` and every
   fork development parameter and debugfs node absent (prod registers no
   wedge-induction surface). The signed 0.4-3 set stays the rollback authority,
