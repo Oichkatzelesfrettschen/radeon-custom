@@ -338,6 +338,36 @@ family`, `our GPU`) live in commits, PR descriptions, and findings.
 Source comments name durable mechanisms: exact chip, register rule, kernel
 function, module parameter, or measured behavior.
 
+### Vocabulary a maintainer already holds
+
+A comment spends only vocabulary its reader already holds: kernel and subsystem
+symbols, register and document names, and plain mechanism English. A term that
+resolves through a project glossary names nothing to a kernel maintainer six
+months later, so the mechanism replaces it.
+
+Three sources supply admissible terms. A symbol grepped from the tree carries
+its own definition: `gpu_parked`, `exclusive_lock`, `TTM_PL_VRAM`,
+`dma_resv`, `RADEON_GEM_DOMAIN_GTT`. An established term of art in the
+surrounding field stays a term: `critical section`, `buffer object`, `page
+table entry`, `fence`. Plain mechanism English carries the rest.
+
+Two constructions fail the test. An analytical frame borrowed from another
+field prices in that field's vocabulary, so `absorbing state` becomes the
+mechanism it describes: reset recovery has failed and the device stays parked
+until reboot. A compression coined for this project reads as standard and is
+not, so `imported BO` becomes `a buffer object created for a dma-buf import`
+and `new object lifetime` becomes `allocates a buffer object`. `tranche` is
+the same failure in a name.
+
+The analytical frame keeps its home. `absorbing state`, evidence-class names,
+and containment vocabulary carry real content in findings, `README.md`, and
+commit bodies, where the surrounding prose defines them. The rule governs
+source comments, policy tables, and identifiers, where the reader arrives with
+the kernel tree and nothing else.
+
+To apply it: read the term, ask which of the three sources supplies it, and
+when none does, write the mechanism the term stood for.
+
 ### Stating mechanism as fact
 
 State what a thing is and does, in positive declarative form. Name the mechanism
