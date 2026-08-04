@@ -651,33 +651,35 @@ def run_self_test() -> None:
             encoding="ascii",
         )
         verify(identity_path, repository)
-        bad_text = identity_path.read_text(encoding="ascii").replace(
-            f'driver_tree = "{tree}"',
-            f'driver_tree = "{"0" * 40}"',
-        )
+        print("self-test known-good accepted: trusted signer over the pinned commit")
         bad_path = repository / "bad.toml"
-        bad_path.write_text(bad_text, encoding="ascii")
-        try:
-            verify(bad_path, repository)
-        except PinError:
-            pass
-        else:
-            raise PinError("self-test accepts a wrong driver tree")
-        bad_text = identity_path.read_text(encoding="ascii").replace(
-            f'profiled_source_tag_object = "{profiled_tag_object}"',
-            f'profiled_source_tag_object = "{tag_object}"',
-        )
-        bad_path.write_text(bad_text, encoding="ascii")
-        try:
-            verify(bad_path, repository)
-        except PinError:
-            pass
-        else:
-            raise PinError("self-test accepts a wrong profiled source tag object")
-        # Four tags over known commits separate the three properties a pinned
-        # release tag must hold: a signature block, a signature from the
-        # release signer, and a peel to the pinned commit. Each known-bad tag
-        # breaks exactly one.
+        # Each known-bad identity breaks exactly one property: the pinned tree,
+        # the tag object, the signature block, the signing key, or the peel.
+        # The run prints its classification, so a green result names the cases
+        # that discriminated rather than asserting a count no output carries.
+        field_substitutions = {
+            "a wrong driver tree": (
+                f'driver_tree = "{tree}"',
+                f'driver_tree = "{"0" * 40}"',
+            ),
+            "a wrong profiled source tag object": (
+                f'profiled_source_tag_object = "{profiled_tag_object}"',
+                f'profiled_source_tag_object = "{tag_object}"',
+            ),
+        }
+        bad_count = 0
+        for description, (original, replacement) in field_substitutions.items():
+            bad_text = identity_path.read_text(encoding="ascii").replace(
+                original, replacement
+            )
+            bad_path.write_text(bad_text, encoding="ascii")
+            try:
+                verify(bad_path, repository)
+            except PinError:
+                bad_count += 1
+                print(f"self-test known-bad rejected: {description}")
+            else:
+                raise PinError(f"self-test accepts {description}")
         substitutions = {
             "an unsigned profiled source tag": (
                 "unsigned-profiled-fixture-tag",
@@ -708,10 +710,14 @@ def run_self_test() -> None:
             try:
                 verify(bad_path, repository)
             except PinError:
-                pass
+                bad_count += 1
+                print(f"self-test known-bad rejected: {description}")
             else:
                 raise PinError(f"self-test accepts {description}")
-    print("radeon source pin calibration: PASS")
+    print(
+        f"radeon source pin calibration: PASS (1 good and {bad_count} bad "
+        "identities classified)"
+    )
 
 
 def main() -> int:
