@@ -1,0 +1,4 @@
+# Release signers for radeon-unified profiled source tags. The principal and
+# key identify the release signer that git verify-tag requires; the private key
+# stays outside this repository and every build environment.
+151315375+Oichkatzelesfrettschen@users.noreply.github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJBAmbdYQD6qEwty0iCHf8wnZtY9u8dDPqNkkKdv+w7W
