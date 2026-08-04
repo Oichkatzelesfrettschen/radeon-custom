@@ -20,6 +20,7 @@ SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SSH_SIGNATURE_OPEN = "-----BEGIN SSH SIGNATURE-----"
 SSH_SIGNATURE_CLOSE = "-----END SSH SIGNATURE-----"
+DEFAULT_ALLOWED_SIGNERS = "radeon-source-tag-allowed-signers"
 REQUIRED_KEYS = {
     "schema",
     "constructor",
@@ -41,6 +42,8 @@ REQUIRED_KEYS = {
     "equivalence_tag",
     "equivalence_tag_object",
     "equivalence_commit",
+    "equivalence_driver_tree",
+    "equivalence_workflow_retrievable",
     "migration_input_commit",
     "migration_manifest",
     "migration_manifest_sha256",
@@ -68,19 +71,70 @@ def git(repository: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
-def require_signed_tag(repository: Path, tag_object: str, field: str) -> None:
-    """Require the tag object to carry an inline SSH signature.
+def require_signature_block(repository: Path, tag_object: str, field: str) -> None:
+    """Require the tag object body to carry an inline SSH signature block.
 
-    A tag object records the signature in its own body, so reading the object
-    settles the question without an allowed-signers file: ssh-keygen verifies
-    the signer, and a missing signature is absent bytes rather than an
-    unverifiable one. The release convention signs every profiled source
-    checkpoint, so a pin naming an unsigned tag names an object no signer
-    vouched for.
+    This is a structural property read from the object's own bytes, so it
+    reports a missing signature as absent bytes rather than as an
+    unverifiable one. It states nothing about who signed.
     """
     body = git(repository, "cat-file", "-p", tag_object)
     if SSH_SIGNATURE_OPEN not in body or SSH_SIGNATURE_CLOSE not in body:
         raise PinError(f"{field} names a tag object carrying no SSH signature")
+
+
+def verify_tag_signature(repository: Path, tag: str, allowed_signers: Path) -> None:
+    """Require the tag signature to verify against the release signer.
+
+    A signature block is bytes; git verify-tag against a fixed allowed-signers
+    file is the cryptographic statement. The allowed-signers path is passed as
+    an explicit -c override so the result depends on the package-owned
+    allowlist rather than on whatever gpg.ssh.allowedSignersFile the
+    workstation happens to set, and a tag signed by any key outside that file
+    fails even though its body carries a syntactically valid block.
+    """
+    if not allowed_signers.is_file():
+        raise PinError(f"allowed-signers file is missing: {allowed_signers}")
+    # git -C runs in the source repository, so a relative allowlist path would
+    # resolve there and ssh-keygen would report an unmatched principal for a
+    # file that is simply absent.
+    allowed_signers = allowed_signers.resolve()
+    result = subprocess.run(
+        [
+            "git", "-C", str(repository),
+            "-c", "gpg.format=ssh",
+            "-c", f"gpg.ssh.allowedSignersFile={allowed_signers}",
+            "verify-tag", tag,
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr.strip() or result.stdout.strip()).splitlines()
+        raise PinError(
+            f"{tag} does not verify against {allowed_signers.name}: "
+            f"{detail[-1] if detail else 'no detail'}"
+        )
+    # git reports the principal it matched, and the pin binds to that principal
+    # rather than to any entry the allowlist happens to carry.
+    principals = [
+        line.split(" for ", 1)[1].split(" with ", 1)[0].strip('"')
+        for line in result.stderr.splitlines()
+        if line.startswith("Good ") and " for " in line and " with " in line
+    ]
+    if not principals:
+        raise PinError(f"{tag} verification reported no signing principal")
+    expected = allowed_signers.read_text(encoding="ascii").splitlines()
+    allowed = {
+        line.split()[0] for line in expected if line and not line.startswith("#")
+    }
+    if not set(principals) & allowed:
+        raise PinError(
+            f"{tag} verified as {principals[0]}, which {allowed_signers.name} "
+            "does not name"
+        )
 
 
 def digest_blob(repository: Path, revision_path: str) -> str:
@@ -206,11 +260,14 @@ def load_identity(path: Path) -> dict[str, object]:
         "profiled_source_commit",
         "equivalence_tag_object",
         "equivalence_commit",
+        "equivalence_driver_tree",
         "migration_input_commit",
     ):
         value = identity[key]
         if not isinstance(value, str) or not SHA40.fullmatch(value):
             raise PinError(f"{key} must be a lowercase 40-character object ID")
+    if not isinstance(identity["equivalence_workflow_retrievable"], bool):
+        raise PinError("equivalence_workflow_retrievable must be a boolean")
     for key in (
         "feature_policy_sha256",
         "migration_manifest_sha256",
@@ -260,7 +317,12 @@ def verify(
     identity_path: Path,
     repository: Path,
     pkgbuild: Path | None = None,
+    allowed_signers: Path | None = None,
 ) -> dict[str, object]:
+    # The allowlist sits beside the identity it vouches for, so a pin verified
+    # from a checkout of this package uses that checkout's release signers.
+    if allowed_signers is None:
+        allowed_signers = identity_path.parent / DEFAULT_ALLOWED_SIGNERS
     identity = load_identity(identity_path)
     if pkgbuild is not None:
         require_pkgbuild_match(pkgbuild, identity)
@@ -288,11 +350,20 @@ def verify(
         raise PinError("profiled source tag object does not match the named tag")
     if git(repository, "rev-parse", f"refs/tags/{profiled_tag}^{{}}") != commit:
         raise PinError("profiled source tag does not peel to source_commit")
-    require_signed_tag(repository, profiled_tag_object, "profiled_source_tag_object")
+    require_signature_block(repository, profiled_tag_object, "profiled_source_tag_object")
+    verify_tag_signature(repository, profiled_tag, allowed_signers)
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{tag}}") != tag_object:
         raise PinError("equivalence tag object does not match the named tag")
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{}}") != equivalence_commit:
         raise PinError("equivalence tag does not peel to equivalence_commit")
+    # The workflow run that proved equivalence expires from the forge while the
+    # objects it proved stay reachable, so the driver tree carries the claim
+    # and the run number stays explanatory.
+    if (
+        git(repository, "rev-parse", f"{equivalence_commit}:{subtree}")
+        != identity["equivalence_driver_tree"]
+    ):
+        raise PinError("equivalence driver subtree does not match equivalence_driver_tree")
     try:
         git(repository, "merge-base", "--is-ancestor", equivalence_commit, commit)
     except PinError as error:
@@ -437,6 +508,9 @@ def run_self_test() -> None:
             check=True,
         )
         equivalence_commit = git(repository, "rev-parse", "HEAD")
+        equivalence_driver_tree = git(
+            repository, "rev-parse", "HEAD:drivers/gpu/drm/radeon"
+        )
         subprocess.run(
             ["git", "-C", str(repository), "tag", "-am", "fixture", "fixture-tag"],
             check=True,
@@ -483,6 +557,54 @@ def run_self_test() -> None:
         unsigned_tag_object = git(
             repository, "rev-parse", "unsigned-profiled-fixture-tag^{tag}"
         )
+        # A second ephemeral key produces a tag whose body carries a valid
+        # signature block over the right commit, so it separates the structural
+        # property from the signer-identity property: only the allowlist
+        # distinguishes the two tags.
+        untrusted_key = repository / "fixture-untrusted-key"
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C",
+             "pin fixture untrusted", "-f", str(untrusted_key)],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git", "-C", str(repository),
+                "-c", "gpg.format=ssh",
+                "-c", f"user.signingkey={untrusted_key}.pub",
+                "tag", "-sm", "untrusted signer", "untrusted-profiled-fixture-tag",
+            ],
+            check=True,
+        )
+        untrusted_tag_object = git(
+            repository, "rev-parse", "untrusted-profiled-fixture-tag^{tag}"
+        )
+        # The trusted key over the equivalence commit isolates the peel
+        # property: signer and signature block are both right, the commit is
+        # not.
+        subprocess.run(
+            [
+                "git", "-C", str(repository),
+                "-c", "gpg.format=ssh",
+                "-c", f"user.signingkey={signing_key}.pub",
+                "tag", "-sm", "wrong peel", "wrong-peel-profiled-fixture-tag",
+                equivalence_commit,
+            ],
+            check=True,
+        )
+        wrong_peel_tag_object = git(
+            repository, "rev-parse", "wrong-peel-profiled-fixture-tag^{tag}"
+        )
+        # The allowlist names the trusted fixture key alone, so the untrusted
+        # tag fails on signer identity rather than on signature validity.
+        keytype, keydata = (
+            Path(f"{signing_key}.pub").read_text(encoding="ascii").split()[:2]
+        )
+        allowed_signers = repository / DEFAULT_ALLOWED_SIGNERS
+        allowed_signers.write_text(
+            f"fixture-signer@example.invalid {keytype} {keydata}\n",
+            encoding="ascii",
+        )
         repository_tree = git(repository, "rev-parse", "HEAD^{tree}")
         tree = git(repository, "rev-parse", "HEAD:drivers/gpu/drm/radeon")
         policy_tree = git(repository, "rev-parse", "HEAD:policy")
@@ -520,6 +642,8 @@ def run_self_test() -> None:
                     "generated_output_proof_sha256 = "
                     f'"{"0" * 64}"',
                     "equivalence_workflow_run = 1",
+                    "equivalence_workflow_retrievable = false",
+                    f'equivalence_driver_tree = "{equivalence_driver_tree}"',
                     "profile_workflow_run = 2",
                     "",
                 ]
@@ -550,24 +674,43 @@ def run_self_test() -> None:
             pass
         else:
             raise PinError("self-test accepts a wrong profiled source tag object")
-        bad_text = (
-            identity_path.read_text(encoding="ascii")
-            .replace(
-                'profiled_source_tag = "profiled-fixture-tag"',
-                'profiled_source_tag = "unsigned-profiled-fixture-tag"',
+        # Four tags over known commits separate the three properties a pinned
+        # release tag must hold: a signature block, a signature from the
+        # release signer, and a peel to the pinned commit. Each known-bad tag
+        # breaks exactly one.
+        substitutions = {
+            "an unsigned profiled source tag": (
+                "unsigned-profiled-fixture-tag",
+                unsigned_tag_object,
+            ),
+            "a profiled source tag signed by an untrusted key": (
+                "untrusted-profiled-fixture-tag",
+                untrusted_tag_object,
+            ),
+            "a trusted-key tag that peels to the wrong commit": (
+                "wrong-peel-profiled-fixture-tag",
+                wrong_peel_tag_object,
+            ),
+        }
+        for description, (tag_name, object_id) in substitutions.items():
+            bad_text = (
+                identity_path.read_text(encoding="ascii")
+                .replace(
+                    'profiled_source_tag = "profiled-fixture-tag"',
+                    f'profiled_source_tag = "{tag_name}"',
+                )
+                .replace(
+                    f'profiled_source_tag_object = "{profiled_tag_object}"',
+                    f'profiled_source_tag_object = "{object_id}"',
+                )
             )
-            .replace(
-                f'profiled_source_tag_object = "{profiled_tag_object}"',
-                f'profiled_source_tag_object = "{unsigned_tag_object}"',
-            )
-        )
-        bad_path.write_text(bad_text, encoding="ascii")
-        try:
-            verify(bad_path, repository)
-        except PinError:
-            pass
-        else:
-            raise PinError("self-test accepts an unsigned profiled source tag")
+            bad_path.write_text(bad_text, encoding="ascii")
+            try:
+                verify(bad_path, repository)
+            except PinError:
+                pass
+            else:
+                raise PinError(f"self-test accepts {description}")
     print("radeon source pin calibration: PASS")
 
 
@@ -577,6 +720,12 @@ def main() -> int:
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--pkgbuild", type=Path)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument(
+        "--allowed-signers",
+        type=Path,
+        help="release signers for the profiled source tag; defaults to "
+        f"{DEFAULT_ALLOWED_SIGNERS} beside the identity file",
+    )
     arguments = parser.parse_args()
     try:
         if arguments.self_test:
@@ -588,6 +737,7 @@ def main() -> int:
             arguments.identity,
             arguments.repository,
             arguments.pkgbuild,
+            arguments.allowed_signers,
         )
     except PinError as error:
         print(f"check_radeon_source_pin: {error}", file=sys.stderr)
