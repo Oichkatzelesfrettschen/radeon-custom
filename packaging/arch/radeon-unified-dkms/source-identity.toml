@@ -2,22 +2,22 @@ schema = 2
 constructor = "profiled-source"
 
 source_repository = "Oichkatzelesfrettschen/linux-radeon-gororoba"
-source_commit = "5df0aec3b7ad96b78c4f8cbb9bc4096571f8ebc2"
-repository_tree = "744a170e9b1995fc18a23f7c023695978597a45a"
+source_commit = "7a8dfb50cc4861ebd2c33a2d96cd19f961443c8e"
+repository_tree = "6381d07288c9832b2853574b83a661837b1d959a"
 driver_subtree = "drivers/gpu/drm/radeon"
-driver_tree = "99492d31337754d068e7cecae23d2fde7dc41df7"
+driver_tree = "84b3c5c0282bf37236f2c4fda80eb17048bdd1ed"
 archive_entry_count = 222
 
 feature_policy_path = "policy/build-features.toml"
 feature_policy_sha256 = "8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd"
-feature_policy_tree = "89dd4e9135f1578220d7ca66a8b4590281f214d3"
+feature_policy_tree = "cd068fc17d3380160baa8a76fc1b3765509dd800"
 upstream_base_path = "UPSTREAM_BASE.toml"
 upstream_commit = "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
 upstream_subtree = "06a00c78fc5be13ed90c2a2c6973f272d993b6a3"
 
-profiled_source_tag = "radeon-unified-0.5-2-profiled-source"
-profiled_source_tag_object = "526f01b308d7682ff9aa57f388e29803a39a87f9"
-profiled_source_commit = "5df0aec3b7ad96b78c4f8cbb9bc4096571f8ebc2"
+profiled_source_tag = "radeon-unified-0.6-profiled-source"
+profiled_source_tag_object = "7a011a561c38258180e1f3083a0e5d8e74f5c1dd"
+profiled_source_commit = "7a8dfb50cc4861ebd2c33a2d96cd19f961443c8e"
 
 equivalence_tag = "radeon-unified-0.3-pkgrel91-source-equivalent"
 equivalence_tag_object = "81a2510e34d1d62f5486683bcd6e240db8223b7d"
@@ -27,4 +27,9 @@ migration_manifest = "migration/expected-prefixes/mechanism/M24.manifest.tsv"
 migration_manifest_sha256 = "71ae424fc8af1828200ec98e9233b646c6483c11ecfb778d91ec64ef6bf9f5dc"
 generated_output_proof_sha256 = "1efe8d77577c8c9173093d5c47a8df2905fd487471a22c5c9d0507693502909a"
 equivalence_workflow_run = 30585027178
-profile_workflow_run = 30881272544
+# A workflow run expires while the objects it proved stay reachable, so the
+# commit, tree, and manifest digest above carry the equivalence claim and the
+# run number remains explanatory provenance.
+equivalence_workflow_retrievable = false
+equivalence_driver_tree = "b0f40a1970f57d00b690890120ad1ba8fd1e474c"
+profile_workflow_run = 30884992454

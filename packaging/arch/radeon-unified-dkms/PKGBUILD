@@ -2,8 +2,8 @@
 
 pkgbase=radeon-unified-dkms
 pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev' 'radeon-rs482-policy')
-pkgver=0.5
-pkgrel=2
+pkgver=0.6
+pkgrel=1
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/linux-radeon-gororoba'
 license=('GPL-2.0-only')
@@ -24,14 +24,14 @@ _dev_optdepends=('sp5100-tco-ioapic-dkms>=0.4-4: SB600 watchdog substrate for at
                  'rs480-reset-hazard-stack: RS480 mutation preflight and recovery dependencies')
 
 _source_repository='Oichkatzelesfrettschen/linux-radeon-gororoba'
-_source_commit='5df0aec3b7ad96b78c4f8cbb9bc4096571f8ebc2'
-_source_repository_tree='744a170e9b1995fc18a23f7c023695978597a45a'
-_source_driver_tree='99492d31337754d068e7cecae23d2fde7dc41df7'
-_source_feature_policy_tree='89dd4e9135f1578220d7ca66a8b4590281f214d3'
+_source_commit='7a8dfb50cc4861ebd2c33a2d96cd19f961443c8e'
+_source_repository_tree='6381d07288c9832b2853574b83a661837b1d959a'
+_source_driver_tree='84b3c5c0282bf37236f2c4fda80eb17048bdd1ed'
+_source_feature_policy_tree='cd068fc17d3380160baa8a76fc1b3765509dd800'
 _source_feature_policy_sha256='8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd'
 _source_upstream_base='7d0a66e4bb9081d75c82ec4957c50034cb0ea449'
-_profiled_source_tag='radeon-unified-0.5-2-profiled-source'
-_profiled_source_tag_object='526f01b308d7682ff9aa57f388e29803a39a87f9'
+_profiled_source_tag='radeon-unified-0.6-profiled-source'
+_profiled_source_tag_object='7a011a561c38258180e1f3083a0e5d8e74f5c1dd'
 _equivalence_tag='radeon-unified-0.3-pkgrel91-source-equivalent'
 _equivalence_tag_object='81a2510e34d1d62f5486683bcd6e240db8223b7d'
 _equivalence_commit='9079be562eebd184da9cf891fbc6a72d5ac0d9f3'
@@ -40,6 +40,7 @@ _source_url=${RADEON_UNIFIED_SOURCE_URL:-git+ssh://git@github.com/${_source_repo
 source=(
   "radeon-source::${_source_url}#commit=${_source_commit}"
   'source-identity.toml'
+  'radeon-source-tag-allowed-signers'
   'dkms.conf.prod'
   'dkms.conf.dev'
   'radeon-build-profile.prod.toml'
@@ -69,13 +70,14 @@ source=(
   'radeon-dkms-ccache-clang'
 )
 sha256sums=(  'SKIP'
-  '6031d51d82a0cb9ad8cb51683e6578edc243e3d6f3f69e0dd55fc5759a9f9498'
-  '8524ffaeca073bd456f6bc17f2f5550a81faee9128b2eeebe96e95833a16c2b6'
-  '103fe6acf2e3ed8da103fbb3791821980ee7f14b95c40490664cd8ecf2127b5e'
-  '3fdd006b2df63d167be1dc3bf65cc9911f1ba1579eb31fc32f14c9fefa579d29'
-  'df710044b2228e92e53acdd081ea2c52ebbc78f3347eb67f5bf3bb4d83ba1554'
-  '0c72d6e8eab5b87869c0a8092c53e31c8010e90cf564602fed7983e22ef46ced'
-  'd26e579dd2be0ab390e0bfa73c98aab2a89c1165fb4223230a21264e645c05f4'
+  'cd7128524a89d465cb29b83f8629817247b13b80d8b1d9810d4101d80651f4ba'
+  '2133f7e0926032a91d8c55211a4dad9cdf16d188e2bab24c2b70f68d464c24b0'
+  '1537b2a064a42e76f544bf16cc12217e5d5d67dd8c794c6751c23c217ca03cc3'
+  '0db1caa04719de9aaa4908319a8ca52661642b1b74416316c599d25a208bfa3d'
+  '4000087a4ca020d4d53e705666416eafa6f750f97a4c309cae8ec0d27b3b29c0'
+  '5ccd062cf9ab7217049f173c1cc2da855a0993751eaaa0a0d73984bfa7865144'
+  'd08eb09a13a9e905aa98f16e4dfa6894b2051c2164016908ff9fb8e655160991'
+  '255aa1d4c6dcc2a747adc621e95b11bb0a64c8a1e586e5492821d26473163399'
   'dd7dcb0c9a286c16505d22a61ce9a682919bab90785cc79a6f0cfecfb135db67'
   '0096c2fe01a114793169e120a006684b8d98403a678568f8adc967948b134743'
   'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
@@ -92,7 +94,7 @@ sha256sums=(  'SKIP'
   '9405011491bd33e960b855579af73a3ae3a2a5de4600251094774fc95dba6526'
   'ed339b0b6483e36add069f884263bea486e5d7b5c8823c3d04da0476e31be671'
   'b4638dab3ea64284f1f3f3572ea8bf782e818035e7ee946a5edff46069cacb08'
-  'ce5d61662afe5cf11e0b75efc20603683af5cfd364ab64a31832987ae6f88263'
+  '0bc400462e8a6f5467e5c3b59a83a944ad5376a02fe7e672773362f43e96155c'
   '39aaf1ddabec1ac585e14e977c8949f3ef2332fa641ea4adb301fc9dc5f6742b'
   '120fbce9390e46181f26070500fe082796802b9677b5533854ffca88cd616d8f'
   '4654ac693bd3fd00da36779ed9ec5b10a61ab84fd4fef5a6addcf85a2fe988e7'
@@ -129,6 +131,14 @@ prepare() {
     "refs/tags/${_profiled_source_tag}^{}")
   [[ ${actual} == "${_source_commit}" ]] ||
     { printf 'profiled source tag peel mismatch: %s\n' "${actual}" >&2; return 1; }
+  # The package-owned allowlist decides which signer the tag must carry, and
+  # the explicit -c overrides keep the verdict independent of any build-host
+  # git configuration.
+  git -C "${srcdir}/radeon-source" \
+    -c gpg.format=ssh \
+    -c gpg.ssh.allowedSignersFile="${srcdir}/radeon-source-tag-allowed-signers" \
+    verify-tag "${_profiled_source_tag}" ||
+    { printf 'profiled source tag does not verify against the release signers\n' >&2; return 1; }
   actual=$(git -C "${srcdir}/radeon-source" rev-parse \
     "refs/tags/${_equivalence_tag}^{tag}")
   [[ ${actual} == "${_equivalence_tag_object}" ]] ||
