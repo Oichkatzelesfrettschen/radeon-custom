@@ -101,14 +101,15 @@ survival under the Fire 28 procedure. Falsifier: an attended repeat of the Fire
 28 procedure in which `boot_id` changes or SSH stops answering.
 
 Fire 28 achieved host survival alone and did not isolate the 0060 gate from the
-client freeze and thaw procedure it also changed. A later single-factor refault
-fire isolates the SIGBUS firing specifically: it drives one SIGUSR1 re-touch into
-the zapped mapping and returns SIGBUS (si_code BUS_ADRERR, breadcrumb match,
-boot_id stable), so the SIGBUS firing line is demonstrated on RS482 silicon and
-retained as steinmarder-r300 bundle
-`rs480_sigbus_refault_fire_rs482_20260803T030621Z`. GPU recovery, display
-recovery, and the attribution of Fire 28 host survival to the 0060 gate remain
-open.
+client freeze and thaw procedure it also changed. A later targeted refault fire
+directly demonstrates the SIGBUS firing: it drives one SIGUSR1 re-touch into the
+zapped mapping and returns SIGBUS (si_code BUS_ADRERR, breadcrumb match, boot_id
+stable), retained as steinmarder-r300 bundle
+`rs480_sigbus_refault_fire_rs482_20260803T030621Z`. The fire ran on the
+dev-profile module, whose 0060 gate source is identical to the prod module, and
+park is reachable only through the armed dev reset node, so this is the only
+obtainable evidence. GPU recovery, display recovery, and the attribution of Fire
+28 host survival to the 0060 gate remain open.
 
 ## Register evidence partition
 

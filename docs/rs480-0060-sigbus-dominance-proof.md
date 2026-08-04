@@ -102,11 +102,13 @@ is safe because there is no VRAM page to touch.
 The gate statically dominates every VRAM-mmap refault path: the zap guarantees a
 refault, and the fault handler returns SIGBUS for a parked VRAM BO before any
 lock, reservation, TTM callback, GART/aperture op, or register access. A
-single-factor refault fire on RS482 corroborates the static argument: it drove
-one SIGUSR1 re-touch into a zapped mapping and observed the SIGBUS return
-(si_code BUS_ADRERR, breadcrumb match, boot_id stable), retained as
-steinmarder-r300 bundle `rs480_sigbus_refault_fire_rs482_20260803T030621Z`. Edge
-3 holds by static dominance and now by that retained firing line, no code change.
+targeted refault fire on RS482 corroborates the static argument: it drove one
+SIGUSR1 re-touch into a zapped mapping and observed the SIGBUS return (si_code
+BUS_ADRERR, breadcrumb match, boot_id stable), retained as steinmarder-r300
+bundle `rs480_sigbus_refault_fire_rs482_20260803T030621Z`. The fire ran on the
+dev-profile module, whose 0060 gate source is identical to prod, and park is
+reachable only through the armed dev reset node. Edge 3 holds by static dominance
+and now by that retained firing line, no code change.
 
 
 ## Remaining proof residuals

@@ -99,10 +99,13 @@ parked-module unload is not a campaign path (the box reboots). No fire.
 0060 zaps userspace GEM PTEs (`unmap_mapping_range`) and returns `VM_FAULT_SIGBUS`
 for VRAM-placed BOs in `radeon_gem_fault`. Fire 28 proved host survival but
 changed both the gate and the client freeze/thaw procedure, so it did not isolate
-the SIGBUS arm. A later single-factor refault fire on RS482 drove one SIGUSR1
+the SIGBUS arm. A later targeted refault fire on RS482 drove one SIGUSR1
 re-touch into a zapped mapping and observed the arm (si_code BUS_ADRERR,
 breadcrumb match, boot_id stable), retained as steinmarder-r300 bundle
-`rs480_sigbus_refault_fire_rs482_20260803T030621Z`.
+`rs480_sigbus_refault_fire_rs482_20260803T030621Z`. The fire ran on the
+dev-profile module, whose 0060 gate source is identical to prod, and park is
+reachable only through the armed dev reset node, so this is the only obtainable
+evidence.
 
 Closed by a static dominance proof (docs/rs480-0060-sigbus-dominance-proof.md):
 in `radeon_gem_fault` the `gpu_parked && mem_type == TTM_PL_VRAM` gate returns
@@ -118,7 +121,7 @@ degrades to GTT takes that same fall-through, and that fresh-client admission is
 a separate concern gated at the create path (see the create/evict residual
 below). One stated residual: the unlocked placement read is stable because no BO
 migration runs post-park. Covered by static dominance and by the retained
-single-factor refault fire above. No code change.
+targeted refault fire above. No code change.
 
 ## Enforcement going forward
 
