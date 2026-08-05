@@ -93,6 +93,32 @@ root_protected_path() {
     done
 }
 
+symlink_free_subpath() {
+    # The harness writes the trace header as root. A symlink component below
+    # the disposable kernel build root would redirect that write outside the
+    # copy, so every component from the base down to the header itself is a
+    # real directory or a real file.
+    local base=$1
+    local path=$2
+    local current=$base
+    local remainder
+    local component
+
+    [[ $path == "$base"/* ]] || return 1
+    remainder=${path#"$base"/}
+    while [[ -n $remainder ]]; do
+        component=${remainder%%/*}
+        if [[ $remainder == */* ]]; then
+            remainder=${remainder#*/}
+        else
+            remainder=
+        fi
+        [[ -n $component ]] || continue
+        current=${current%/}/$component
+        [[ ! -L $current ]] || return 1
+    done
+}
+
 verify_empty_command_output() {
     local output_path=$1
 
@@ -201,6 +227,27 @@ run_self_test() {
     if root_protected_path /tmp; then
         die "root path validator accepts a world-writable directory"
     fi
+    mkdir -p "$tmpdir/subpath/drivers/gpu/drm/radeon" "$tmpdir/outside"
+    : >"$tmpdir/subpath/drivers/gpu/drm/radeon/radeon_trace.h"
+    symlink_free_subpath "$tmpdir/subpath" \
+        "$tmpdir/subpath/drivers/gpu/drm/radeon/radeon_trace.h" ||
+        die "subpath validator rejects its known-good calibration"
+    mkdir -p "$tmpdir/linked-parent/drivers/gpu/drm"
+    ln -s "$tmpdir/outside" "$tmpdir/linked-parent/drivers/gpu/drm/radeon"
+    if symlink_free_subpath "$tmpdir/linked-parent" \
+            "$tmpdir/linked-parent/drivers/gpu/drm/radeon/radeon_trace.h"; then
+        die "subpath validator accepts a symlinked parent component"
+    fi
+    mkdir -p "$tmpdir/linked-leaf/drivers/gpu/drm/radeon"
+    ln -s "$tmpdir/outside/radeon_trace.h" \
+        "$tmpdir/linked-leaf/drivers/gpu/drm/radeon/radeon_trace.h"
+    if symlink_free_subpath "$tmpdir/linked-leaf" \
+            "$tmpdir/linked-leaf/drivers/gpu/drm/radeon/radeon_trace.h"; then
+        die "subpath validator accepts a dangling symlinked header"
+    fi
+    if symlink_free_subpath "$tmpdir/subpath" "$tmpdir/outside/radeon_trace.h"; then
+        die "subpath validator accepts a path outside the base"
+    fi
     mkdir -p "$tmpdir/private/module/build" "$tmpdir/failure-evidence"
     printf 'decisive failure log\n' \
         >"$tmpdir/private/module/build/make.log"
@@ -245,6 +292,7 @@ run_self_test() {
 package_path=
 expected_sha256=
 kernel_release=
+inject_trace_header=
 evidence_dir=
 self_test=0
 while [[ $# -gt 0 ]]; do
@@ -267,6 +315,11 @@ while [[ $# -gt 0 ]]; do
         --evidence-dir)
             [[ $# -ge 2 ]] || die "--evidence-dir requires a path"
             evidence_dir=$2
+            shift 2
+            ;;
+        --inject-trace-header)
+            [[ $# -ge 2 ]] || die "--inject-trace-header requires matching or conflicting"
+            inject_trace_header=$2
             shift 2
             ;;
         --self-test)
@@ -345,9 +398,31 @@ root_protected_path "$resolved_kernel_build_root" ||
 cp -a --reflink=auto "$resolved_kernel_build_root/." "$kernel_build_root/"
 [[ -f $kernel_build_root/include/generated/compile.h ]] ||
     die "disposable kernel build root lacks include/generated/compile.h"
+# A headers-only root omits drivers/gpu/drm/radeon/radeon_trace.h and the
+# DKMS pre-build satisfies define_trace.h through its private shim; a target
+# root ships the real header and the build resolves it in place. Both layouts
+# complete the lifecycle, so the harness records which one it exercises. The
+# --inject-trace-header calibration flag synthesizes the target layout on a
+# headers-only host: matching copies the module source header, conflicting
+# writes a differing header that the post-extraction byte comparison rejects.
+# The evidence names the layout and its source, so a synthesized header stays
+# distinguishable from a kernel root that ships its own.
 kernel_trace_header="$kernel_build_root/drivers/gpu/drm/radeon/radeon_trace.h"
-[[ ! -e $kernel_trace_header ]] ||
-    die "disposable kernel build root already contains the external trace header"
+if [[ -e $kernel_trace_header || -L $kernel_trace_header ]] &&
+   [[ -n $inject_trace_header ]]; then
+    die "--inject-trace-header on a root that already ships the trace header"
+fi
+case $inject_trace_header in
+    "" ) ;;
+    matching|conflicting)
+        symlink_free_subpath "$kernel_build_root" "$kernel_trace_header" ||
+            die "trace header path crosses a symlink below the build root"
+        mkdir -p "$(dirname -- "$kernel_trace_header")"
+        ;;
+    *)
+        die "--inject-trace-header accepts matching or conflicting"
+        ;;
+esac
 install -Dm755 "$kernel_build_root/scripts/sign-file" \
     "$install_tree/$kernel_release/build/scripts/sign-file"
 
@@ -388,6 +463,45 @@ esac
 expected_source_commit=$(toml_value source_commit "$build_manifest")
 expected_policy=$(toml_value feature_policy_sha256 "$build_manifest")
 expected_upstream=$(toml_value upstream_base "$build_manifest")
+case $inject_trace_header in
+    matching)
+        install -m 0644 "$packaged_source/radeon/radeon_trace.h" \
+            "$kernel_trace_header"
+        ;;
+    conflicting)
+        { cat "$packaged_source/radeon/radeon_trace.h"
+          printf '/* divergent kernel-root copy */\n'; } \
+            >"$kernel_trace_header"
+        chmod 0644 "$kernel_trace_header"
+        ;;
+esac
+if [[ -e $kernel_trace_header || -L $kernel_trace_header ]]; then
+    [[ -f $kernel_trace_header && ! -L $kernel_trace_header ]] ||
+        die "kernel root trace header is not a regular file"
+    symlink_free_subpath "$kernel_build_root" "$kernel_trace_header" ||
+        die "kernel root trace header path crosses a symlink"
+    trace_header_layout=kernel-root
+    cmp -s "$kernel_trace_header" "$packaged_source/radeon/radeon_trace.h" ||
+        die "kernel root trace header differs from the module source header"
+    cp "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre"
+    # A reinstall of byte-identical content allocates a new inode and a new
+    # mtime, so the digest comparison alone accepts it. The stat record
+    # carries the fields that separate an untouched header from a rewrite.
+    stat -c '%i %F %a %u %g %s %Y' -- "$kernel_trace_header" \
+        >"$evidence_dir/kernel-radeon_trace.h.stat.pre"
+else
+    trace_header_layout=shim
+fi
+# An injected header synthesizes the target layout on a headers-only host, so
+# the retained bundle separates it from a kernel root that ships its own.
+if [[ -n $inject_trace_header ]]; then
+    trace_header_source=injected-$inject_trace_header
+else
+    trace_header_source=natural
+fi
+printf 'trace_header_layout=%s\ntrace_header_source=%s\n' \
+    "$trace_header_layout" "$trace_header_source" \
+    >"$evidence_dir/trace-header-layout.txt"
 cp -a "$packaged_source" "$source_tree/$module_name-$module_version"
 
 cat >"$stub_bin/limine-mkinitcpio" <<'EOF'
@@ -430,8 +544,18 @@ mapfile -t make_logs < <(
 [[ ${#make_logs[@]} -eq 1 ]] ||
     die "expected one DKMS make.log, observed ${#make_logs[@]}"
 cp "${make_logs[0]}" "$evidence_dir/make.log"
-[[ ! -e $kernel_trace_header ]] ||
-    die "DKMS build writes the external trace header into the kernel root"
+if [[ $trace_header_layout == kernel-root ]]; then
+    cmp -s "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre" ||
+        die "DKMS build rewrote the kernel root trace header"
+    stat -c '%i %F %a %u %g %s %Y' -- "$kernel_trace_header" \
+        >"$evidence_dir/kernel-radeon_trace.h.stat.post"
+    cmp -s "$evidence_dir/kernel-radeon_trace.h.stat.pre" \
+        "$evidence_dir/kernel-radeon_trace.h.stat.post" ||
+        die "DKMS build replaced the kernel root trace header in place"
+else
+    [[ ! -e $kernel_trace_header ]] ||
+        die "DKMS build writes the external trace header into the kernel root"
+fi
 grep -Fq -- \
     'private trace-include header matches the module source' \
     "$evidence_dir/make.log" ||
