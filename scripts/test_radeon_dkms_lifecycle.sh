@@ -245,6 +245,7 @@ run_self_test() {
 package_path=
 expected_sha256=
 kernel_release=
+inject_trace_header=
 evidence_dir=
 self_test=0
 while [[ $# -gt 0 ]]; do
@@ -267,6 +268,11 @@ while [[ $# -gt 0 ]]; do
         --evidence-dir)
             [[ $# -ge 2 ]] || die "--evidence-dir requires a path"
             evidence_dir=$2
+            shift 2
+            ;;
+        --inject-trace-header)
+            [[ $# -ge 2 ]] || die "--inject-trace-header requires matching or conflicting"
+            inject_trace_header=$2
             shift 2
             ;;
         --self-test)
@@ -345,9 +351,26 @@ root_protected_path "$resolved_kernel_build_root" ||
 cp -a --reflink=auto "$resolved_kernel_build_root/." "$kernel_build_root/"
 [[ -f $kernel_build_root/include/generated/compile.h ]] ||
     die "disposable kernel build root lacks include/generated/compile.h"
+# A headers-only root omits drivers/gpu/drm/radeon/radeon_trace.h and the
+# DKMS pre-build satisfies define_trace.h through its private shim; a target
+# root ships the real header and the build resolves it in place. Both layouts
+# complete the lifecycle, so the harness records which one it exercises. The
+# --inject-trace-header calibration flag synthesizes the target layout on a
+# headers-only host: matching copies the module source header, conflicting
+# writes a differing header that the post-extraction byte comparison rejects.
 kernel_trace_header="$kernel_build_root/drivers/gpu/drm/radeon/radeon_trace.h"
-[[ ! -e $kernel_trace_header ]] ||
-    die "disposable kernel build root already contains the external trace header"
+if [[ -f $kernel_trace_header && -n $inject_trace_header ]]; then
+    die "--inject-trace-header on a root that already ships the trace header"
+fi
+case $inject_trace_header in
+    "" ) ;;
+    matching|conflicting)
+        mkdir -p "$(dirname -- "$kernel_trace_header")"
+        ;;
+    *)
+        die "--inject-trace-header accepts matching or conflicting"
+        ;;
+esac
 install -Dm755 "$kernel_build_root/scripts/sign-file" \
     "$install_tree/$kernel_release/build/scripts/sign-file"
 
@@ -388,6 +411,28 @@ esac
 expected_source_commit=$(toml_value source_commit "$build_manifest")
 expected_policy=$(toml_value feature_policy_sha256 "$build_manifest")
 expected_upstream=$(toml_value upstream_base "$build_manifest")
+case $inject_trace_header in
+    matching)
+        install -m 0644 "$packaged_source/radeon/radeon_trace.h" \
+            "$kernel_trace_header"
+        ;;
+    conflicting)
+        { cat "$packaged_source/radeon/radeon_trace.h"
+          printf '/* divergent kernel-root copy */\n'; } \
+            >"$kernel_trace_header"
+        chmod 0644 "$kernel_trace_header"
+        ;;
+esac
+if [[ -f $kernel_trace_header ]]; then
+    trace_header_layout=kernel-root
+    cmp -s "$kernel_trace_header" "$packaged_source/radeon/radeon_trace.h" ||
+        die "kernel root trace header differs from the module source header"
+    cp "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre"
+else
+    trace_header_layout=shim
+fi
+printf 'trace_header_layout=%s\n' "$trace_header_layout" \
+    >"$evidence_dir/trace-header-layout.txt"
 cp -a "$packaged_source" "$source_tree/$module_name-$module_version"
 
 cat >"$stub_bin/limine-mkinitcpio" <<'EOF'
@@ -430,8 +475,13 @@ mapfile -t make_logs < <(
 [[ ${#make_logs[@]} -eq 1 ]] ||
     die "expected one DKMS make.log, observed ${#make_logs[@]}"
 cp "${make_logs[0]}" "$evidence_dir/make.log"
-[[ ! -e $kernel_trace_header ]] ||
-    die "DKMS build writes the external trace header into the kernel root"
+if [[ $trace_header_layout == kernel-root ]]; then
+    cmp -s "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre" ||
+        die "DKMS build rewrote the kernel root trace header"
+else
+    [[ ! -e $kernel_trace_header ]] ||
+        die "DKMS build writes the external trace header into the kernel root"
+fi
 grep -Fq -- \
     'private trace-include header matches the module source' \
     "$evidence_dir/make.log" ||
