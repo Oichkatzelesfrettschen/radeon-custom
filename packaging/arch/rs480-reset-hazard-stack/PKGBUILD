@@ -25,7 +25,7 @@
 
 pkgname=rs480-reset-hazard-stack
 pkgver=0.2
-pkgrel=5
+pkgrel=6
 pkgdesc='RS480 failed-reset hazardous-fire safety stack: radeon-under-test + SB600 watchdog + runtime preflight'
 arch=('any')
 url='https://github.com/Oichkatzelesfrettschen/radeon-custom'
@@ -48,7 +48,7 @@ replaces=('rad05-rs480-hazard-stack')
 conflicts=('rad05-rs480-hazard-stack')
 install=rs480-reset-hazard-stack.install
 source=('rs480-reset-hazard-preflight.sh')
-sha256sums=('5c2f6425ccd9feac2e9d9b9a6500f25ac6b843fc0d8967fa49367a31b2414a62')
+sha256sums=('faedd96da97a814f022e36fff27a117904fa5b59ea9f3c565f8cf566bd3cbf5f')
 
 package() {
     # Canonical mechanism-named entry point.
