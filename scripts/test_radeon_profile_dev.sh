@@ -14,7 +14,7 @@ temp_root=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
 tmpdir=$(mktemp -d "$temp_root/radeon-profile-dev.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 fixture_root="$tmpdir/root"
-source_root="$fixture_root/usr/src/radeon-unified-0.6"
+source_root="$fixture_root/usr/src/radeon-unified"
 profile_root="$fixture_root/usr/share/radeon-unified/profiles"
 modprobe_root="$fixture_root/etc/modprobe.d"
 sys_root="$fixture_root/sys/module/radeon"
@@ -48,22 +48,29 @@ set -eu
 [ "$1" = -u ]
 printf '%s\n' 0
 EOF
-cat >"$stub_bin/modinfo" <<'EOF'
-#!/bin/sh
-set -eu
+# The stub answers module attestation queries from the packaged development
+# manifest, so the fixture tracks the source pin instead of freezing one
+# commit and failing on every pin move.
+{
+    printf '#!/bin/sh\nset -eu\n'
+    printf 'manifest="%s"\n' "$source_root/radeon-build-profile.toml"
+    cat <<'EOF'
+manifest_field() {
+    sed -n "s/^$1 = \"\(.*\)\"\$/\1/p" "$manifest" | head -n 1
+}
 [ "$1" = -F ]
 case $2 in
     gororoba_build_profile)
         printf '%s\n' mutate-dev
         ;;
     gororoba_source_commit)
-        printf '%s\n' 7a8dfb50cc4861ebd2c33a2d96cd19f961443c8e
+        manifest_field source_commit
         ;;
     gororoba_feature_policy_sha256)
-        printf '%s\n' 8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd
+        manifest_field feature_policy_sha256
         ;;
     gororoba_upstream_base)
-        printf '%s\n' 7d0a66e4bb9081d75c82ec4957c50034cb0ea449
+        manifest_field upstream_base
         ;;
     srcversion)
         printf '%s\n' 0000000000000000TESTONLY
@@ -76,6 +83,7 @@ case $2 in
         ;;
 esac
 EOF
+} >"$stub_bin/modinfo"
 cat >"$stub_bin/rs480-reset-hazard-preflight" <<'EOF'
 #!/bin/sh
 set -eu
