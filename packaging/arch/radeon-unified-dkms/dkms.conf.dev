@@ -1,5 +1,5 @@
 PACKAGE_NAME="radeon-unified"
-PACKAGE_VERSION="0.6"
+PACKAGE_VERSION="0.7"
 radeon_kernel_build_root=${R300_RS480_KERNEL_BUILD_ROOT:-/lib/modules/${kernelver}/build}
 printf -v radeon_kernel_build_root_q '%q' "$radeon_kernel_build_root"
 radeon_dkms_build_root="${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build"
