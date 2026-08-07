@@ -107,3 +107,15 @@ target_compile = "NOT RUN"
 package_installation = "NOT RUN"
 module_load = "NOT RUN"
 hardware_operation = "NOT RUN"
+
+# Parked-submission entry contract in the pinned source (radeon_cs_ioctl at
+# source commit 293a4ae3fe82): the gpu_parked latch refuses with -EIO before
+# parser allocation, matching the parked return radeon_gem_object_create uses;
+# -EBUSY is the separate !accel_working refusal. The packaging commit 7f8ce3f
+# message and the PR #121 description describe the gpu_parked refusal as
+# -EBUSY; that prose is corrected here, and the package bytes are unaffected.
+# A parked-cell oracle against the 0.7 module expects -EIO on CS submission;
+# the -EBUSY measurement in the 0.6-1 record describes the older module,
+# whose CS refusal came from accel_working.
+parked_cs_errno = "EIO"
+accel_not_working_cs_errno = "EBUSY"
