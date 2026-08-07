@@ -11,11 +11,21 @@
 # Watchdog policy on this Vostro: active watchdog feeding is RETIRED for RAD-05
 # fire timing. The SB600 hardware reset event is not deferrable through
 # WDIOC_SETTIMEOUT, WDIOC_KEEPALIVE, or magic close (calibration proved the real
-# reset fires in a fixed sub-second window regardless). Hazard fires use
-# boot-persistent netconsole and manual recovery. No watchdog is therefore a
-# SANCTIONED condition for RAD-05i/RAD-05j design and no-fuse fires; the watchdog
-# substrate is retained only for watchdog research and the fired-latch-safe boot.
-# A run that explicitly requires feeding cannot be satisfied and hard-fails.
+# reset fires in a fixed sub-second window regardless). No watchdog is therefore
+# the expected condition for RAD-05i/RAD-05j design and no-fuse fires; the
+# watchdog substrate is retained only for watchdog research and the
+# fired-latch-safe boot. A run that explicitly requires feeding cannot be
+# satisfied and hard-fails.
+#
+# Recovery policy: netconsole is the diagnostic requirement, and a physical
+# recovery authority is the recovery requirement. A measured RS482 park showed
+# an orderly warm reboot leaving the network and never returning; a cold power
+# cycle restored the host (steinmarder-r300 bundle
+# cachyos_vostro1000_rs482_parked_entry_contract_matrix_20260805T055406Z).
+# An ordinary reboot is therefore an attempted recovery mechanism rather than
+# the recovery authority, and arming requires either an operator at the
+# chassis or an independently tested remote power controller, declared through
+# RS480_PHYSICAL_RECOVERY below.
 #
 # Usage:
 #   rs480-reset-hazard-preflight            # full gate; nonzero exit blocks a fire
@@ -31,6 +41,13 @@
 #       Permit a privileged visibility-only note that sp5100_tco is unloaded; the
 #       preflight never loads the watchdog module (loading can wedge the host on
 #       the SB600 TCO control write path).
+#   RS480_PHYSICAL_RECOVERY=operator
+#       An operator is at the chassis and can cold power cycle the host.
+#   RS480_PHYSICAL_RECOVERY=power-controller
+#       A remote power controller (PDU, smart plug, BMC) covers the host, and
+#       RS480_POWER_CONTROLLER_TEST names a readable log of its independent
+#       cycle test. A typed declaration without tested power control is a
+#       ceremonial gate, so the log is required.
 set -u
 
 recovery_mode=0
@@ -40,6 +57,9 @@ pass=0; fail=0; warn=0
 ok()   { printf '  PASS  %s\n' "$1"; pass=$((pass+1)); }
 bad()  { printf '  FAIL  %s\n' "$1"; fail=$((fail+1)); }
 note() { printf '  WARN  %s\n' "$1"; warn=$((warn+1)); }
+# Expected-by-design conditions report as INFO so an operator reading the
+# summary sees warnings only for genuinely anomalous state.
+info() { printf '  INFO  %s\n' "$1"; }
 
 echo "rs480-reset-hazard-preflight: RS480 hazardous-fire runtime gate"
 
@@ -74,9 +94,9 @@ if lsmod | grep -q '^sp5100_tco'; then
     fi
 else
     if [ "${RS480_WD_RESEARCH:-0}" = "1" ]; then
-        note "sp5100_tco not loaded (RS480_WD_RESEARCH=1: substrate absent; preflight still never modprobes it)"
+        info "sp5100_tco not loaded (RS480_WD_RESEARCH=1: substrate absent; preflight still never modprobes it)"
     else
-        note "sp5100_tco not loaded (watchdog substrate not visible; fine for a no-watchdog fire; preflight never modprobes it)"
+        info "sp5100_tco unloaded: expected; watchdog recovery is unavailable by design and physical recovery is required"
     fi
 fi
 
@@ -110,7 +130,7 @@ if [ -n "$wd_identity" ]; then
 elif [ -c /dev/watchdog ]; then
     note "/dev/watchdog present but no sysfs identity readable"
 else
-    note "/dev/watchdog missing (watchdog substrate not visible; fine for a no-watchdog fire)"
+    info "/dev/watchdog absent: expected; watchdog recovery is unavailable by design and physical recovery is required"
 fi
 
 # 3. Fired-latch fix version (>= 0.4-4 clears SP5100_WDT_FIRED on first touch).
@@ -206,6 +226,31 @@ elif [ "$running" = "$installed" ]; then
 else
     bad "radeon srcversion mismatch (running=$running installed=$installed) -- reboot to load the installed module"
 fi
+
+# 8. Physical recovery authority (hard gate). A parked RS482 survived as a
+#    running host while an orderly warm reboot left the network and never
+#    returned; a cold power cycle restored production. SSH plus a remote
+#    reboot is therefore not recovery capability, and arming requires a
+#    declared authority that can remove and restore power.
+case "${RS480_PHYSICAL_RECOVERY:-}" in
+    operator)
+        ok "physical recovery: operator at the chassis (RS480_PHYSICAL_RECOVERY=operator)"
+        ;;
+    power-controller)
+        pc_log=${RS480_POWER_CONTROLLER_TEST:-}
+        if [ -n "$pc_log" ] && [ -r "$pc_log" ] && [ -s "$pc_log" ]; then
+            ok "physical recovery: tested power controller (cycle-test log $pc_log)"
+        else
+            bad "RS480_PHYSICAL_RECOVERY=power-controller without a readable nonempty RS480_POWER_CONTROLLER_TEST log; an untested controller is a ceremonial gate"
+        fi
+        ;;
+    "")
+        bad "no physical recovery authority declared (set RS480_PHYSICAL_RECOVERY=operator or =power-controller with RS480_POWER_CONTROLLER_TEST); a warm reboot failed to reclaim a parked host and only a cold power cycle recovered it"
+        ;;
+    *)
+        bad "RS480_PHYSICAL_RECOVERY='${RS480_PHYSICAL_RECOVERY}' is not a recognized recovery authority (operator, power-controller)"
+        ;;
+esac
 
 echo "rs480-reset-hazard-preflight: $pass pass, $warn warn, $fail fail"
 [ "$fail" -eq 0 ] || { echo "rs480-reset-hazard-preflight: BLOCKED -- resolve FAIL gates before firing"; exit 1; }

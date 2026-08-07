@@ -91,6 +91,15 @@ jobs:
       - name: Base-delta closure calibration
         run: python3 scripts/check_base_delta_map_closure.py --self-test
 
+      - name: Display oracle lint calibration
+        run: sh scripts/check_display_oracle_usage.sh --self-test
+
+      - name: Display oracle lint
+        run: sh scripts/check_display_oracle_usage.sh
+
+      - name: Display-health oracle calibration
+        run: sh scripts/check_radeon_display_health.sh --self-test
+
       - name: ruff
         run: ruff check scripts/
 
