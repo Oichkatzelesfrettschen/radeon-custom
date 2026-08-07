@@ -1,0 +1,109 @@
+# Signed-release identity for the exact radeon-unified 0.7-1 package artifacts.
+# This record binds the detached SSH signatures and their verification to the
+# exact archive bytes, and to the packaging and source identity those bytes were
+# built from. It carries package release identity and makes no installation or
+# silicon claim; the exact packages, signatures, allowed-signers file, signing
+# transcript, and lifecycle evidence are retained in the durable private
+# build-host release store.
+#
+# The source-side attestation in linux-radeon-gororoba covers the signed source
+# tag alone and keeps its own NOT RUN fields. This record is the separate
+# package authority; neither one speaks for the other.
+
+schema = 1
+release = "radeon-unified-0.7-1"
+
+packaging_commit = "0ee88df3110977f86445515276df47d7eb82fbbb"
+packaging_tree = "deddb581b1a62f821e76611b0e3bf86e420410fe"
+build_provenance = "release-store 0.7-1 build-provenance.toml"
+
+profiled_source_tag = "radeon-unified-0.7-profiled-source"
+profiled_source_tag_object = "7f500d682aad600ca443c7f26e913b6b4034c834"
+source_commit = "293a4ae3fe82cd03585ef3157e82b0b59b641b47"
+repository_tree = "ffbf6147674d87bbea5c043d0bc32ce1c3852ba9"
+driver_tree = "d57a22ad5356637d7075cb2aba83e22af71f7bfb"
+feature_policy_tree = "8b81d1778aa59195e41c93dec8877a74c7278f82"
+feature_policy_sha256 = "8e2b957a49405b5e1689b5a5c1572c848b1e2a40e017addf9d53b4776661fecd"
+
+prod_package = "radeon-unified-dkms-0.7-1-x86_64.pkg.tar.zst"
+prod_package_profile = "prod"
+prod_package_sha256 = "245a50e514837b37aa6075323692bc4aa8d6a65c71ef0617d1c86432e4e19261"
+prod_pkginfo_sha256 = "c97f16764586c6125b8111c12cb4bc5b0064c0ea39d00b48c3690b8af3b454e4"
+prod_buildinfo_sha256 = "2ad512363e53d0221df93454974fb01220d50695dfc7e4a9ce67c1c1b55555a1"
+prod_mtree_sha256 = "d36c39c47ab53415ea641ffe89683de5c5e0478171019f8987c0642ed8a7e357"
+prod_signature_sha256 = "8b4764609f4950ed73cac9632e96036b3dbb8c0e533abf9ed7243980a5f3e38d"
+
+dev_package = "radeon-unified-dkms-dev-0.7-1-x86_64.pkg.tar.zst"
+dev_package_profile = "all-dev"
+dev_compiled_ceiling = "mutate-dev"
+dev_runtime_default = "off"
+dev_package_sha256 = "cc192d56f88d7461e592822a837fc494f98c24736b451c01117795276502e6a5"
+dev_pkginfo_sha256 = "3319e00a59640c98a226b6d72266fcbddd4cb0eb0f7a8caeb3a01d5897e4c22e"
+dev_buildinfo_sha256 = "a7c7395619c39840fb79c66d5de7d1d71ff61708a6b13a90ce6049a6d3369263"
+dev_mtree_sha256 = "66eb4d7ce5c49dac47eeb74972f68b2c7565e68136470cc780730ac5d2aeeeb0"
+dev_signature_sha256 = "82dbba4bb032ec57327cc9b44ee8b2264ab14a1a718107577673926e26d913b6"
+
+policy_package = "radeon-rs482-policy-0.7-1-x86_64.pkg.tar.zst"
+policy_depends = "radeon-unified=0.7-1"
+policy_package_sha256 = "5e04766e72d3fd648942bdff2867592737622d280802560f62f9fe938c90af6a"
+policy_pkginfo_sha256 = "271207df5f4191e50fcd094bb134314a2acc045d53c11d35be6344ee66405696"
+policy_buildinfo_sha256 = "871f77b25c741d662556576c2cd560973b13ac314a6d97822288d6734016e17b"
+policy_mtree_sha256 = "3f1dcdc9b695cc4b89aca4382eed5d3e3228968d7f1425098939e7d9c7a9fbee"
+policy_signature_sha256 = "c395b74deed2fb3a424ae7003262c5f1fc4fa23d980007927d49a9404c46720e"
+
+signing_format = "ssh"
+signing_namespace = "radeon-unified-release"
+signer_principal = "151315375+Oichkatzelesfrettschen@users.noreply.github.com"
+signer_fingerprint = "SHA256:wD1s3tsUVHvjrLUruNtYVv/K1/4b7sJA4W7DTdMn8SA"
+verification_command = "ssh-keygen -Y verify -f release-allowed-signers -I 151315375+Oichkatzelesfrettschen@users.noreply.github.com -n radeon-unified-release -s PACKAGE.sig < PACKAGE"
+
+# The allowed-signers file is the exact one the 0.5-1 and 0.6-1 releases used,
+# copied byte-for-byte from the 0.6-1 release store rather than rebuilt from
+# the public key. Its namespaces= restriction is load-bearing: a signature made
+# outside radeon-unified-release fails against it.
+allowed_signers_reconstructed = false
+allowed_signers_sha256 = "d43493989e9302704862e38667f78283f608173c283be93122e92d3af42c8cff"
+signing_transcript = "release-store 0.7-1 signing-transcript.txt"
+
+# Module identity recorded at build time rather than recovered from a later
+# runtime check. srcversion digests the module source, so it is stable across
+# kernel lines and identifies the package; vermagic and the object digest are
+# per-kernel. The pinned source additionally stamps the driver-tree object into
+# module metadata (MODULE_INFO gororoba_driver_tree), so a loaded module names
+# the exact source tree it was built from.
+prod_srcversion = "A7F72BE636B52D7EED42415"
+prod_vermagic_7_1 = "7.1.6-1-cachyos SMP preempt mod_unload"
+prod_vermagic_6_18 = "6.18.42-1-cachyos-lts SMP preempt mod_unload"
+dev_srcversion = "F170C9EA59BF6CF9B7860CA"
+module_build_kernels = "7.1.6-1-cachyos, 6.18.42-1-cachyos-lts"
+
+# Local gates run against these exact bytes at the frozen packaging commit.
+source_pin = "PASS"
+source_pin_self_test = "PASS"
+trusted_tag_signer_verification = "PASS"
+pkgbuild_checksums = "PASS"
+pinned_source_builds = "PASS on 6.18.38-2-cachyos-lts and 7.1.4-1-cachyos roots, prod and all-dev"
+closed_production_payload = "PASS"
+closed_development_payload = "PASS"
+package_verifier_calibration = "PASS"
+package_profile_checker = "PASS"
+parked_admission_checker = "PASS"
+parked_admission_checker_self_test = "PASS"
+prod_dkms_lifecycle = "PASS on both kernel lines"
+dev_dkms_lifecycle = "PASS on both kernel lines"
+prose_gate = "PASS"
+
+# The matrix ran in a disposable pacstrap root with the host's unreachable
+# third-party trinity mirror disabled for the run and restored after it; the
+# 0.7-1 matrix surfaced and forced the fix for the runtime selector still
+# naming the 0.6 source tree before these rows passed.
+transition_rows_pass = "1-8c"
+transition_row_9_legacy_rollback = "NOT RUN: rollback authority for 0.7-1 is the signed 0.6-1 archive set retained in the release store"
+transition_row_11_hazard_stack_survival = "NOT RUN: sp5100-tco-ioapic-dkms has no constructor in radeon-custom and no built artifact on the build host"
+
+signed_artifact_set = "PASS"
+target_contact = "NOT RUN"
+target_compile = "NOT RUN"
+package_installation = "NOT RUN"
+module_load = "NOT RUN"
+hardware_operation = "NOT RUN"
