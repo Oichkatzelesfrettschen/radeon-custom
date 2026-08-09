@@ -275,6 +275,8 @@ bash scripts/verify_radeon_unified_dkms_package.sh \
 Optional runtime check on a live host (module loaded from the unified package):
 
 ```bash
+bash scripts/check_radeon_unified_runtime_policy.sh --self-test
+bash scripts/check_radeon_unified_runtime_policy.sh --check-files
 bash scripts/check_radeon_unified_runtime_policy.sh
 ```
 
