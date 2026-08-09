@@ -17,7 +17,8 @@ source-equivalence tag. The equivalence tag remains the authority for the
 frozen migration manifest.
 
 Each package installs these files under
-`/usr/src/radeon-unified-0.3/`:
+`/usr/src/radeon-unified-${pkgver}/`, where `pkgver` is the active PKGBUILD
+version:
 
 * `source-identity.toml`
 * `radeon-build-profile.toml`
@@ -66,8 +67,8 @@ bash scripts/verify_radeon_unified_dkms_sources.sh \
 )
 
 for package in \
-  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.3-97-x86_64.pkg.tar.zst \
-  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-dev-0.3-97-x86_64.pkg.tar.zst
+  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.8-1-x86_64.pkg.tar.zst \
+  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-dev-0.8-1-x86_64.pkg.tar.zst
 do
   bash scripts/verify_radeon_unified_dkms_package.sh \
     --source-repository "$RADEON_UNIFIED_SOURCE_REPOSITORY" \
