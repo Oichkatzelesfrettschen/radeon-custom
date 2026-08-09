@@ -26,6 +26,15 @@ The on-box poller remains the ordinary soft-hang recorder. During GL tests it re
 
 `steinmarder-r300/hazard_policy.json` gates hazardous hardware operations. Do not issue a hazardous reader, reset probe, or live-fire register operation unless the matching explicit environment gate is set and `make r300-hazard-check` passes in the hazard-authority repository.
 
+The global RS480 GART snoop route is a refuted configuration. The canonical exact-target record lives at `steinmarder-r300:src/re/r300/findings/resolved/canonical/2026-06-21-rs482-global-gart-snoop-gart-binding-outcome.md`. The package source pin is `2433cbd69cd99d1dd002447bb4d481ed66141562`. At that source identity, `drivers/gpu/drm/radeon/rs400.c:181-186` writes `RS480_REQ_TYPE_SNOOP_DIS` unconditionally. The runtime policy rejects `radeon-snoop-experiment.conf`, `rs480_gart_snoop`, and `rs480_atomic_rmw_report` before experiment allowlist handling. `RADEON_GART_PAGE_SNOOP` is declared at `drivers/gpu/drm/radeon/radeon.h:604`, and `radeon_ttm_backend_bind` adds it for `ttm_cached` buffer objects at `drivers/gpu/drm/radeon/radeon_ttm.c:420-446`. The cached-GTT request remains a separate per-PTE visibility question.
+
+These commands run from the source repository and reproduce both source joins:
+
+```sh
+git grep -n RS480_REQ_TYPE_SNOOP_DIS 2433cbd69cd99d1dd002447bb4d481ed66141562 -- drivers/gpu/drm/radeon
+git grep -n 'radeon_ttm_backend_bind\|RADEON_GART_PAGE_SNOOP' 2433cbd69cd99d1dd002447bb4d481ed66141562 -- drivers/gpu/drm/radeon
+```
+
 Gates such as `R300_SAFE_REGS_ACCEPTED=1` are affirmative consent gates. Unset, empty, or zero-valued gates are closed.
 
 `rbbm_status_monitor.py` is part of the capture posture. It decodes the active block state so a hang report identifies whether the CP, VAP, GA, RB3D, or another block holds the failure signature.

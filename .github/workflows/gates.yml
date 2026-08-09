@@ -100,6 +100,12 @@ jobs:
       - name: Display-health oracle calibration
         run: sh scripts/check_radeon_display_health.sh --self-test
 
+      - name: Runtime policy calibration
+        run: bash scripts/check_radeon_unified_runtime_policy.sh --self-test
+
+      - name: Runtime policy package inputs
+        run: bash scripts/check_radeon_unified_runtime_policy.sh --check-files
+
       - name: ruff
         run: ruff check scripts/
 
