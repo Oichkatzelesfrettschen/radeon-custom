@@ -97,6 +97,9 @@ jobs:
       - name: GitHub action pins
         run: python3 scripts/check_github_action_pins.py
 
+      - name: Target artifact admission calibration
+        run: python3 scripts/admit_target_gate_artifact.py --self-test
+
       - name: Display oracle lint calibration
         run: sh scripts/check_display_oracle_usage.sh --self-test
 

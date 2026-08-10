@@ -38,6 +38,8 @@ jobs:
       GATE_SHA: ${{ github.event.workflow_run.head_sha }}
       GATE_BRANCH: ${{ github.event.workflow_run.head_branch }}
       PACKAGE_ARTIFACT: radeon-unified-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}
+      ARTIFACT_DOWNLOAD_NAME: radeon-gate-download-${{ github.run_id }}-${{ github.run_attempt }}
+      ARTIFACT_OUTPUT_NAME: radeon-gate-package-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,14 +63,24 @@ jobs:
           } >"$target_evidence/gate-run.txt"
           echo "successful protected-main gate admitted: $GATE_RUN_ID at $GATE_SHA"
 
+      # Raw mode preserves the action's digest check and routes ZIP admission
+      # through admit_target_gate_artifact.py.
       - name: Download gate-verified package artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ env.PACKAGE_ARTIFACT }}
-          path: ${{ runner.temp }}/radeon-gates-artifact
+          path: ${{ runner.temp }}/${{ env.ARTIFACT_DOWNLOAD_NAME }}
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
+          skip-decompress: true
+          digest-mismatch: error
+
+      - name: Admit the production package from the raw artifact
+        run: |
+          python3 scripts/admit_target_gate_artifact.py \
+            --download-directory "${RUNNER_TEMP}/${ARTIFACT_DOWNLOAD_NAME}" \
+            --output-directory "${RUNNER_TEMP}/${ARTIFACT_OUTPUT_NAME}"
 
       # Fail closed. A mislabeled runner, a replaced GPU, or a machine without
       # the part must not produce a green target verdict, so every load-bearing
@@ -105,7 +117,7 @@ jobs:
       - name: Gate-verified production package compiles on the target kernel
         run: |
           set -euo pipefail
-          packages=$(find "${RUNNER_TEMP}/radeon-gates-artifact" -type f \
+          packages=$(find "${RUNNER_TEMP}/${ARTIFACT_OUTPUT_NAME}" -type f \
             -name 'radeon-unified-dkms-*.pkg.tar.zst' \
             ! -name 'radeon-unified-dkms-dev-*' | LC_ALL=C sort)
           [ "$(printf '%s\n' "$packages" | grep -c .)" -eq 1 ] || {

@@ -219,6 +219,9 @@ python3 scripts/check_project_prose_style.py
 
 # The complete workflow surface uses exact approved action revisions
 python3 scripts/check_github_action_pins.py
+
+# The target artifact path admits one production package from a raw ZIP
+python3 scripts/admit_target_gate_artifact.py --self-test
 ```
 
 Each verdict-producing gate calibrates against known-good and known-bad inputs
@@ -253,8 +256,11 @@ sh scripts/emit_source_tree_manifest.sh --self-test
 # 6 decomposition properties, 2 closing maps, 24 failure classes
 python3 scripts/check_base_delta_map_closure.py --self-test
 
-# Exact action identities pass, and 35 workflow mutation classes fail
+# Exact action identities and required inputs pass, and 40 mutations fail
 python3 scripts/check_github_action_pins.py --self-test
+
+# One production package passes, and 20 archive admission classes fail
+python3 scripts/admit_target_gate_artifact.py --self-test
 ```
 
 Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with
