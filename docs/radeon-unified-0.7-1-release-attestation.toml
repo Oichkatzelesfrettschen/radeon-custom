@@ -105,7 +105,7 @@ transition_row_11_hazard_stack_survival = "NOT RUN: sp5100-tco-ioapic-dkms has n
 signed_artifact_set = "PASS"
 target_contact = "PASS: sealed read only identity capture on cachyos-vostro1000"
 target_compile = "OBSERVED: DKMS reports 0.7 installed for 7.1.3-2-cachyos and 6.18.38-2-cachyos-lts"
-package_installation = "PASS: pacman reports radeon-unified-dkms and radeon-rs482-policy 0.7-1"
+package_installation = "OBSERVED: pacman records radeon-unified-dkms and radeon-rs482-policy 0.7-1; exact signed archive provenance is not proven"
 module_load = "PASS: installed and loaded srcversion plus GNU build ID match the retained module"
 hardware_operation = "NOT RUN: boot initialization is observed; the capture runs no controlled workload"
 
@@ -123,6 +123,7 @@ runtime_build_profile = "prod"
 runtime_development_parameter_count = 0
 runtime_current_boot_radeon_fault_line_count = 0
 runtime_current_boot_warning_line_count = 381
+runtime_current_boot_warning_disposition = "Retained broad filter lines cover firmware, ACPI, ATA, module taint, Radeon BIOS mapping, Broadcom b44 DMA, and Intel wireless paths; they do not affect the exact identity joins and do not establish a warning free boot"
 
 # Parked-submission entry contract in the pinned source (radeon_cs_ioctl at
 # source commit 293a4ae3fe82): the gpu_parked latch refuses with -EIO before
