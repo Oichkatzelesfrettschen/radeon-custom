@@ -149,8 +149,7 @@ check_root() {
     # active on a parked device with a dark panel, so it carries no display
     # verdict in either direction.
     if [ -z "$sysroot" ] && command -v systemctl >/dev/null 2>&1; then
-        gt=$(systemctl is-active graphical.target 2>/dev/null)  # orchestration state
-        echo "  INFO  graphical.target=$gt (orchestration state, not display health)"
+        echo "  INFO  graphical.target=$(systemctl is-active graphical.target 2>/dev/null) (orchestration state, not display health)"
     fi
 
     return "$root_fails"
