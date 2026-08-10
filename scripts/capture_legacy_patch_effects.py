@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Terascale Functionalists
 """Capture the per-patch effects of the radeon DKMS series.
 
 The series in dkms.conf PATCH[] order is the unit of review: each patch lands
