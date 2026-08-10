@@ -216,6 +216,9 @@ sudo bash scripts/test_radeon_dkms_lifecycle.sh --package /path/to/package \
 
 # Project-authored prose carries no dash construction
 python3 scripts/check_project_prose_style.py
+
+# The complete workflow surface uses exact approved action revisions
+python3 scripts/check_github_action_pins.py
 ```
 
 Each verdict-producing gate calibrates against known-good and known-bad inputs
@@ -249,6 +252,9 @@ sh scripts/emit_source_tree_manifest.sh --self-test
 
 # 6 decomposition properties, 2 closing maps, 24 failure classes
 python3 scripts/check_base_delta_map_closure.py --self-test
+
+# Exact action identities pass, and 13 workflow mutation classes fail
+python3 scripts/check_github_action_pins.py --self-test
 ```
 
 Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with

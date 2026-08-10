@@ -57,12 +57,11 @@ USES_MAPPING_KEY = re.compile(
 YAML_ANCHOR_OR_ALIAS = re.compile(
     r"(?:^|[\s:\[,-])[&*](?![&*])[^ \t,\]}#]+"
 )
-YAML_EXPLICIT_KEY = re.compile(r"^\s*\?")
+YAML_EXPLICIT_KEY = re.compile(r"^\s*(?:-\s*)?\?(?:\s|$)")
 YAML_QUOTED_KEY = re.compile(r"^\s*(?:-\s*)?[\"'][^\"']+[\"']\s*:")
 YAML_FLOW_STEP = re.compile(r"^\s*-\s*\{")
 YAML_TYPE_TAG = re.compile(r"(?:^|[\s:\[,-])!![A-Za-z0-9_:/.-]+")
 YAML_DIRECTIVE = re.compile(r"^\s*%")
-GITHUB_EXPRESSION = re.compile(r"\$\{\{.*?}}")
 YAML_BLOCK_SCALAR = re.compile(
     r":\s*[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$"
 )
@@ -81,6 +80,120 @@ class ActionPinError(Exception):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ActionPinError(message)
+
+
+def mask_github_expressions(line: str) -> str:
+    masked = list(line)
+    search_start = 0
+    while True:
+        expression_start = line.find("${{", search_start)
+        if expression_start < 0:
+            return "".join(masked)
+
+        cursor = expression_start + 3
+        in_string = False
+        expression_end: int | None = None
+        while cursor < len(line) - 1:
+            if line[cursor] == "'":
+                if in_string and line[cursor : cursor + 2] == "''":
+                    cursor += 2
+                    continue
+                in_string = not in_string
+                cursor += 1
+                continue
+            if not in_string and line[cursor : cursor + 2] == "}}":
+                expression_end = cursor + 2
+                break
+            cursor += 1
+
+        if expression_end is None:
+            raise ActionPinError("unterminated GitHub expression")
+        masked[expression_start:expression_end] = " " * (
+            expression_end - expression_start
+        )
+        search_start = expression_end
+
+
+def yaml_quote_starts(line: str, index: int) -> bool:
+    if index == 0:
+        return True
+    previous = line[index - 1]
+    return previous.isspace() or previous in ":,[{-?"
+
+
+def yaml_code_prefix(line: str) -> str:
+    in_single_quote = False
+    in_double_quote = False
+    cursor = 0
+    while cursor < len(line):
+        character = line[cursor]
+        if in_single_quote:
+            if character == "'":
+                if line[cursor : cursor + 2] == "''":
+                    cursor += 2
+                    continue
+                in_single_quote = False
+            cursor += 1
+            continue
+        if in_double_quote:
+            if character == "\\":
+                cursor += 2
+                continue
+            if character == '"':
+                in_double_quote = False
+            cursor += 1
+            continue
+        if character == "'" and yaml_quote_starts(line, cursor):
+            in_single_quote = True
+        elif character == '"' and yaml_quote_starts(line, cursor):
+            in_double_quote = True
+        elif character == "#" and (cursor == 0 or line[cursor - 1].isspace()):
+            return line[:cursor]
+        cursor += 1
+    return line
+
+
+def mask_yaml_quoted_scalars(line: str) -> str:
+    masked = list(line)
+    quote: str | None = None
+    cursor = 0
+    while cursor < len(line):
+        character = line[cursor]
+        if quote == "'":
+            masked[cursor] = " "
+            if character == "'":
+                if line[cursor : cursor + 2] == "''":
+                    masked[cursor + 1] = " "
+                    cursor += 2
+                    continue
+                quote = None
+            cursor += 1
+            continue
+        if quote == '"':
+            masked[cursor] = " "
+            if character == "\\" and cursor + 1 < len(line):
+                masked[cursor + 1] = " "
+                cursor += 2
+                continue
+            if character == '"':
+                quote = None
+            cursor += 1
+            continue
+        if character in {"'", '"'} and yaml_quote_starts(line, cursor):
+            quote = character
+            masked[cursor] = " "
+        cursor += 1
+    return "".join(masked)
+
+
+def has_flow_mapping_start(line: str) -> bool:
+    for cursor, character in enumerate(line):
+        if character != "{":
+            continue
+        preceding = line[:cursor].rstrip()
+        if not preceding or preceding[-1] in ":,[{-":
+            return True
+    return False
 
 
 def workflow_paths(repository: Path) -> list[Path]:
@@ -125,45 +238,53 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
         if not stripped or stripped.startswith("#"):
             continue
         relative = workflow.relative_to(repository).as_posix()
-        if YAML_ANCHOR_OR_ALIAS.search(line) is not None:
-            raise ActionPinError(
-                f"{relative}:{line_number}: YAML anchors and aliases are outside "
-                "the canonical workflow subset"
-            )
-        if YAML_EXPLICIT_KEY.match(line) is not None:
-            raise ActionPinError(
-                f"{relative}:{line_number}: explicit YAML keys are outside "
-                "the canonical workflow subset"
-            )
-        if YAML_DIRECTIVE.match(line) is not None:
-            raise ActionPinError(
-                f"{relative}:{line_number}: YAML directives are outside "
-                "the canonical workflow subset"
-            )
-        if YAML_TYPE_TAG.search(line) is not None:
-            raise ActionPinError(
-                f"{relative}:{line_number}: YAML type tags are outside "
-                "the canonical workflow subset"
-            )
-        if YAML_QUOTED_KEY.match(line) is not None:
+        comment_free_line = yaml_code_prefix(line)
+        try:
+            expression_masked_line = mask_github_expressions(comment_free_line)
+        except ActionPinError as error:
+            raise ActionPinError(f"{relative}:{line_number}: {error}") from error
+        code = expression_masked_line
+        if not code.strip():
+            continue
+        if YAML_QUOTED_KEY.match(code) is not None:
             raise ActionPinError(
                 f"{relative}:{line_number}: quoted YAML keys are outside "
                 "the canonical workflow subset"
             )
-        if YAML_FLOW_STEP.match(line) is not None:
+        structural = mask_yaml_quoted_scalars(code)
+        if YAML_ANCHOR_OR_ALIAS.search(structural) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: YAML anchors and aliases are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_EXPLICIT_KEY.match(structural) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: explicit YAML keys are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_DIRECTIVE.match(structural) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: YAML directives are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_TYPE_TAG.search(structural) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: YAML type tags are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_FLOW_STEP.match(structural) is not None:
             raise ActionPinError(
                 f"{relative}:{line_number}: flow-style steps are outside "
                 "the canonical workflow subset"
             )
-        expression_free_line = GITHUB_EXPRESSION.sub("", line)
-        if "{" in expression_free_line or "}" in expression_free_line:
+        if has_flow_mapping_start(structural):
             raise ActionPinError(
                 f"{relative}:{line_number}: flow-style mappings are outside "
                 "the canonical workflow subset"
             )
-        if YAML_BLOCK_SCALAR.search(line) is not None:
+        if YAML_BLOCK_SCALAR.search(structural) is not None:
             block_scalar_indent = indentation
-        if USES_MAPPING_KEY.search(line) is None:
+        if USES_MAPPING_KEY.search(structural) is None:
             continue
         match = PINNED_USE.fullmatch(line)
         if match is None:
@@ -213,7 +334,19 @@ def verify_repository(repository: Path) -> tuple[int, int]:
 
 def write_fixture(repository: Path) -> None:
     for relative, actions in EXPECTED_WORKFLOW_ACTIONS.items():
-        lines = ["name: action-pin-fixture", "jobs:", "  verify:", "    steps:"]
+        lines = [
+            "name: action-pin-fixture",
+            "on:",
+            "  push:",
+            "jobs:",
+            "  verify:",
+            '    name: "Literal {brace}" # literal ${{ in comment',
+            "    runs-on: ubuntu-latest",
+            "    env:",
+            '      MESSAGE: "Literal {brace}"',
+            "      RUN_LABEL: Literal {brace}",
+            "    steps:",
+        ]
         for action in actions:
             approved = APPROVED_ACTIONS[action]
             lines.append(
@@ -330,6 +463,23 @@ def run_self_test() -> None:
                 f"actions/upload-artifact@{approved.revision}}}]}}\n"
             )
 
+    def comment_forged_block_scalar(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - name: Hidden action # scanner: |\n"
+                "        uses: attacker/action@v1\n"
+            )
+
+    def sequence_explicit_key(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        approved = APPROVED_ACTIONS["actions/upload-artifact"]
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - ? uses\n"
+                f"        : actions/upload-artifact@{approved.revision}\n"
+            )
+
     expect_rejection("mutable action tag", mutable_tag)
     expect_rejection("unapproved action revision", stale_revision)
     expect_rejection("stale action version label", stale_label)
@@ -341,7 +491,9 @@ def run_self_test() -> None:
     expect_rejection("escaped quoted key", escaped_quoted_key)
     expect_rejection("tagged flow mapping", tagged_flow_mapping)
     expect_rejection("encoded flow job", encoded_flow_job)
-    print("GitHub action pin calibration: 1 known-good and 11 known-bad fixtures")
+    expect_rejection("comment-forged block scalar", comment_forged_block_scalar)
+    expect_rejection("sequence explicit key", sequence_explicit_key)
+    print("GitHub action pin calibration: 1 known-good and 13 known-bad fixtures")
 
 
 def parse_arguments() -> argparse.Namespace:
