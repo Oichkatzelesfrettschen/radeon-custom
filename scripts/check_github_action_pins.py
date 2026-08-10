@@ -62,6 +62,7 @@ YAML_QUOTED_KEY = re.compile(r"^\s*(?:-\s*)?[\"'][^\"']+[\"']\s*:")
 YAML_FLOW_STEP = re.compile(r"^\s*-\s*\{")
 YAML_TYPE_TAG = re.compile(r"(?:^|[\s:\[,-])!![A-Za-z0-9_:/.-]+")
 YAML_DIRECTIVE = re.compile(r"^\s*%")
+GITHUB_EXPRESSION = re.compile(r"\$\{\{.*?}}")
 YAML_BLOCK_SCALAR = re.compile(
     r":\s*[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$"
 )
@@ -152,6 +153,12 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
         if YAML_FLOW_STEP.match(line) is not None:
             raise ActionPinError(
                 f"{relative}:{line_number}: flow-style steps are outside "
+                "the canonical workflow subset"
+            )
+        expression_free_line = GITHUB_EXPRESSION.sub("", line)
+        if "{" in expression_free_line or "}" in expression_free_line:
+            raise ActionPinError(
+                f"{relative}:{line_number}: flow-style mappings are outside "
                 "the canonical workflow subset"
             )
         if YAML_BLOCK_SCALAR.search(line) is not None:
@@ -313,6 +320,16 @@ def run_self_test() -> None:
                 f"actions/upload-artifact@{approved.revision}}}\n"
             )
 
+    def encoded_flow_job(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        approved = APPROVED_ACTIONS["actions/upload-artifact"]
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "  hidden: {runs-on: ubuntu-latest, steps: "
+                "[{name: Hidden action, \"\\x75ses\": "
+                f"actions/upload-artifact@{approved.revision}}}]}}\n"
+            )
+
     expect_rejection("mutable action tag", mutable_tag)
     expect_rejection("unapproved action revision", stale_revision)
     expect_rejection("stale action version label", stale_label)
@@ -323,7 +340,8 @@ def run_self_test() -> None:
     expect_rejection("quoted uses key", quoted_uses_key)
     expect_rejection("escaped quoted key", escaped_quoted_key)
     expect_rejection("tagged flow mapping", tagged_flow_mapping)
-    print("GitHub action pin calibration: 1 known-good and 10 known-bad fixtures")
+    expect_rejection("encoded flow job", encoded_flow_job)
+    print("GitHub action pin calibration: 1 known-good and 11 known-bad fixtures")
 
 
 def parse_arguments() -> argparse.Namespace:
