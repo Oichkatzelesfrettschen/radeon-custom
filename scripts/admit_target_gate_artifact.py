@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import shutil
@@ -16,12 +17,13 @@ import warnings
 import zipfile
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import BinaryIO
 
 
 MAXIMUM_PACKAGE_BYTES = 512 * 1024 * 1024
-PRODUCTION_PACKAGE_NAME = re.compile(
-    r"radeon-unified-dkms-(?!dev-).+\.pkg\.tar\.zst\Z"
-)
+MAXIMUM_ARCHIVE_BYTES = 768 * 1024 * 1024
+PRODUCTION_PACKAGE_NAME = re.compile(r"radeon-unified-dkms-(?!dev-).+\.pkg\.tar\.zst\Z")
+SHA256_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class ArtifactAdmissionError(Exception):
@@ -139,7 +141,43 @@ def one_downloaded_archive(download_directory: Path) -> Path:
     return archive
 
 
-def admit_artifact(download_directory: Path, output_directory: Path) -> Path:
+def copy_verified_archive(
+    archive_stream: BinaryIO,
+    verified_archive: BinaryIO,
+    expected_sha256: str,
+) -> None:
+    require(
+        SHA256_DIGEST.fullmatch(expected_sha256) is not None,
+        "expected artifact SHA-256 is not canonical",
+    )
+    digest = hashlib.sha256()
+    archive_size = 0
+    while True:
+        block = archive_stream.read(1024 * 1024)
+        if not block:
+            break
+        archive_size += len(block)
+        require(
+            archive_size <= MAXIMUM_ARCHIVE_BYTES,
+            "raw artifact exceeds the admission limit",
+        )
+        digest.update(block)
+        verified_archive.write(block)
+    require(
+        digest.hexdigest() == expected_sha256,
+        "raw artifact SHA-256 differs from the workflow artifact digest",
+    )
+    verified_archive.flush()
+    verified_archive.seek(0)
+
+
+def admit_artifact(
+    download_directory: Path,
+    output_directory: Path,
+    expected_sha256: str,
+    *,
+    before_archive_open: Callable[[], None] | None = None,
+) -> Path:
     archive_path = one_downloaded_archive(download_directory)
     require(
         not os.path.lexists(output_directory),
@@ -165,27 +203,39 @@ def admit_artifact(download_directory: Path, output_directory: Path) -> Path:
         return os.open(path, direct_flags)
 
     try:
+        if before_archive_open is not None:
+            before_archive_open()
         with open(archive_path, "rb", opener=direct_file_opener) as archive_stream:
             admitted_status = os.fstat(archive_stream.fileno())
             require(
                 stat.S_ISREG(admitted_status.st_mode),
                 "opened artifact is not a regular file",
             )
-            with zipfile.ZipFile(archive_stream, "r") as archive:
-                package = select_production_package(archive.infolist())
-                package_name = canonical_member_name(package).rsplit("/", 1)[-1]
-                destination = temporary_output / package_name
-                with archive.open(package, "r") as source, destination.open(
-                    "xb"
-                ) as target:
-                    shutil.copyfileobj(source, target, length=1024 * 1024)
-                    target.flush()
-                    os.fsync(target.fileno())
-                require(
-                    destination.stat().st_size == package.file_size,
-                    "production package byte count differs after extraction",
+            with tempfile.TemporaryFile(
+                mode="w+b",
+                dir=output_parent,
+            ) as verified_archive:
+                copy_verified_archive(
+                    archive_stream,
+                    verified_archive,
+                    expected_sha256,
                 )
-                destination.chmod(0o600)
+                with zipfile.ZipFile(verified_archive, "r") as archive:
+                    package = select_production_package(archive.infolist())
+                    package_name = canonical_member_name(package).rsplit("/", 1)[-1]
+                    destination = temporary_output / package_name
+                    with (
+                        archive.open(package, "r") as source,
+                        destination.open("xb") as target,
+                    ):
+                        shutil.copyfileobj(source, target, length=1024 * 1024)
+                        target.flush()
+                        os.fsync(target.fileno())
+                    require(
+                        destination.stat().st_size == package.file_size,
+                        "production package byte count differs after extraction",
+                    )
+                    destination.chmod(0o600)
         os.replace(temporary_output, output_directory)
     except Exception:
         shutil.rmtree(temporary_output, ignore_errors=True)
@@ -222,9 +272,7 @@ def good_members() -> list[tuple[str | zipfile.ZipInfo, bytes]]:
     return [
         (directory_member("package"), b""),
         (
-            regular_member(
-                "package/radeon-unified-dkms-0.8.1-1-x86_64.pkg.tar.zst"
-            ),
+            regular_member("package/radeon-unified-dkms-0.8.1-1-x86_64.pkg.tar.zst"),
             b"production package fixture\n",
         ),
         (regular_member("lifecycle-evidence-prod/compile.log"), b"PASS\n"),
@@ -236,6 +284,21 @@ FixtureSetup = Callable[[Path, Path], None]
 
 def write_good_download(download_directory: Path) -> None:
     write_archive(download_directory / "artifact.zip", good_members())
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def expected_download_sha256(download_directory: Path) -> str:
+    entries = list(download_directory.iterdir())
+    if len(entries) == 1 and stat.S_ISREG(entries[0].lstat().st_mode):
+        return file_sha256(entries[0])
+    return "0" * 64
 
 
 def expect_rejection(
@@ -251,8 +314,13 @@ def expect_rejection(
         output_directory = fixture_root / "output"
         download_directory.mkdir()
         setup(download_directory, output_directory)
+        expected_sha256 = expected_download_sha256(download_directory)
         try:
-            admit_artifact(download_directory, output_directory)
+            admit_artifact(
+                download_directory,
+                output_directory,
+                expected_sha256,
+            )
         except (ArtifactAdmissionError, OSError, zipfile.BadZipFile) as error:
             require(
                 expected_message in str(error),
@@ -296,7 +364,11 @@ def run_self_test() -> None:
         output_directory = fixture_root / "output"
         download_directory.mkdir()
         write_good_download(download_directory)
-        package = admit_artifact(download_directory, output_directory)
+        package = admit_artifact(
+            download_directory,
+            output_directory,
+            file_sha256(download_directory / "artifact.zip"),
+        )
         require(
             package.read_bytes() == b"production package fixture\n",
             "known-good package bytes differ after admission",
@@ -508,7 +580,55 @@ def run_self_test() -> None:
         "artifact output path already exists",
         output_preexists=True,
     )
-    print("Target artifact admission calibration: 1 known-good and 20 known-bad fixtures")
+
+    with tempfile.TemporaryDirectory(prefix="radeon-artifact-admission-") as root:
+        fixture_root = Path(root)
+        download_directory = fixture_root / "download"
+        output_directory = fixture_root / "output"
+        replacement_archive = fixture_root / "replacement.zip"
+        download_directory.mkdir()
+        write_good_download(download_directory)
+        archive_path = download_directory / "artifact.zip"
+        expected_sha256 = file_sha256(archive_path)
+        replacement_members = good_members()
+        replacement_members[1] = (
+            replacement_members[1][0],
+            b"replacement production package\n",
+        )
+        write_archive(replacement_archive, replacement_members)
+
+        def replace_validated_path() -> None:
+            os.replace(replacement_archive, archive_path)
+
+        try:
+            admit_artifact(
+                download_directory,
+                output_directory,
+                expected_sha256,
+                before_archive_open=replace_validated_path,
+            )
+        except ArtifactAdmissionError as error:
+            require(
+                "raw artifact SHA-256 differs" in str(error),
+                f"replaced archive rejected for an unexpected reason: {error}",
+            )
+            require(
+                not list(fixture_root.glob(".output.*")),
+                "replaced archive left a temporary output directory",
+            )
+            require(
+                not os.path.lexists(output_directory),
+                "replaced archive left an admitted output path",
+            )
+            print("PASS known-bad: replaced validated archive path")
+        else:
+            raise ArtifactAdmissionError(
+                "self-test accepted a replaced validated archive path"
+            )
+
+    print(
+        "Target artifact admission calibration: 1 known-good and 21 known-bad fixtures"
+    )
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -516,13 +636,28 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--download-directory", type=Path)
     parser.add_argument("--output-directory", type=Path)
+    parser.add_argument("--expected-sha256")
     arguments = parser.parse_args()
     if arguments.self_test:
-        if arguments.download_directory is not None or arguments.output_directory is not None:
-            parser.error("--self-test does not accept artifact directories")
-    elif arguments.download_directory is None or arguments.output_directory is None:
+        if any(
+            value is not None
+            for value in (
+                arguments.download_directory,
+                arguments.output_directory,
+                arguments.expected_sha256,
+            )
+        ):
+            parser.error("--self-test does not accept artifact inputs")
+    elif any(
+        value is None
+        for value in (
+            arguments.download_directory,
+            arguments.output_directory,
+            arguments.expected_sha256,
+        )
+    ):
         parser.error(
-            "operational mode requires --download-directory and --output-directory"
+            "operational mode requires artifact directories and --expected-sha256"
         )
     return arguments
 
@@ -536,6 +671,7 @@ def main() -> int:
             package = admit_artifact(
                 arguments.download_directory,
                 arguments.output_directory,
+                arguments.expected_sha256,
             )
             print(f"admitted_package={package}")
     except (ArtifactAdmissionError, OSError, zipfile.BadZipFile) as error:
