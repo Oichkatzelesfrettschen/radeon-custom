@@ -34,7 +34,7 @@ jobs:
     outputs:
       build: ${{ steps.classify.outputs.build }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           clean: true
@@ -59,7 +59,7 @@ jobs:
     runs-on: [self-hosted, linux, cachyos, workstation-host]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           clean: true
@@ -90,6 +90,12 @@ jobs:
 
       - name: Base-delta closure calibration
         run: python3 scripts/check_base_delta_map_closure.py --self-test
+
+      - name: GitHub action pin calibration
+        run: python3 scripts/check_github_action_pins.py --self-test
+
+      - name: GitHub action pins
+        run: python3 scripts/check_github_action_pins.py
 
       - name: Display oracle lint calibration
         run: sh scripts/check_display_oracle_usage.sh --self-test
@@ -152,7 +158,7 @@ jobs:
       SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
       KERNEL_BUILD_ROOT_71: ${{ vars.RADEON_KERNEL_BUILD_ROOT_71 }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           clean: true
@@ -280,7 +286,7 @@ jobs:
 
       - name: Upload transition matrix logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: transition-matrix-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.PACKAGE_WORK }}/transition-matrix-logs
@@ -429,7 +435,7 @@ jobs:
 
       - name: Upload package and lifecycle evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: radeon-unified-${{ github.sha }}-${{ github.run_id }}
           path: ${{ runner.temp }}/radeon-package-artifacts
@@ -453,7 +459,7 @@ jobs:
       KERNEL_BUILD_ROOT: ${{ vars.RADEON_KERNEL_BUILD_ROOT_618 }}
       SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           clean: true
