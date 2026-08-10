@@ -52,9 +52,11 @@ fi
 #   The Arch package installs the full pre-patched radeon source tree at
 #   /usr/src/radeon-rs480-safe-regs-${PACKAGE_VERSION}/radeon/.  DKMS copies
 #   that tree into ${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/ for
-#   each kernel.  PRE_BUILD stages radeon_trace.h only when kernel headers do
-#   not ship drivers/gpu/drm/radeon/radeon_trace.h; MAKE then builds the copied
-#   radeon/ directory directly.
+#   each kernel.  When the source tree carries radeon_trace.h, PRE_BUILD
+#   validates the root-owned, non-writable kernel build root and stages the
+#   header in the package-private .radeon-trace-include shim.
+#   radeon-dkms-make adds the matching private trace include path to KCFLAGS
+#   before MAKE builds the copied radeon/ directory directly.
 #
 # Compiler selection (CC):
 #   Detected at DKMS build time by reading compile.h from the target kernel.
