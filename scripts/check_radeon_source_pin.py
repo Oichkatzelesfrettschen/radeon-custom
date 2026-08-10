@@ -15,12 +15,15 @@ import tarfile
 import tempfile
 import tomllib
 from pathlib import Path
+from urllib.parse import urlsplit
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SSH_SIGNATURE_OPEN = "-----BEGIN SSH SIGNATURE-----"
 SSH_SIGNATURE_CLOSE = "-----END SSH SIGNATURE-----"
 DEFAULT_ALLOWED_SIGNERS = "radeon-source-tag-allowed-signers"
+LEGACY_REQUIRED_KEYS = {"schema", "repository", "commit", "path", "sha256"}
+REPOSITORY_ID = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 REQUIRED_KEYS = {
     "schema",
     "constructor",
@@ -161,6 +164,102 @@ def read_blob(repository: Path, revision_path: str) -> bytes:
         detail = result.stderr.decode("utf-8", "replace").strip()
         raise PinError(f"git show {revision_path} failed: {detail}")
     return result.stdout
+
+
+def load_legacy_identity(path: Path) -> dict[str, object]:
+    if not path.is_file() or path.is_symlink():
+        raise PinError("legacy identity is not a regular file")
+    try:
+        identity = tomllib.loads(path.read_text(encoding="ascii"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        raise PinError(f"cannot read legacy identity: {error}") from error
+    keys = set(identity)
+    missing = LEGACY_REQUIRED_KEYS - keys
+    unknown = keys - LEGACY_REQUIRED_KEYS
+    if missing:
+        raise PinError(
+            f"legacy identity omits: {', '.join(sorted(missing))}"
+        )
+    if unknown:
+        raise PinError(
+            f"legacy identity has unknown keys: {', '.join(sorted(unknown))}"
+        )
+    if type(identity["schema"]) is not int or identity["schema"] != 1:
+        raise PinError("legacy identity schema must be 1")
+    repository = identity["repository"]
+    if not isinstance(repository, str) or not REPOSITORY_ID.fullmatch(repository):
+        raise PinError("legacy identity repository must be owner/repository")
+    commit = identity["commit"]
+    if not isinstance(commit, str) or not SHA40.fullmatch(commit):
+        raise PinError("legacy identity commit must be lowercase 40-hex")
+    path_value = identity["path"]
+    if not isinstance(path_value, str) or not path_value:
+        raise PinError("legacy identity path must be a non-empty string")
+    if (
+        path_value.startswith("/")
+        or "\\" in path_value
+        or "\x00" in path_value
+        or any(ord(character) < 0x20 or ord(character) == 0x7F for character in path_value)
+    ):
+        raise PinError("legacy identity path must be repository-relative")
+    components = path_value.split("/")
+    if any(not component or component in {".", ".."} for component in components):
+        raise PinError("legacy identity path contains an unsafe component")
+    digest = identity["sha256"]
+    if not isinstance(digest, str) or not SHA256.fullmatch(digest):
+        raise PinError("legacy identity sha256 must be lowercase 64-hex")
+    return identity
+
+
+def github_repository_identity(repository: Path) -> str:
+    remote = git(repository, "config", "--get", "remote.origin.url")
+    if remote.startswith("git@github.com:"):
+        identity = remote.removeprefix("git@github.com:")
+    else:
+        parsed = urlsplit(remote)
+        if parsed.hostname != "github.com":
+            raise PinError("legacy repository origin uses a non-GitHub provider")
+        identity = parsed.path.lstrip("/")
+    identity = identity.removesuffix(".git").strip("/")
+    if not REPOSITORY_ID.fullmatch(identity):
+        raise PinError("legacy repository origin is not owner/repository")
+    return identity
+
+
+def verify_legacy_identity(
+    identity_path: Path,
+    repository: Path,
+    checked_in_copy: Path,
+) -> None:
+    identity = load_legacy_identity(identity_path)
+    expected_repository = str(identity["repository"])
+    if github_repository_identity(repository) != expected_repository:
+        raise PinError("legacy identity repository disagrees with origin")
+
+    commit = str(identity["commit"])
+    path = str(identity["path"])
+    revision_path = f"{commit}:{path}"
+    if git(repository, "cat-file", "-t", commit) != "commit":
+        raise PinError("legacy identity commit is not a commit object")
+    if git(repository, "cat-file", "-t", revision_path) != "blob":
+        raise PinError("legacy identity path does not name a blob")
+
+    if not checked_in_copy.is_file() or checked_in_copy.is_symlink():
+        raise PinError("legacy identity checked-in copy is not a regular file")
+    try:
+        copy_bytes = checked_in_copy.read_bytes()
+    except OSError as error:
+        raise PinError(f"cannot read legacy identity checked-in copy: {error}") from error
+    blob_bytes = read_blob(repository, revision_path)
+    expected_digest = str(identity["sha256"])
+    copy_digest = hashlib.sha256(copy_bytes).hexdigest()
+    blob_digest = hashlib.sha256(blob_bytes).hexdigest()
+    if copy_digest != expected_digest:
+        raise PinError("legacy identity digest does not match the checked-in copy")
+    if blob_digest != expected_digest:
+        raise PinError("legacy identity digest does not match the Git blob")
+    if copy_bytes != blob_bytes:
+        raise PinError("legacy identity checked-in copy differs from the Git blob")
 
 
 def verify_migration_manifest(
@@ -318,7 +417,18 @@ def verify(
     repository: Path,
     pkgbuild: Path | None = None,
     allowed_signers: Path | None = None,
+    legacy_identity: Path | None = None,
+    legacy_repository: Path | None = None,
+    legacy_copy: Path | None = None,
 ) -> dict[str, object]:
+    legacy_arguments = (legacy_identity, legacy_repository, legacy_copy)
+    if any(argument is not None for argument in legacy_arguments) and not all(
+        argument is not None for argument in legacy_arguments
+    ):
+        raise PinError(
+            "legacy identity mode requires --legacy-identity, "
+            "--legacy-repository, and --legacy-copy"
+        )
     # The allowlist sits beside the identity it vouches for, so a pin verified
     # from a checkout of this package uses that checkout's release signers.
     if allowed_signers is None:
@@ -430,6 +540,10 @@ def verify(
     verify_migration_manifest(
         repository, equivalence_commit, subtree, manifest_path
     )
+    if legacy_identity is not None:
+        if legacy_repository is None or legacy_copy is None:
+            raise PinError("legacy identity mode is incomplete")
+        verify_legacy_identity(legacy_identity, legacy_repository, legacy_copy)
     return identity
 
 
@@ -452,12 +566,25 @@ def run_self_test() -> None:
             ],
             check=True,
         )
+        git(
+            repository,
+            "config",
+            "remote.origin.url",
+            "git@github.com:fixture-owner/fixture-repository.git",
+        )
         driver = repository / "drivers/gpu/drm/radeon"
         policy = repository / "policy"
         manifest = repository / "migration/expected-prefixes/mechanism"
+        legacy_copy = repository / "migration/input/legacy-dkms-patch-order.conf"
+        legacy_blob = repository / "packaging/arch/radeon-unified-dkms/dkms.conf"
         driver.mkdir(parents=True)
         policy.mkdir()
         manifest.mkdir(parents=True)
+        legacy_copy.parent.mkdir(parents=True)
+        legacy_blob.parent.mkdir(parents=True)
+        legacy_text = 'PACKAGE_NAME="fixture"\n'
+        legacy_copy.write_text(legacy_text, encoding="ascii")
+        legacy_blob.write_text(legacy_text, encoding="ascii")
         driver_text = "obj-m += radeon.o\n"
         (driver / "Makefile").write_text(driver_text, encoding="ascii")
         (driver / ".gitignore").write_text("*.o\n", encoding="ascii")
@@ -523,6 +650,22 @@ def run_self_test() -> None:
             check=True,
         )
         commit = git(repository, "rev-parse", "HEAD")
+        legacy_identity_path = repository / "legacy-dkms-patch-order.toml"
+        legacy_blob_path = "packaging/arch/radeon-unified-dkms/dkms.conf"
+        legacy_digest = hashlib.sha256(legacy_text.encode("ascii")).hexdigest()
+        legacy_identity_path.write_text(
+            "\n".join(
+                [
+                    "schema = 1",
+                    'repository = "fixture-owner/fixture-repository"',
+                    f'commit = "{equivalence_commit}"',
+                    f'path = "{legacy_blob_path}"',
+                    f'sha256 = "{legacy_digest}"',
+                    "",
+                ]
+            ),
+            encoding="ascii",
+        )
         # The signature assertion needs a signed known-good tag, and an
         # ephemeral key supplies one without the release key: git records the
         # signature in the tag object either way, so the fixture exercises the
@@ -650,6 +793,82 @@ def run_self_test() -> None:
             ),
             encoding="ascii",
         )
+        verify_legacy_identity(legacy_identity_path, repository, legacy_copy)
+        print("legacy identity known-good accepted: matching sidecar and copy")
+        legacy_base_text = legacy_identity_path.read_text(encoding="ascii")
+        legacy_bad_cases = {
+            "a mutated legacy identity SHA": (
+                f'sha256 = "{legacy_digest}"',
+                f'sha256 = "{"0" * 64}"',
+            ),
+            "a legacy identity with the wrong path": (
+                f'path = "{legacy_blob_path}"',
+                'path = "packaging/arch/radeon-unified-dkms/missing.conf"',
+            ),
+            "a malformed legacy repository identity": (
+                'repository = "fixture-owner/fixture-repository"',
+                'repository = "fixture-owner/fixture/repository"',
+            ),
+        }
+        legacy_bad_count = 0
+        bad_legacy_identity = repository / "bad-legacy-identity.toml"
+        for description, (original, replacement) in legacy_bad_cases.items():
+            bad_legacy_identity.write_text(
+                legacy_base_text.replace(original, replacement),
+                encoding="ascii",
+            )
+            try:
+                verify_legacy_identity(bad_legacy_identity, repository, legacy_copy)
+            except PinError:
+                legacy_bad_count += 1
+                print(f"legacy identity known-bad rejected: {description}")
+            else:
+                raise PinError(f"self-test accepts {description}")
+        git(
+            repository,
+            "config",
+            "remote.origin.url",
+            "https://gitlab.com/fixture-owner/fixture-repository.git",
+        )
+        try:
+            verify_legacy_identity(legacy_identity_path, repository, legacy_copy)
+        except PinError:
+            legacy_bad_count += 1
+            print(
+                "legacy identity known-bad rejected: "
+                "a non-GitHub origin provider"
+            )
+        else:
+            raise PinError("self-test accepts a non-GitHub origin provider")
+        finally:
+            git(
+                repository,
+                "config",
+                "remote.origin.url",
+                "git@github.com:fixture-owner/fixture-repository.git",
+            )
+        legacy_symlink = repository / "legacy-identity-symlink.toml"
+        legacy_symlink.symlink_to(legacy_identity_path)
+        try:
+            verify_legacy_identity(legacy_symlink, repository, legacy_copy)
+        except PinError:
+            legacy_bad_count += 1
+            print("legacy identity known-bad rejected: a symlinked sidecar")
+        else:
+            raise PinError("self-test accepts a symlinked sidecar")
+        finally:
+            legacy_symlink.unlink()
+        original_copy = legacy_copy.read_bytes()
+        legacy_copy.write_bytes(original_copy + b"copy drift\n")
+        try:
+            verify_legacy_identity(legacy_identity_path, repository, legacy_copy)
+        except PinError:
+            legacy_bad_count += 1
+            print("legacy identity known-bad rejected: a drifted checked-in copy")
+        else:
+            raise PinError("self-test accepts a drifted checked-in copy")
+        finally:
+            legacy_copy.write_bytes(original_copy)
         verify(identity_path, repository)
         print("self-test known-good accepted: trusted signer over the pinned commit")
         bad_path = repository / "bad.toml"
@@ -718,6 +937,10 @@ def run_self_test() -> None:
         f"radeon source pin calibration: PASS (1 good and {bad_count} bad "
         "identities classified)"
     )
+    print(
+        "radeon legacy identity calibration: PASS "
+        f"(1 good and {legacy_bad_count} bad identities classified)"
+    )
 
 
 def main() -> int:
@@ -725,6 +948,9 @@ def main() -> int:
     parser.add_argument("--identity", type=Path)
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--pkgbuild", type=Path)
+    parser.add_argument("--legacy-identity", type=Path)
+    parser.add_argument("--legacy-repository", type=Path)
+    parser.add_argument("--legacy-copy", type=Path)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument(
         "--allowed-signers",
@@ -733,17 +959,42 @@ def main() -> int:
         f"{DEFAULT_ALLOWED_SIGNERS} beside the identity file",
     )
     arguments = parser.parse_args()
+    legacy_arguments = (
+        arguments.legacy_identity,
+        arguments.legacy_repository,
+        arguments.legacy_copy,
+    )
     try:
         if arguments.self_test:
+            if any(argument is not None for argument in legacy_arguments) or any(
+                argument is not None
+                for argument in (
+                    arguments.identity,
+                    arguments.repository,
+                    arguments.pkgbuild,
+                    arguments.allowed_signers,
+                )
+            ):
+                parser.error("--self-test cannot be combined with verification options")
             run_self_test()
             return 0
         if arguments.identity is None or arguments.repository is None:
             parser.error("--identity and --repository are required")
+        if any(argument is not None for argument in legacy_arguments) and not all(
+            argument is not None for argument in legacy_arguments
+        ):
+            parser.error(
+                "legacy identity mode requires --legacy-identity, "
+                "--legacy-repository, and --legacy-copy"
+            )
         identity = verify(
             arguments.identity,
             arguments.repository,
             arguments.pkgbuild,
             arguments.allowed_signers,
+            arguments.legacy_identity,
+            arguments.legacy_repository,
+            arguments.legacy_copy,
         )
     except PinError as error:
         print(f"check_radeon_source_pin: {error}", file=sys.stderr)

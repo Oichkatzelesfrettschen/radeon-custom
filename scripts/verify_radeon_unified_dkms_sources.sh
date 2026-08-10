@@ -6,7 +6,8 @@ repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
 package_dir="$repo_root/packaging/arch/radeon-unified-dkms"
 pkgbuild="$package_dir/PKGBUILD"
 identity="$package_dir/source-identity.toml"
-legacy_conf="$repo_root/migration/input/legacy-dkms-patch-order.conf"
+legacy_identity="$repo_root/migration/input/legacy-dkms-patch-order.toml"
+legacy_copy="$repo_root/migration/input/legacy-dkms-patch-order.conf"
 source_repository=${RADEON_UNIFIED_SOURCE_REPOSITORY:-}
 
 die() {
@@ -33,21 +34,14 @@ fi
 [[ -d $source_repository/.git || -f $source_repository/.git ]] ||
     die "source repository is absent: $source_repository"
 
-legacy_commit=210e2b06c0266e316f08eb0b2b3e9832884c43de
-legacy_path=packaging/arch/radeon-unified-dkms/dkms.conf
-legacy_sha256=ec46b2600687aec95986b7a78dad884f5518b4cd823977d513acbf318ca295f0
-actual=$(sha256sum "$legacy_conf")
-actual=${actual%% *}
-[[ $actual == "$legacy_sha256" ]] ||
-    die "legacy DKMS patch-order copy has drifted"
-git show "${legacy_commit}:${legacy_path}" | cmp - "$legacy_conf" ||
-    die "legacy DKMS patch-order copy differs from the migration input commit"
-
 python3 "$repo_root/scripts/check_radeon_source_pin.py" --self-test
 python3 "$repo_root/scripts/check_radeon_source_pin.py" \
     --identity "$identity" \
     --repository "$source_repository" \
-    --pkgbuild "$pkgbuild"
+    --pkgbuild "$pkgbuild" \
+    --legacy-identity "$legacy_identity" \
+    --legacy-repository "$repo_root" \
+    --legacy-copy "$legacy_copy"
 python3 "$repo_root/scripts/check_radeon_package_profiles.py" --self-test
 python3 "$repo_root/scripts/check_radeon_package_profiles.py"
 bash "$repo_root/scripts/test_radeon_dkms_kcflags_composition.sh"
