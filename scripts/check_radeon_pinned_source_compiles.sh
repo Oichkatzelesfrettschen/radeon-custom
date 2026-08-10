@@ -28,6 +28,22 @@ scan_warnings() {
     fi
 }
 
+verify_module_metadata() {
+    field=$1
+    expected=$2
+    actual=$3
+    if [ -z "$actual" ]; then
+        printf 'module metadata %s is missing, expected %s\n' \
+            "$field" "$expected" >&2
+        return 1
+    fi
+    if [ "$actual" != "$expected" ]; then
+        printf 'module metadata %s is %s, expected %s\n' \
+            "$field" "$actual" "$expected" >&2
+        return 1
+    fi
+}
+
 make_work_dir() {
     temp_base=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
     [ -d "$temp_base" ] && [ -w "$temp_base" ] ||
@@ -88,6 +104,24 @@ if [ "$self_test" -eq 1 ]; then
     if scan_warnings "$work/bad.log" 2>/dev/null; then
         die "warning calibration accepts an unapproved warning"
     fi
+    expected_driver_tree=fixture-driver-tree
+    verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" "$expected_driver_tree" ||
+        die "metadata calibration rejects its known-good driver tree"
+    wrong_metadata=$(verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" wrong-driver-tree 2>&1) &&
+        die "metadata calibration accepts a wrong driver tree"
+    printf '%s\n' "$wrong_metadata" |
+        grep -Fqx \
+            "module metadata gororoba_driver_tree is wrong-driver-tree, expected $expected_driver_tree" ||
+        die "metadata calibration reports an imprecise wrong driver tree"
+    missing_metadata=$(verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" '' 2>&1) &&
+        die "metadata calibration accepts a missing driver tree"
+    printf '%s\n' "$missing_metadata" |
+        grep -Fqx \
+            "module metadata gororoba_driver_tree is missing, expected $expected_driver_tree" ||
+        die "metadata calibration reports an imprecise missing driver tree"
     printf 'pinned source compile calibration: PASS\n'
     exit 0
 fi
@@ -168,14 +202,15 @@ find "$radeon_tree" -maxdepth 1 -type f -name '*_reg_safe.h' |
 for metadata in \
     "gororoba_build_profile:$resolved_profile" \
     "gororoba_source_commit:$_source_commit" \
+    "gororoba_driver_tree:$_source_driver_tree" \
     "gororoba_feature_policy_sha256:$_source_feature_policy_sha256" \
     "gororoba_upstream_base:$_source_upstream_base"
 do
     field=${metadata%%:*}
     expected=${metadata#*:}
-    actual=$(modinfo -F "$field" "$radeon_tree/radeon.ko")
-    [ "$actual" = "$expected" ] ||
-        die "module metadata $field is $actual, expected $expected"
+    actual=$(modinfo -F "$field" "$radeon_tree/radeon.ko" 2>/dev/null || true)
+    verify_module_metadata "$field" "$expected" "$actual" ||
+        die "module metadata verification failed"
 done
 
 printf 'pinned Radeon source build: PASS against %s as %s\n' \
