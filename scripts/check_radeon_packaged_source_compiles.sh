@@ -29,6 +29,22 @@ scan_warnings() {
     fi
 }
 
+verify_module_metadata() {
+    field=$1
+    expected=$2
+    actual=$3
+    if [ -z "$actual" ]; then
+        printf 'module metadata %s is missing, expected %s\n' \
+            "$field" "$expected" >&2
+        return 1
+    fi
+    if [ "$actual" != "$expected" ]; then
+        printf 'module metadata %s is %s, expected %s\n' \
+            "$field" "$actual" "$expected" >&2
+        return 1
+    fi
+}
+
 toml_string() {
     file=$1
     key=$2
@@ -102,6 +118,24 @@ if [ "$self_test" -eq 1 ]; then
         die "profile calibration resolves a non-production ceiling"
     [ "$(toml_integer "$expected_profile" kernel_build_interface)" -eq 1 ] ||
         die "profile calibration resolves the wrong build interface"
+    expected_driver_tree=$(toml_string "$expected_identity" driver_tree)
+    verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" "$expected_driver_tree" ||
+        die "metadata calibration rejects its known-good driver tree"
+    wrong_metadata=$(verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" 1111111111111111111111111111111111111111 \
+        2>&1) && die "metadata calibration accepts a wrong driver tree"
+    printf '%s\n' "$wrong_metadata" |
+        grep -Fqx \
+            "module metadata gororoba_driver_tree is 1111111111111111111111111111111111111111, expected $expected_driver_tree" ||
+        die "metadata calibration reports an imprecise wrong driver tree"
+    missing_metadata=$(verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" '' 2>&1) &&
+        die "metadata calibration accepts a missing driver tree"
+    printf '%s\n' "$missing_metadata" |
+        grep -Fqx \
+            "module metadata gororoba_driver_tree is missing, expected $expected_driver_tree" ||
+        die "metadata calibration reports an imprecise missing driver tree"
     printf 'packaged source compile calibration: PASS\n'
     exit 0
 fi
@@ -162,6 +196,10 @@ cmp "$source_root/radeon-build-profile.h" "$expected_header" ||
     die "package build header differs from the production declaration"
 cmp "$source_root/dkms.conf" "$expected_dkms" ||
     die "package DKMS recipe differs from the production declaration"
+expected_driver_tree=$(toml_string "$expected_identity" driver_tree)
+profile_driver_tree=$(toml_string "$expected_profile" driver_tree)
+[ "$profile_driver_tree" = "$expected_driver_tree" ] ||
+    die "production profile driver tree differs from the pinned source identity"
 # Board policy ships in radeon-rs482-policy, so the module package carries
 # no radeon-re.conf; a stray copy here would reintroduce board-global
 # options into the capability package.
@@ -225,14 +263,15 @@ find "$source_root/radeon" -maxdepth 1 -type f -name '*_reg_safe.h' |
 for metadata in \
     "gororoba_build_profile:$(toml_string "$expected_profile" compiled_ceiling)" \
     "gororoba_source_commit:$(toml_string "$expected_profile" source_commit)" \
+    "gororoba_driver_tree:$expected_driver_tree" \
     "gororoba_feature_policy_sha256:$(toml_string "$expected_profile" feature_policy_sha256)" \
     "gororoba_upstream_base:$(toml_string "$expected_profile" upstream_base)"
 do
     field=${metadata%%:*}
     expected=${metadata#*:}
-    actual=$(modinfo -F "$field" "$source_root/radeon/radeon.ko")
-    [ "$actual" = "$expected" ] ||
-        die "module metadata $field is $actual, expected $expected"
+    actual=$(modinfo -F "$field" "$source_root/radeon/radeon.ko" 2>/dev/null || true)
+    verify_module_metadata "$field" "$expected" "$actual" ||
+        die "module metadata verification failed"
 done
 
 package_sha256=$(sha256sum "$package_path" | cut -d' ' -f1)
