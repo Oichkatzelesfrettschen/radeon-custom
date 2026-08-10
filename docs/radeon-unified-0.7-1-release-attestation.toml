@@ -1,10 +1,11 @@
 # Signed-release identity for the exact radeon-unified 0.7-1 package artifacts.
 # This record binds the detached SSH signatures and their verification to the
 # exact archive bytes, and to the packaging and source identity those bytes were
-# built from. It carries package release identity and makes no installation or
-# silicon claim; the exact packages, signatures, allowed-signers file, signing
-# transcript, and lifecycle evidence are retained in the durable private
-# build-host release store.
+# built from. It carries package release identity. The appended runtime fields
+# bind a sealed read only deployment identity capture and make no controlled
+# workload or silicon behavior claim. The exact packages, signatures,
+# allowed-signers file, signing transcript, and lifecycle evidence are retained
+# in the durable private build-host release store.
 #
 # The source-side attestation in linux-radeon-gororoba covers the signed source
 # tag alone and keeps its own NOT RUN fields. This record is the separate
@@ -102,11 +103,27 @@ transition_row_9_legacy_rollback = "NOT RUN: rollback authority for 0.7-1 is the
 transition_row_11_hazard_stack_survival = "NOT RUN: sp5100-tco-ioapic-dkms has no constructor in radeon-custom and no built artifact on the build host"
 
 signed_artifact_set = "PASS"
-target_contact = "NOT RUN"
-target_compile = "NOT RUN"
-package_installation = "NOT RUN"
-module_load = "NOT RUN"
-hardware_operation = "NOT RUN"
+target_contact = "PASS: sealed read only identity capture on cachyos-vostro1000"
+target_compile = "OBSERVED: DKMS reports 0.7 installed for 7.1.3-2-cachyos and 6.18.38-2-cachyos-lts"
+package_installation = "OBSERVED: pacman records radeon-unified-dkms and radeon-rs482-policy 0.7-1; exact signed archive provenance is not proven"
+module_load = "PASS: installed and loaded srcversion plus GNU build ID match the retained module"
+hardware_operation = "NOT RUN: boot initialization is observed; the capture runs no controlled workload"
+
+runtime_evidence_repository = "Oichkatzelesfrettschen/steinmarder-r300"
+runtime_evidence_bundle = "src/re/r300/results/cachyos-vostro1000-rs482-radeon-unified-0.7-1-production-identity"
+runtime_evidence_producer_commit = "7340e3354afe0967d280b70500032d95d3f0b14d"
+runtime_evidence_capture_manifest_sha256 = "84340d65c87cb4ca3aa1f01faaa559a00d7950a55fad4cee344b988d3eeff386"
+runtime_evidence_hash_ledger_sha256 = "cc8a82f210cdccc847f9320faa7dc9f6136e537ef3555c78d867f0055ca70e42"
+runtime_kernel_release = "7.1.3-2-cachyos"
+runtime_module_compressed_sha256 = "6d058f68aefab94350e96a9e376e3ff577512cd4d4919b627e85b678ca1b0301"
+runtime_module_decompressed_sha256 = "83dfd1336c240bb4be9b74cf549c8e13071d0c7042e730a8e9ef44baf1bec121"
+runtime_module_build_id = "a5f1ae7e6e040b20c53278d2978ea7a17a29b696"
+runtime_module_srcversion = "A7F72BE636B52D7EED42415"
+runtime_build_profile = "prod"
+runtime_development_parameter_count = 0
+runtime_current_boot_radeon_fault_line_count = 0
+runtime_current_boot_warning_line_count = 381
+runtime_current_boot_warning_disposition = "Retained broad filter lines cover firmware, ACPI, ATA, module taint, Radeon BIOS mapping, Broadcom b44 DMA, and Intel wireless paths; they do not affect the exact identity joins and do not establish a warning free boot"
 
 # Parked-submission entry contract in the pinned source (radeon_cs_ioctl at
 # source commit 293a4ae3fe82): the gpu_parked latch refuses with -EIO before
