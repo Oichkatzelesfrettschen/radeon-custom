@@ -420,6 +420,8 @@ if [[ -n $policy_package ]]; then
             die "row10: refused policy transaction left board policy behind"
         log "row10-policy-refused: PASS"
     fi
+else
+    log "row 10 board policy: not run (no --policy-package artifact supplied)"
 fi
 
 transaction row8c-remove pacman -R --noconfirm radeon-unified-dkms
@@ -468,8 +470,7 @@ else
 fi
 
 if [[ $with_kernel -eq 0 ]]; then
-    log "kernel rows: not run (pass --with-kernel for a real DKMS kernel target;" \
-        "a --with-kernel run covers every package row too, so one invocation" \
-        "attests the full matrix)"
+    log "kernel rows: not run (pass --with-kernel to add real DKMS kernel assertions" \
+        "to package rows whose artifacts this invocation supplies)"
 fi
-log "radeon package transition matrix: PASS"
+log "supplied radeon package transition rows: PASS"
