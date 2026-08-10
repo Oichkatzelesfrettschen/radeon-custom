@@ -110,6 +110,12 @@ root_protected_path() {
     done
 }
 
+trace_header_stat() {
+    local path=$1
+
+    stat -c '%i %F %a %u %g %s %Y %y %Z %z' -- "$path"
+}
+
 symlink_free_subpath() {
     # The harness writes the trace header as root. A symlink component below
     # the disposable kernel build root would redirect that write outside the
@@ -191,6 +197,13 @@ run_self_test() {
     local found
     local package_sha256
     local status_result
+    local trace_header_legacy_after
+    local trace_header_legacy_before
+    local trace_header_stat_after
+    local trace_header_stat_before
+    local trace_header_stat_unchanged
+    local attempt=0
+    local same_second_rewrite=0
     local -a retained_logs=()
 
     tmpdir=$(make_temp_dir)
@@ -225,6 +238,31 @@ run_self_test() {
     if package_sha256_matches "$tmpdir/package" "${package_sha256^^}"; then
         die "package digest validator accepts a noncanonical digest"
     fi
+    printf '%s\n' 'trace header bytes' >"$tmpdir/trace-header-source"
+    cp "$tmpdir/trace-header-source" "$tmpdir/trace-header"
+    trace_header_stat_before=$(trace_header_stat "$tmpdir/trace-header")
+    trace_header_stat_unchanged=$(trace_header_stat "$tmpdir/trace-header")
+    [[ $trace_header_stat_before == "$trace_header_stat_unchanged" ]] ||
+        die "trace header stat calibration rejects an untouched header"
+    trace_header_legacy_before=$(stat -c '%i %F %a %u %g %s %Y' -- \
+        "$tmpdir/trace-header")
+    while ((attempt < 20)); do
+        attempt=$((attempt + 1))
+        cp "$tmpdir/trace-header-source" "$tmpdir/trace-header"
+        trace_header_stat_after=$(trace_header_stat "$tmpdir/trace-header")
+        trace_header_legacy_after=$(stat -c '%i %F %a %u %g %s %Y' -- \
+            "$tmpdir/trace-header")
+        if [[ $trace_header_legacy_before == "$trace_header_legacy_after" ]]; then
+            same_second_rewrite=1
+            break
+        fi
+        trace_header_stat_before=$trace_header_stat_after
+        trace_header_legacy_before=$trace_header_legacy_after
+    done
+    [[ $same_second_rewrite -eq 1 ]] ||
+        die "trace header stat calibration cannot create a same-second rewrite"
+    [[ $trace_header_stat_before != "$trace_header_stat_after" ]] ||
+        die "trace header stat calibration misses a byte-identical rewrite"
     expected_driver_tree=fixture-driver-tree
     verify_module_metadata gororoba_driver_tree \
         "$expected_driver_tree" "$expected_driver_tree" ||
@@ -525,10 +563,11 @@ if [[ -e $kernel_trace_header || -L $kernel_trace_header ]]; then
     cmp -s "$kernel_trace_header" "$packaged_source/radeon/radeon_trace.h" ||
         die "kernel root trace header differs from the module source header"
     cp "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre"
-    # A reinstall of byte-identical content allocates a new inode and a new
-    # mtime, so the digest comparison alone accepts it. The stat record
-    # carries the fields that separate an untouched header from a rewrite.
-    stat -c '%i %F %a %u %g %s %Y' -- "$kernel_trace_header" \
+    # A byte-identical in-place reinstall retains the inode and can share the
+    # same whole-second mtime. The record carries nanosecond mtime and ctime
+    # alongside ownership and mode, so the retained record preserves each
+    # subsecond timestamp change the filesystem reports.
+    trace_header_stat "$kernel_trace_header" \
         >"$evidence_dir/kernel-radeon_trace.h.stat.pre"
 else
     trace_header_layout=shim
@@ -588,7 +627,7 @@ cp "${make_logs[0]}" "$evidence_dir/make.log"
 if [[ $trace_header_layout == kernel-root ]]; then
     cmp -s "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre" ||
         die "DKMS build rewrote the kernel root trace header"
-    stat -c '%i %F %a %u %g %s %Y' -- "$kernel_trace_header" \
+    trace_header_stat "$kernel_trace_header" \
         >"$evidence_dir/kernel-radeon_trace.h.stat.post"
     cmp -s "$evidence_dir/kernel-radeon_trace.h.stat.pre" \
         "$evidence_dir/kernel-radeon_trace.h.stat.post" ||
