@@ -51,7 +51,20 @@ EXPECTED_WORKFLOW_ACTIONS = {
     ),
 }
 
-USE_PREFIX = re.compile(r"^\s*(?:-\s*)?uses\s*:")
+USES_MAPPING_KEY = re.compile(
+    r"(?:(?<![A-Za-z0-9_.-])uses\s*:|[\"']uses[\"']\s*:)"
+)
+YAML_ANCHOR_OR_ALIAS = re.compile(
+    r"(?:^|[\s:\[,-])[&*](?![&*])[^ \t,\]}#]+"
+)
+YAML_EXPLICIT_KEY = re.compile(r"^\s*\?")
+YAML_QUOTED_KEY = re.compile(r"^\s*(?:-\s*)?[\"'][^\"']+[\"']\s*:")
+YAML_FLOW_STEP = re.compile(r"^\s*-\s*\{")
+YAML_TYPE_TAG = re.compile(r"(?:^|[\s:\[,-])!![A-Za-z0-9_:/.-]+")
+YAML_DIRECTIVE = re.compile(r"^\s*%")
+YAML_BLOCK_SCALAR = re.compile(
+    r":\s*[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$"
+)
 PINNED_USE = re.compile(
     r"^\s*(?:-\s*)?uses\s*:\s*"
     r"(?P<action>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@"
@@ -97,17 +110,59 @@ def workflow_paths(repository: Path) -> list[Path]:
 
 def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...]:
     actions: list[str] = []
+    block_scalar_indent: int | None = None
     for line_number, line in enumerate(
         workflow.read_text(encoding="ascii").splitlines(),
         1,
     ):
-        if USE_PREFIX.match(line) is None:
+        stripped = line.lstrip(" ")
+        indentation = len(line) - len(stripped)
+        if block_scalar_indent is not None:
+            if not stripped or indentation > block_scalar_indent:
+                continue
+            block_scalar_indent = None
+        if not stripped or stripped.startswith("#"):
+            continue
+        relative = workflow.relative_to(repository).as_posix()
+        if YAML_ANCHOR_OR_ALIAS.search(line) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: YAML anchors and aliases are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_EXPLICIT_KEY.match(line) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: explicit YAML keys are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_DIRECTIVE.match(line) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: YAML directives are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_TYPE_TAG.search(line) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: YAML type tags are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_QUOTED_KEY.match(line) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: quoted YAML keys are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_FLOW_STEP.match(line) is not None:
+            raise ActionPinError(
+                f"{relative}:{line_number}: flow-style steps are outside "
+                "the canonical workflow subset"
+            )
+        if YAML_BLOCK_SCALAR.search(line) is not None:
+            block_scalar_indent = indentation
+        if USES_MAPPING_KEY.search(line) is None:
             continue
         match = PINNED_USE.fullmatch(line)
-        relative = workflow.relative_to(repository).as_posix()
         if match is None:
             raise ActionPinError(
-                f"{relative}:{line_number}: action use lacks an exact SHA and version label"
+                f"{relative}:{line_number}: action use lacks canonical block syntax, "
+                "an exact SHA, or a version label"
             )
         action = match.group("action")
         approved = APPROVED_ACTIONS.get(action)
@@ -212,12 +267,63 @@ def run_self_test() -> None:
         path = repository / ".github/workflows/unreviewed.yml"
         path.write_text("name: unreviewed\n", encoding="ascii")
 
+    def anchored_flow_alias(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        approved = APPROVED_ACTIONS["actions/upload-artifact"]
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - &hidden {name: Hidden action, uses: "
+                f"actions/upload-artifact@{approved.revision}}}\n"
+                "      - *hidden\n"
+            )
+
+    def flow_mapping(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        approved = APPROVED_ACTIONS["actions/upload-artifact"]
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - {name: Hidden action, uses: "
+                f"actions/upload-artifact@{approved.revision}}}\n"
+            )
+
+    def quoted_uses_key(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        approved = APPROVED_ACTIONS["actions/upload-artifact"]
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - name: Hidden action\n"
+                f"        \"uses\": actions/upload-artifact@{approved.revision}\n"
+            )
+
+    def escaped_quoted_key(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        approved = APPROVED_ACTIONS["actions/upload-artifact"]
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - name: Hidden action\n"
+                f"        \"\\x75ses\": actions/upload-artifact@{approved.revision}\n"
+            )
+
+    def tagged_flow_mapping(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        approved = APPROVED_ACTIONS["actions/upload-artifact"]
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - !!map {name: Hidden action, \"\\x75ses\": "
+                f"actions/upload-artifact@{approved.revision}}}\n"
+            )
+
     expect_rejection("mutable action tag", mutable_tag)
     expect_rejection("unapproved action revision", stale_revision)
     expect_rejection("stale action version label", stale_label)
     expect_rejection("missing action use", missing_use)
     expect_rejection("unexpected workflow", unexpected_workflow)
-    print("GitHub action pin calibration: 1 known-good and 5 known-bad fixtures")
+    expect_rejection("anchored flow action alias", anchored_flow_alias)
+    expect_rejection("flow-style action mapping", flow_mapping)
+    expect_rejection("quoted uses key", quoted_uses_key)
+    expect_rejection("escaped quoted key", escaped_quoted_key)
+    expect_rejection("tagged flow mapping", tagged_flow_mapping)
+    print("GitHub action pin calibration: 1 known-good and 10 known-bad fixtures")
 
 
 def parse_arguments() -> argparse.Namespace:
