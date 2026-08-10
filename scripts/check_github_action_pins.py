@@ -530,9 +530,11 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
                 f"{relative}:{line_number}: quoted YAML mapping keys are outside "
                 "the canonical workflow subset"
             )
-        if YAML_BLOCK_SCALAR.search(structural) is not None:
-            block_scalar_indent = indentation
         entry = parse_plain_mapping_entry(code)
+        if YAML_BLOCK_SCALAR.search(structural) is not None:
+            block_scalar_indent = (
+                entry.key_column if entry is not None else indentation
+            )
         if (
             path_tracker.steps_indent is not None
             and path_tracker.step_indent is None
@@ -661,6 +663,9 @@ def write_fixture(repository: Path) -> None:
         ]
         lines.extend(
             [
+                "      - name: |",
+                "          Block-scalar step name",
+                "        run: echo block-scalar key-column control",
                 "      - name: 'Single multiline step name",
                 "        it''s uses-looking text",
                 "        trailing'",
@@ -1023,6 +1028,15 @@ def run_self_test() -> None:
                 f"# {approved.version}\n"
             )
 
+    def sequence_block_scalar_sibling_action(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - name: |\n"
+                "          Hidden action name\n"
+                "        uses: attacker/action@v1\n"
+            )
+
     expect_rejection("mutable action tag", mutable_tag)
     expect_rejection("unapproved action revision", stale_revision)
     expect_rejection("stale action version label", stale_label)
@@ -1075,7 +1089,11 @@ def run_self_test() -> None:
         unterminated_multiline_scalar,
     )
     expect_rejection("detached step mapping", detached_step_mapping)
-    print("GitHub action pin calibration: 1 known-good and 34 known-bad fixtures")
+    expect_rejection(
+        "sequence block-scalar sibling action",
+        sequence_block_scalar_sibling_action,
+    )
+    print("GitHub action pin calibration: 1 known-good and 35 known-bad fixtures")
 
 
 def parse_arguments() -> argparse.Namespace:
