@@ -332,15 +332,18 @@ def verify_hazard_stack(pkgbuild_text: str) -> None:
     if match is None:
         raise ProfileError("hazard-stack PKGBUILD omits depends")
     depends = re.findall(r"'([^']+)'", match.group(1))
-    for dep in depends:
-        name = re.split(r"[<>=]", dep, maxsplit=1)[0]
+    dependency_names = [
+        re.split(r"[<>=]", dependency, maxsplit=1)[0]
+        for dependency in depends
+    ]
+    for name in dependency_names:
         if name in ("radeon-unified-dkms", "radeon-unified-dkms-dev"):
             raise ProfileError(
                 f"hazard-stack depends on literal module package {name}; "
                 "the prod<->dev swap removes it -- depend on the shared "
                 "radeon-unified capability"
             )
-    if not any(dep.startswith("radeon-unified") for dep in depends):
+    if "radeon-unified" not in dependency_names:
         raise ProfileError(
             "hazard-stack lacks a radeon-unified capability dependency"
         )
@@ -435,6 +438,10 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
 
     hazard_dir = package_dir.parent / "rs480-reset-hazard-stack"
     verify_hazard_stack(read_ascii(hazard_dir / "PKGBUILD"))
+    verify_hazard_stack(
+        "depends=('radeon-unified>=0.8-1' "
+        "'sp5100-tco-ioapic-dkms>=0.4-4')\n"
+    )
     known_bad = (
         "depends=('radeon-unified-dkms' 'sp5100-tco-ioapic-dkms>=0.4-4')\n"
     )
@@ -444,6 +451,21 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
         pass
     else:
         raise ProfileError("literal module dependency fixture passes")
+    for invalid_capability in (
+        "radeon-unified-dkms-git",
+        "radeon-unifiedness>=999",
+    ):
+        invalid_dependency = (
+            f"depends=('{invalid_capability}' "
+            "'sp5100-tco-ioapic-dkms>=0.4-4')\n"
+        )
+        expect_profile_error(
+            f"invalid capability dependency fixture {invalid_capability}",
+            lambda invalid_dependency=invalid_dependency: verify_hazard_stack(
+                invalid_dependency
+            ),
+            "hazard-stack lacks a radeon-unified capability dependency",
+        )
 
     identity_value = str(
         read_toml(package_dir / "source-identity.toml")["driver_tree"]
