@@ -116,6 +116,30 @@ trace_header_stat() {
     stat -c '%i %F %a %u %g %s %Y %y %Z %z' -- "$path"
 }
 
+trace_header_matches_source() {
+    local candidate=$1
+    local source=$2
+
+    cmp -s -- "$candidate" "$source"
+}
+
+write_trace_header_evidence() {
+    local output_directory=$1
+    local layout=$2
+    local source=$3
+    local include_source=$4
+    local kernel_digest=$5
+    local module_digest=$6
+
+    {
+        printf 'trace_header_layout=%s\n' "$layout"
+        printf 'trace_header_source=%s\n' "$source"
+        printf 'trace_header_include_source=%s\n' "$include_source"
+        printf 'kernel_trace_header_sha256=%s\n' "$kernel_digest"
+        printf 'module_trace_header_sha256=%s\n' "$module_digest"
+    } >"$output_directory/trace-header-layout.txt"
+}
+
 symlink_free_subpath() {
     # The harness writes the trace header as root. A symlink component below
     # the disposable kernel build root would redirect that write outside the
@@ -182,7 +206,8 @@ retain_failure_evidence() {
     (
         cd "$output_directory"
         find . -maxdepth 1 -type f \
-            \( -name 'failure.txt' -o -name 'failure-make-*.log' \) \
+            \( -name 'failure.txt' -o -name 'failure-make-*.log' \
+            -o -name 'trace-header-layout.txt' \) \
             -printf '%P\0' |
             sort -z |
             xargs -0 sha256sum
@@ -202,6 +227,8 @@ run_self_test() {
     local trace_header_stat_after
     local trace_header_stat_before
     local trace_header_stat_unchanged
+    local trace_header_kernel_sha256
+    local trace_header_source_sha256
     local attempt=0
     local same_second_rewrite=0
     local -a retained_logs=()
@@ -239,6 +266,79 @@ run_self_test() {
         die "package digest validator accepts a noncanonical digest"
     fi
     printf '%s\n' 'trace header bytes' >"$tmpdir/trace-header-source"
+    trace_header_source_sha256=$(sha256sum -- "$tmpdir/trace-header-source")
+    trace_header_source_sha256=${trace_header_source_sha256%% *}
+    printf '%s\n' 'divergent trace header bytes' >"$tmpdir/trace-header"
+    trace_header_kernel_sha256=$(sha256sum -- "$tmpdir/trace-header")
+    trace_header_kernel_sha256=${trace_header_kernel_sha256%% *}
+    write_trace_header_evidence "$tmpdir" kernel-root \
+        injected-conflicting not-run "$trace_header_kernel_sha256" \
+        "$trace_header_source_sha256"
+    grep -Fxq 'trace_header_layout=kernel-root' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the conflicting layout"
+    grep -Fxq 'trace_header_source=injected-conflicting' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the conflicting source"
+    grep -Fxq 'trace_header_include_source=not-run' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the not-run include source"
+    grep -Fxq "kernel_trace_header_sha256=$trace_header_kernel_sha256" \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the conflicting kernel digest"
+    grep -Fxq "module_trace_header_sha256=$trace_header_source_sha256" \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the conflicting module digest"
+    [[ $trace_header_kernel_sha256 != "$trace_header_source_sha256" ]] ||
+        die "trace header evidence accepts identical conflicting digests"
+    cp "$tmpdir/trace-header-source" "$tmpdir/trace-header"
+    trace_header_kernel_sha256=$(sha256sum -- "$tmpdir/trace-header")
+    trace_header_kernel_sha256=${trace_header_kernel_sha256%% *}
+    write_trace_header_evidence "$tmpdir" kernel-root \
+        injected-matching kernel-root "$trace_header_kernel_sha256" \
+        "$trace_header_source_sha256"
+    grep -Fxq 'trace_header_layout=kernel-root' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the matching layout"
+    grep -Fxq 'trace_header_source=injected-matching' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the matching source"
+    grep -Fxq 'trace_header_include_source=kernel-root' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the kernel-root include source"
+    grep -Fxq "kernel_trace_header_sha256=$trace_header_kernel_sha256" \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the matching kernel digest"
+    grep -Fxq "module_trace_header_sha256=$trace_header_source_sha256" \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the matching module digest"
+    [[ $trace_header_kernel_sha256 == "$trace_header_source_sha256" ]] ||
+        die "trace header evidence rejects identical matching digests"
+    write_trace_header_evidence "$tmpdir" shim natural private-shim absent \
+        "$trace_header_source_sha256"
+    grep -Fxq 'trace_header_layout=shim' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the shim layout"
+    grep -Fxq 'trace_header_source=natural' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the natural source"
+    grep -Fxq 'trace_header_include_source=private-shim' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the shim include source"
+    grep -Fxq 'kernel_trace_header_sha256=absent' \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the absent kernel digest"
+    grep -Fxq "module_trace_header_sha256=$trace_header_source_sha256" \
+        "$tmpdir/trace-header-layout.txt" ||
+        die "trace header evidence omits the shim module digest"
+    trace_header_matches_source "$tmpdir/trace-header" \
+        "$tmpdir/trace-header-source" ||
+        die "trace header comparison rejects its known-good calibration"
+    printf '%s\n' 'divergent trace header bytes' >"$tmpdir/trace-header"
+    if trace_header_matches_source "$tmpdir/trace-header" \
+            "$tmpdir/trace-header-source"; then
+        die "trace header comparison accepts its known-bad calibration"
+    fi
     cp "$tmpdir/trace-header-source" "$tmpdir/trace-header"
     trace_header_stat_before=$(trace_header_stat "$tmpdir/trace-header")
     trace_header_stat_unchanged=$(trace_header_stat "$tmpdir/trace-header")
@@ -340,6 +440,22 @@ run_self_test() {
     (cd "$tmpdir/failure-evidence" &&
         sha256sum -c failure-evidence.sha256) >/dev/null ||
         die "failure calibration emits an invalid evidence manifest"
+    mkdir -p "$tmpdir/private-with-trace/module/build" \
+        "$tmpdir/failure-evidence-with-trace"
+    printf 'decisive failure log with trace evidence\n' \
+        >"$tmpdir/private-with-trace/module/build/make.log"
+    printf '%s\n' \
+        'trace_header_layout=kernel-root' \
+        >"$tmpdir/failure-evidence-with-trace/trace-header-layout.txt"
+    retain_failure_evidence "$tmpdir/private-with-trace" \
+        "$tmpdir/failure-evidence-with-trace" 11 "$tmpdir/package" \
+        fixture-kernel
+    grep -Eq '^[0-9a-f]{64}  trace-header-layout\.txt$' \
+        "$tmpdir/failure-evidence-with-trace/failure-evidence.sha256" ||
+        die "failure calibration omits trace-header evidence from its manifest"
+    (cd "$tmpdir/failure-evidence-with-trace" &&
+        sha256sum -c failure-evidence.sha256) >/dev/null ||
+        die "failure calibration does not cover trace-header evidence"
     : >"$tmpdir/blocked-retention-target"
     if retain_failure_evidence "$tmpdir/failure-evidence" \
             "$tmpdir/blocked-retention-target" 10 \
@@ -470,14 +586,13 @@ cp -a --reflink=auto "$resolved_kernel_build_root/." "$kernel_build_root/"
 [[ -f $kernel_build_root/include/generated/compile.h ]] ||
     die "disposable kernel build root lacks include/generated/compile.h"
 # A headers-only root omits drivers/gpu/drm/radeon/radeon_trace.h and the
-# DKMS pre-build satisfies define_trace.h through its private shim; a target
-# root ships the real header and the build resolves it in place. Both layouts
-# complete the lifecycle, so the harness records which one it exercises. The
-# --inject-trace-header calibration flag synthesizes the target layout on a
-# headers-only host: matching copies the module source header, conflicting
-# writes a differing header that the post-extraction byte comparison rejects.
-# The evidence names the layout and its source, so a synthesized header stays
-# distinguishable from a kernel root that ships its own.
+# DKMS pre-build satisfies define_trace.h through its private shim. A target
+# root ships the real header. The DKMS make wrapper passes the private shim
+# include directory in either layout, so the evidence records root-header
+# presence separately from include source. The --inject-trace-header
+# calibration flag synthesizes the target layout on a headers-only host:
+# matching copies the module source header, and conflicting writes a differing
+# header that the admission comparison rejects.
 kernel_trace_header="$kernel_build_root/drivers/gpu/drm/radeon/radeon_trace.h"
 if [[ -e $kernel_trace_header || -L $kernel_trace_header ]] &&
    [[ -n $inject_trace_header ]]; then
@@ -542,13 +657,18 @@ manifest_driver_tree=$(toml_value driver_tree "$build_manifest")
     die "package build profile driver tree disagrees with the pinned source identity"
 expected_policy=$(toml_value feature_policy_sha256 "$build_manifest")
 expected_upstream=$(toml_value upstream_base "$build_manifest")
+packaged_trace_header="$packaged_source/radeon/radeon_trace.h"
+[[ -f $packaged_trace_header && ! -L $packaged_trace_header ]] ||
+    die "package source trace header is absent or not a regular file"
+module_trace_header_sha256=$(sha256sum -- "$packaged_trace_header")
+module_trace_header_sha256=${module_trace_header_sha256%% *}
 case $inject_trace_header in
     matching)
-        install -m 0644 "$packaged_source/radeon/radeon_trace.h" \
+        install -m 0644 "$packaged_trace_header" \
             "$kernel_trace_header"
         ;;
     conflicting)
-        { cat "$packaged_source/radeon/radeon_trace.h"
+        { cat "$packaged_trace_header"
           printf '/* divergent kernel-root copy */\n'; } \
             >"$kernel_trace_header"
         chmod 0644 "$kernel_trace_header"
@@ -560,8 +680,22 @@ if [[ -e $kernel_trace_header || -L $kernel_trace_header ]]; then
     symlink_free_subpath "$kernel_build_root" "$kernel_trace_header" ||
         die "kernel root trace header path crosses a symlink"
     trace_header_layout=kernel-root
-    cmp -s "$kernel_trace_header" "$packaged_source/radeon/radeon_trace.h" ||
-        die "kernel root trace header differs from the module source header"
+    kernel_trace_header_sha256=$(sha256sum -- "$kernel_trace_header")
+    kernel_trace_header_sha256=${kernel_trace_header_sha256%% *}
+else
+    trace_header_layout=shim
+    kernel_trace_header_sha256=absent
+fi
+if [[ -n $inject_trace_header ]]; then
+    trace_header_source=injected-$inject_trace_header
+else
+    trace_header_source=natural
+fi
+trace_header_include_source=not-run
+write_trace_header_evidence "$evidence_dir" "$trace_header_layout" \
+    "$trace_header_source" "$trace_header_include_source" \
+    "$kernel_trace_header_sha256" "$module_trace_header_sha256"
+if [[ $trace_header_layout == kernel-root ]]; then
     cp "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre"
     # A byte-identical in-place reinstall retains the inode and can share the
     # same whole-second mtime. The record carries nanosecond mtime and ctime
@@ -569,19 +703,9 @@ if [[ -e $kernel_trace_header || -L $kernel_trace_header ]]; then
     # subsecond timestamp change the filesystem reports.
     trace_header_stat "$kernel_trace_header" \
         >"$evidence_dir/kernel-radeon_trace.h.stat.pre"
-else
-    trace_header_layout=shim
+    trace_header_matches_source "$kernel_trace_header" "$packaged_trace_header" ||
+        die "kernel root trace header differs from the module source header"
 fi
-# An injected header synthesizes the target layout on a headers-only host, so
-# the retained bundle separates it from a kernel root that ships its own.
-if [[ -n $inject_trace_header ]]; then
-    trace_header_source=injected-$inject_trace_header
-else
-    trace_header_source=natural
-fi
-printf 'trace_header_layout=%s\ntrace_header_source=%s\n' \
-    "$trace_header_layout" "$trace_header_source" \
-    >"$evidence_dir/trace-header-layout.txt"
 cp -a "$packaged_source" "$source_tree/$module_name-$module_version"
 
 cat >"$stub_bin/limine-mkinitcpio" <<'EOF'
@@ -624,8 +748,42 @@ mapfile -t make_logs < <(
 [[ ${#make_logs[@]} -eq 1 ]] ||
     die "expected one DKMS make.log, observed ${#make_logs[@]}"
 cp "${make_logs[0]}" "$evidence_dir/make.log"
+# TRACE_INCLUDE_PATH in radeon_trace.h resolves relative to include/trace in
+# define_trace.h. A kernel-root header therefore wins before the private -I
+# fallback, while a shim layout uses the private include flag as its source.
+trace_header_include_flag_present=0
+if grep -Fq -- \
+        "-I$dkms_tree/$module_name/$module_version/build/.radeon-trace-include/include/trace" \
+        "$evidence_dir/make.log"; then
+    trace_header_include_flag_present=1
+fi
+case $trace_header_layout in
+    kernel-root)
+        trace_header_include_source=kernel-root
+        ;;
+    shim)
+        if [[ $trace_header_include_flag_present -eq 1 ]]; then
+            trace_header_include_source=private-shim
+        else
+            trace_header_include_source=unproven
+        fi
+        ;;
+    *)
+        trace_header_include_source=unproven
+        ;;
+esac
+if [[ $trace_header_include_flag_present -eq 0 ]]; then
+    trace_header_include_source=unproven
+fi
+write_trace_header_evidence "$evidence_dir" "$trace_header_layout" \
+    "$trace_header_source" "$trace_header_include_source" \
+    "$kernel_trace_header_sha256" "$module_trace_header_sha256"
+[[ $trace_header_include_source == private-shim ]] ||
+    [[ $trace_header_include_source == kernel-root ]] ||
+    die "DKMS make invocation omits trace-header include provenance"
 if [[ $trace_header_layout == kernel-root ]]; then
-    cmp -s "$kernel_trace_header" "$evidence_dir/kernel-radeon_trace.h.pre" ||
+    trace_header_matches_source "$kernel_trace_header" \
+        "$evidence_dir/kernel-radeon_trace.h.pre" ||
         die "DKMS build rewrote the kernel root trace header"
     trace_header_stat "$kernel_trace_header" \
         >"$evidence_dir/kernel-radeon_trace.h.stat.post"
@@ -644,10 +802,6 @@ grep -Fq -- '-DRADEON_CALLER_SENTINEL=1' "$evidence_dir/make.log" ||
     die "DKMS make invocation omits incoming KCFLAGS"
 grep -Fq -- '-pipe' "$evidence_dir/make.log" ||
     die "DKMS make invocation omits the package -pipe flag"
-grep -Fq -- \
-    "-I$dkms_tree/$module_name/$module_version/build/.radeon-trace-include/include/trace" \
-    "$evidence_dir/make.log" ||
-    die "DKMS make invocation omits the private trace-include path"
 grep -Fq -- \
     "-include $dkms_tree/$module_name/$module_version/build/radeon-build-profile.h" \
     "$evidence_dir/make.log" ||
