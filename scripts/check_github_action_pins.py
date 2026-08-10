@@ -60,8 +60,9 @@ YAML_ANCHOR_OR_ALIAS = re.compile(
 YAML_EXPLICIT_KEY = re.compile(r"^\s*(?:-\s*)?\?(?:\s|$)")
 YAML_QUOTED_KEY = re.compile(r"^\s*(?:-\s*)?[\"'][^\"']+[\"']\s*:")
 YAML_FLOW_STEP = re.compile(r"^\s*-\s*\{")
-YAML_TYPE_TAG = re.compile(r"(?:^|[\s:\[,-])!![A-Za-z0-9_:/.-]+")
+YAML_TYPE_TAG = re.compile(r"!(?:![A-Za-z0-9_:/.-]+|<[^>\n]+>)")
 YAML_DIRECTIVE = re.compile(r"^\s*%")
+YAML_STEPS_VALUE = re.compile(r"^\s*steps\s*:\s*(?P<value>.*)$")
 YAML_BLOCK_SCALAR = re.compile(
     r":\s*[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$"
 )
@@ -196,6 +197,14 @@ def has_flow_mapping_start(line: str) -> bool:
     return False
 
 
+def has_yaml_type_tag_start(line: str) -> bool:
+    for match in YAML_TYPE_TAG.finditer(line):
+        preceding = line[: match.start()].rstrip()
+        if not preceding or preceding[-1] in ":,[{-?":
+            return True
+    return False
+
+
 def workflow_paths(repository: Path) -> list[Path]:
     workflow_root = repository / ".github/workflows"
     require(
@@ -225,6 +234,7 @@ def workflow_paths(repository: Path) -> list[Path]:
 def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...]:
     actions: list[str] = []
     block_scalar_indent: int | None = None
+    pending_steps_indent: int | None = None
     for line_number, line in enumerate(
         workflow.read_text(encoding="ascii").splitlines(),
         1,
@@ -267,9 +277,9 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
                 f"{relative}:{line_number}: YAML directives are outside "
                 "the canonical workflow subset"
             )
-        if YAML_TYPE_TAG.search(structural) is not None:
+        if has_yaml_type_tag_start(structural):
             raise ActionPinError(
-                f"{relative}:{line_number}: YAML type tags are outside "
+                f"{relative}:{line_number}: core and verbatim YAML tags are outside "
                 "the canonical workflow subset"
             )
         if YAML_FLOW_STEP.match(structural) is not None:
@@ -282,6 +292,26 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
                 f"{relative}:{line_number}: flow-style mappings are outside "
                 "the canonical workflow subset"
             )
+        if pending_steps_indent is not None:
+            if (
+                indentation > pending_steps_indent
+                and structural.lstrip().startswith("[")
+            ):
+                raise ActionPinError(
+                    f"{relative}:{line_number}: flow-style step sequences are outside "
+                    "the canonical workflow subset"
+                )
+            pending_steps_indent = None
+        steps_value = YAML_STEPS_VALUE.match(structural)
+        if steps_value is not None:
+            value = steps_value.group("value")
+            if value.startswith("["):
+                raise ActionPinError(
+                    f"{relative}:{line_number}: flow-style step sequences are outside "
+                    "the canonical workflow subset"
+                )
+            if not value:
+                pending_steps_indent = indentation
         if YAML_BLOCK_SCALAR.search(structural) is not None:
             block_scalar_indent = indentation
         if USES_MAPPING_KEY.search(structural) is None:
@@ -480,6 +510,23 @@ def run_self_test() -> None:
                 f"        : actions/upload-artifact@{approved.revision}\n"
             )
 
+    def compact_flow_step_sequence(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "  hidden:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps: [\"\\x75ses\": actions/checkout@v4]\n"
+            )
+
+    def verbatim_string_tag(repository: Path) -> None:
+        path = repository / ".github/workflows/gates.yml"
+        with path.open("a", encoding="ascii") as workflow:
+            workflow.write(
+                "      - !<tag:yaml.org,2002:str> "
+                "\"\\x75ses\": actions/checkout@v4\n"
+            )
+
     expect_rejection("mutable action tag", mutable_tag)
     expect_rejection("unapproved action revision", stale_revision)
     expect_rejection("stale action version label", stale_label)
@@ -493,7 +540,9 @@ def run_self_test() -> None:
     expect_rejection("encoded flow job", encoded_flow_job)
     expect_rejection("comment-forged block scalar", comment_forged_block_scalar)
     expect_rejection("sequence explicit key", sequence_explicit_key)
-    print("GitHub action pin calibration: 1 known-good and 13 known-bad fixtures")
+    expect_rejection("compact flow step sequence", compact_flow_step_sequence)
+    expect_rejection("verbatim string tag", verbatim_string_tag)
+    print("GitHub action pin calibration: 1 known-good and 15 known-bad fixtures")
 
 
 def parse_arguments() -> argparse.Namespace:

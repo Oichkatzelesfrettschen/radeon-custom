@@ -253,7 +253,7 @@ sh scripts/emit_source_tree_manifest.sh --self-test
 # 6 decomposition properties, 2 closing maps, 24 failure classes
 python3 scripts/check_base_delta_map_closure.py --self-test
 
-# Exact action identities pass, and 13 workflow mutation classes fail
+# Exact action identities pass, and 15 workflow mutation classes fail
 python3 scripts/check_github_action_pins.py --self-test
 ```
 
