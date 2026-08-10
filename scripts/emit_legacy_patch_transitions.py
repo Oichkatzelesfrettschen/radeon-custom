@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Terascale Functionalists
 """Bond each legacy patch to the tree mutation it actually produces.
 
 The effects capture reads the patch text; this ledger reads the tree. Each
