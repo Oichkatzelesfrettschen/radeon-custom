@@ -19,6 +19,7 @@ from pathlib import Path
 class ApprovedAction:
     revision: str
     version: str
+    required_inputs: tuple[tuple[str, str], ...] = ()
 
 
 APPROVED_ACTIONS = {
@@ -29,6 +30,10 @@ APPROVED_ACTIONS = {
     "actions/download-artifact": ApprovedAction(
         "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
         "v8.0.1",
+        (
+            ("skip-decompress", "true"),
+            ("digest-mismatch", "error"),
+        ),
     ),
     "actions/upload-artifact": ApprovedAction(
         "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
@@ -90,6 +95,7 @@ class ActionReferenceContext(Enum):
     OTHER = "other"
     REUSABLE_JOB = "reusable-job"
     STEP_ACTION = "step-action"
+    STEP_ACTION_INPUT = "step-action-input"
 
 
 @dataclass(frozen=True)
@@ -127,8 +133,17 @@ class WorkflowPathTracker:
     steps_indent: int | None = None
     step_indent: int | None = None
     step_property_indent: int | None = None
+    with_indent: int | None = None
+    with_property_indent: int | None = None
+    with_property_keys: set[str] = field(default_factory=set)
+
+    def clear_with(self) -> None:
+        self.with_indent = None
+        self.with_property_indent = None
+        self.with_property_keys.clear()
 
     def clear_step(self) -> None:
+        self.clear_with()
         self.step_indent = None
         self.step_property_indent = None
         self.step_property_keys.clear()
@@ -154,6 +169,8 @@ class WorkflowPathTracker:
         indentation: int,
         sequence_item: bool,
     ) -> ActionReferenceContext:
+        if self.with_indent is not None and indentation <= self.with_indent:
+            self.clear_with()
         if self.step_indent is not None and indentation <= self.step_indent:
             self.clear_step()
         if self.steps_indent is not None and (
@@ -249,8 +266,34 @@ class WorkflowPathTracker:
                 f"duplicate step property: {entry.key}",
             )
             self.step_property_keys.add(entry.key)
+            if entry.key == "with":
+                require(
+                    not entry.value.strip(),
+                    "action inputs must use a block-style mapping",
+                )
+                self.with_indent = indentation
+                self.with_property_indent = None
+                self.with_property_keys.clear()
             if entry.key == "uses":
                 return ActionReferenceContext.STEP_ACTION
+
+        if self.with_indent is not None and indentation > self.with_indent:
+            if sequence_item or entry is None:
+                raise ActionPinError(
+                    "action inputs must use plain scalar mapping entries"
+                )
+            if self.with_property_indent is None:
+                self.with_property_indent = indentation
+            require(
+                indentation == self.with_property_indent,
+                "nested action input values are outside the canonical subset",
+            )
+            require(
+                entry.key not in self.with_property_keys,
+                f"duplicate action input: {entry.key}",
+            )
+            self.with_property_keys.add(entry.key)
+            return ActionReferenceContext.STEP_ACTION_INPUT
 
         return ActionReferenceContext.OTHER
 
@@ -473,6 +516,25 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
     multiline_quote: str | None = None
     path_tracker = WorkflowPathTracker()
     relative = workflow.relative_to(repository).as_posix()
+    step_action: str | None = None
+    step_action_line: int | None = None
+    step_inputs: dict[str, str] = {}
+
+    def finish_step() -> None:
+        nonlocal step_action, step_action_line
+        if step_action is not None:
+            approved = APPROVED_ACTIONS[step_action]
+            for input_name, expected_value in approved.required_inputs:
+                actual_value = step_inputs.get(input_name)
+                require(
+                    actual_value == expected_value,
+                    f"{relative}:{step_action_line}: {step_action} input "
+                    f"{input_name} must equal {expected_value}",
+                )
+        step_action = None
+        step_action_line = None
+        step_inputs.clear()
+
     for line_number, line in enumerate(
         workflow.read_text(encoding="ascii").splitlines(),
         1,
@@ -492,6 +554,7 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
         except ActionPinError as error:
             raise ActionPinError(f"{relative}:{line_number}: {error}") from error
         code = expression_masked_line
+        raw_entry = parse_plain_mapping_entry(scanned.code)
         if not code.strip():
             continue
         structural = mask_yaml_quoted_scalars(code)
@@ -545,11 +608,18 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
                 f"{relative}:{line_number}: flow-style step sequences are outside "
                 "the canonical workflow subset"
             )
+        sequence_item = YAML_SEQUENCE_ITEM.match(structural) is not None
+        if (
+            path_tracker.step_indent is not None
+            and sequence_item
+            and indentation <= path_tracker.step_indent
+        ):
+            finish_step()
         try:
             reference_context = path_tracker.classify(
                 entry,
                 indentation,
-                YAML_SEQUENCE_ITEM.match(structural) is not None,
+                sequence_item,
             )
         except ActionPinError as error:
             raise ActionPinError(f"{relative}:{line_number}: {error}") from error
@@ -563,6 +633,18 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
                     f"{relative}:{line_number}: action references must use "
                     "single-line canonical syntax"
                 )
+            continue
+        if reference_context is ActionReferenceContext.STEP_ACTION_INPUT:
+            if (
+                entry is None
+                or raw_entry is None
+                or not raw_entry.value.strip()
+            ):
+                raise ActionPinError(
+                    f"{relative}:{line_number}: action inputs must use nonempty "
+                    "single-line scalar values"
+                )
+            step_inputs[entry.key] = raw_entry.value.strip()
             continue
         if entry is None or entry.key != "uses":
             continue
@@ -594,11 +676,14 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
             match.group("version") == approved.version,
             f"{relative}:{line_number}: {action} version label differs from {approved.version}",
         )
+        step_action = action
+        step_action_line = line_number
         actions.append(action)
     require(
         multiline_quote is None,
         f"{relative}: unterminated multiline YAML quoted scalar",
     )
+    finish_step()
     return tuple(actions)
 
 
@@ -693,6 +778,12 @@ def write_fixture(repository: Path) -> None:
                 lines.append(
                     f"      - uses: {action}@{approved.revision} # {approved.version}"
                 )
+            if approved.required_inputs:
+                lines.append("        with:")
+                lines.extend(
+                    f"          {input_name}: {input_value}"
+                    for input_name, input_value in approved.required_inputs
+                )
         lines.extend(
             [
                 "  data-only-job:",
@@ -766,6 +857,54 @@ def run_self_test() -> None:
     def unexpected_workflow(repository: Path) -> None:
         path = repository / ".github/workflows/unreviewed.yml"
         path.write_text("name: unreviewed\n", encoding="ascii")
+
+    def rewrite_download_input(
+        repository: Path,
+        input_name: str,
+        replacement: str | None,
+        *,
+        duplicate: bool = False,
+    ) -> None:
+        path = repository / ".github/workflows/target-kernel.yml"
+        lines = path.read_text(encoding="ascii").splitlines()
+        prefix = f"          {input_name}:"
+        matching = [
+            line_index
+            for line_index, line in enumerate(lines)
+            if line.startswith(prefix)
+        ]
+        if len(matching) != 1:
+            raise ActionPinError(
+                f"self-test fixture has {len(matching)} {input_name} inputs"
+            )
+        line_index = matching[0]
+        if duplicate:
+            lines.insert(line_index + 1, lines[line_index])
+        elif replacement is None:
+            del lines[line_index]
+        else:
+            lines[line_index] = f"          {input_name}: {replacement}"
+        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+    def missing_raw_download(repository: Path) -> None:
+        rewrite_download_input(repository, "skip-decompress", None)
+
+    def disabled_raw_download(repository: Path) -> None:
+        rewrite_download_input(repository, "skip-decompress", "false")
+
+    def quoted_raw_download(repository: Path) -> None:
+        rewrite_download_input(repository, "skip-decompress", '"true"')
+
+    def warning_digest_mismatch(repository: Path) -> None:
+        rewrite_download_input(repository, "digest-mismatch", "warn")
+
+    def duplicate_raw_download(repository: Path) -> None:
+        rewrite_download_input(
+            repository,
+            "skip-decompress",
+            None,
+            duplicate=True,
+        )
 
     def anchored_flow_alias(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
@@ -1042,6 +1181,11 @@ def run_self_test() -> None:
     expect_rejection("stale action version label", stale_label)
     expect_rejection("missing action use", missing_use)
     expect_rejection("unexpected workflow", unexpected_workflow)
+    expect_rejection("missing raw artifact input", missing_raw_download)
+    expect_rejection("disabled raw artifact input", disabled_raw_download)
+    expect_rejection("quoted raw artifact input", quoted_raw_download)
+    expect_rejection("nonfatal digest mismatch", warning_digest_mismatch)
+    expect_rejection("duplicate raw artifact input", duplicate_raw_download)
     expect_rejection("anchored flow action alias", anchored_flow_alias)
     expect_rejection("flow-style action mapping", flow_mapping)
     expect_rejection("quoted uses key", quoted_uses_key)
@@ -1093,7 +1237,7 @@ def run_self_test() -> None:
         "sequence block-scalar sibling action",
         sequence_block_scalar_sibling_action,
     )
-    print("GitHub action pin calibration: 1 known-good and 35 known-bad fixtures")
+    print("GitHub action pin calibration: 1 known-good and 40 known-bad fixtures")
 
 
 def parse_arguments() -> argparse.Namespace:
