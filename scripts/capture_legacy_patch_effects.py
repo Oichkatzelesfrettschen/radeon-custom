@@ -34,7 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 SCHEMA = "gororoba-legacy-patch-effects-v1"
 COLUMNS = [
@@ -60,6 +60,22 @@ MODULE_PARAM = re.compile(r"^\+module_param_named\((?P<name>\w+)")
 DEBUGFS_NODE = re.compile(r'^\+.*debugfs_create_file\("(?P<name>[^"]+)"')
 HUNK = re.compile(r"^@@ ")
 FILE_HEADER = re.compile(r"^\+\+\+ b/(?P<path>\S+)")
+PATCH_HEADER = re.compile(r"^(?:---|\+\+\+)[ \t]+(?P<path>\S+)")
+
+
+def validate_patch_paths(text: str) -> None:
+    """Reject patch headers that can escape the temporary capture tree."""
+    for line in text.splitlines():
+        match = PATCH_HEADER.match(line)
+        if match is None:
+            continue
+        raw_path = match.group("path")
+        if raw_path == "/dev/null":
+            continue
+        stripped = raw_path[2:] if raw_path[:2] in ("a/", "b/") else raw_path
+        path = PurePosixPath(stripped)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"patch path escapes capture tree: {raw_path}")
 
 
 def parse_series(dkms_conf: Path) -> list[str]:
@@ -113,8 +129,15 @@ def capture(tree: Path, patches_dir: Path, series: list[str], out) -> int:
                 return 2
             text = pfile.read_text(encoding="utf-8", errors="surrogateescape")
             raw = text.encode("utf-8", "surrogateescape")
+            try:
+                validate_patch_paths(text)
+            except ValueError as error:
+                print(f"PATCH PATH IS NOT CONTAINED: {name}: {error}",
+                      file=sys.stderr)
+                return 1
             r = subprocess.run(
-                ["git", "apply", "-p1", "--unsafe-paths", "--directory", str(work)],
+                ["git", "apply", "-p1"],
+                cwd=work,
                 input=raw, capture_output=True,
             )
             if r.returncode != 0:
@@ -196,11 +219,37 @@ def self_test() -> int:
         buf3 = io.StringIO()
         check("missing patch refused",
               capture(tree, pd, ["0009-absent.patch"], buf3) == 2)
+        escape_target = root.parent / f"{root.name}-escaped.txt"
+        (pd / "0003-escape.patch").write_text(
+            "--- /dev/null\n+++ b/../../" + escape_target.name + "\n"
+            "@@ -0,0 +1 @@\n+escaped\n"
+        )
+        buf4 = io.StringIO()
+        try:
+            path_result = capture(tree, pd, ["0003-escape.patch"], buf4)
+            check("path-escaping patch refused",
+                  path_result == 1 and not escape_target.exists())
+        finally:
+            if escape_target.exists():
+                escape_target.unlink()
+        tab_escape_target = root.parent / f"{root.name}-tab-escaped.txt"
+        (pd / "0004-tab-escape.patch").write_text(
+            "---\t/dev/null\n+++\tb/../../" + tab_escape_target.name + "\n"
+            "@@ -0,0 +1 @@\n+escaped\n"
+        )
+        buf5 = io.StringIO()
+        try:
+            tab_path_result = capture(tree, pd, ["0004-tab-escape.patch"], buf5)
+            check("tab-delimited path-escaping patch refused",
+                  tab_path_result == 1 and not tab_escape_target.exists())
+        finally:
+            if tab_escape_target.exists():
+                tab_escape_target.unlink()
 
     if fails:
         print(f"legacy-patch-effects calibration: FAIL ({fails})")
         return 1
-    print("legacy-patch-effects calibration: 6 parser facts, 5 capture verdicts")
+    print("legacy-patch-effects calibration: 6 parser facts, 7 capture verdicts")
     return 0
 
 
