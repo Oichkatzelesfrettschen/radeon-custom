@@ -56,6 +56,23 @@ package_sha256_matches() {
     [[ $actual == "$expected" ]]
 }
 
+verify_module_metadata() {
+    local field=$1
+    local expected=$2
+    local actual=$3
+
+    if [[ -z $actual ]]; then
+        printf 'module metadata %s is missing, expected %s\n' \
+            "$field" "$expected" >&2
+        return 1
+    fi
+    if [[ $actual != "$expected" ]]; then
+        printf 'module metadata %s is %s, expected %s\n' \
+            "$field" "$actual" "$expected" >&2
+        return 1
+    fi
+}
+
 valid_kernel_release() {
     local release=$1
 
@@ -208,6 +225,22 @@ run_self_test() {
     if package_sha256_matches "$tmpdir/package" "${package_sha256^^}"; then
         die "package digest validator accepts a noncanonical digest"
     fi
+    expected_driver_tree=fixture-driver-tree
+    verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" "$expected_driver_tree" ||
+        die "module metadata calibration rejects its known-good driver tree"
+    metadata_error=$(verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" wrong-driver-tree 2>&1) &&
+        die "module metadata calibration accepts a wrong driver tree"
+    [[ $metadata_error == \
+        "module metadata gororoba_driver_tree is wrong-driver-tree, expected $expected_driver_tree" ]] ||
+        die "module metadata calibration reports an imprecise wrong driver tree"
+    metadata_error=$(verify_module_metadata gororoba_driver_tree \
+        "$expected_driver_tree" '' 2>&1) &&
+        die "module metadata calibration accepts a missing driver tree"
+    [[ $metadata_error == \
+        "module metadata gororoba_driver_tree is missing, expected $expected_driver_tree" ]] ||
+        die "module metadata calibration reports an imprecise missing driver tree"
     valid_kernel_release 6.18.38-2-cachyos-lts ||
         die "kernel release validator rejects its known-good calibration"
     for invalid_release in \
@@ -444,6 +477,11 @@ source_identity="$packaged_source/source-identity.toml"
 [[ -f $source_identity && ! -L $source_identity ]] ||
     die "package source identity is absent or not a regular file"
 cp "$source_identity" "$evidence_dir/source-identity.toml"
+expected_driver_tree=$(toml_value driver_tree "$source_identity")
+[[ $expected_driver_tree =~ ^[0-9a-f]{40}$ ]] ||
+    die "package source identity driver_tree is not a canonical object ID"
+[[ $expected_driver_tree != 0000000000000000000000000000000000000000 ]] ||
+    die "package source identity driver_tree is the all-zero git object"
 build_manifest="$packaged_source/radeon-build-profile.toml"
 [[ -f $build_manifest && ! -L $build_manifest ]] ||
     die "package build profile is absent or not a regular file"
@@ -461,6 +499,9 @@ case $requested_profile in
         ;;
 esac
 expected_source_commit=$(toml_value source_commit "$build_manifest")
+manifest_driver_tree=$(toml_value driver_tree "$build_manifest")
+[[ $manifest_driver_tree == "$expected_driver_tree" ]] ||
+    die "package build profile driver tree disagrees with the pinned source identity"
 expected_policy=$(toml_value feature_policy_sha256 "$build_manifest")
 expected_upstream=$(toml_value upstream_base "$build_manifest")
 case $inject_trace_header in
@@ -599,6 +640,7 @@ module_srcversion=$(modinfo -F srcversion "$module_path")
 module_vermagic=$(modinfo -F vermagic "$module_path")
 module_profile=$(modinfo -F gororoba_build_profile "$module_path")
 module_source_commit=$(modinfo -F gororoba_source_commit "$module_path")
+module_driver_tree=$(modinfo -F gororoba_driver_tree "$module_path" 2>/dev/null || true)
 module_policy=$(modinfo -F gororoba_feature_policy_sha256 "$module_path")
 module_upstream=$(modinfo -F gororoba_upstream_base "$module_path")
 [[ $module_name_actual == radeon ]] ||
@@ -611,6 +653,9 @@ module_upstream=$(modinfo -F gororoba_upstream_base "$module_path")
     die "installed module build profile disagrees with the package manifest"
 [[ $module_source_commit == "$expected_source_commit" ]] ||
     die "installed module source commit disagrees with the package manifest"
+verify_module_metadata gororoba_driver_tree "$expected_driver_tree" \
+    "$module_driver_tree" ||
+    die "installed module driver tree metadata is not pinned"
 [[ $module_policy == "$expected_policy" ]] ||
     die "installed module feature policy disagrees with the package manifest"
 [[ $module_upstream == "$expected_upstream" ]] ||
@@ -630,6 +675,7 @@ module_upstream=$(modinfo -F gororoba_upstream_base "$module_path")
     printf 'vermagic=%s\n' "$module_vermagic"
     printf 'build_profile=%s\n' "$module_profile"
     printf 'source_commit=%s\n' "$module_source_commit"
+    printf 'driver_tree=%s\n' "$module_driver_tree"
     printf 'feature_policy_sha256=%s\n' "$module_policy"
     printf 'upstream_base=%s\n' "$module_upstream"
     printf 'sha256=%s\n' "$(sha256sum "$module_path" | awk '{print $1}')"

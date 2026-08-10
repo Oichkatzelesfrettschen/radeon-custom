@@ -7,13 +7,20 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
 
 class ProfileError(Exception):
     """A package profile input violates the split-package contract."""
+
+
+SHA40 = re.compile(r"^[0-9a-f]{40}$")
+ZERO_SHA40 = "0" * 40
+WRONG_SHA40 = "1" * 40
 
 
 def read_ascii(path: Path) -> str:
@@ -84,12 +91,34 @@ def require_make_profile(path: Path, expected: str) -> None:
             raise ProfileError(f"{path.name} contains source mutation token {token}")
 
 
+def require_package_version(path: Path, expected: str) -> None:
+    text = read_ascii(path)
+    versions = re.findall(r'^PACKAGE_VERSION="([^"]+)"$', text, re.MULTILINE)
+    if len(versions) != 1:
+        raise ProfileError(
+            f"{path.name} must declare exactly one PACKAGE_VERSION"
+        )
+    if versions[0] != expected:
+        raise ProfileError(
+            f"{path.name} PACKAGE_VERSION {versions[0]!r} disagrees with "
+            f"PKGBUILD pkgver {expected!r}"
+        )
+
+
+def require_nonzero_git_object(value: object, field: str) -> None:
+    if not isinstance(value, str) or not SHA40.fullmatch(value):
+        raise ProfileError(f"{field} must be a lowercase 40-character object ID")
+    if value == ZERO_SHA40:
+        raise ProfileError(f"{field} is the all-zero git object")
+
+
 def verify(package_dir: Path, prod_config: Path | None = None) -> None:
     pkgbuild_path = package_dir / "PKGBUILD"
     pkgbuild = read_ascii(pkgbuild_path)
     identity = read_toml(package_dir / "source-identity.toml")
     pkgver = shell_scalar(pkgbuild, "pkgver")
     pkgrel = shell_integer(pkgbuild, "pkgrel")
+    require_nonzero_git_object(identity.get("driver_tree"), "driver_tree")
 
     required_names = (
         "pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev' "
@@ -145,6 +174,7 @@ def verify(package_dir: Path, prod_config: Path | None = None) -> None:
         header_bindings = {
             "RADEON_BUILD_PROFILE": expected["header_profile"],
             "RADEON_BUILD_SOURCE_COMMIT": identity["source_commit"],
+            "RADEON_BUILD_DRIVER_TREE": identity["driver_tree"],
             "RADEON_BUILD_FEATURE_POLICY_SHA256": identity[
                 "feature_policy_sha256"
             ],
@@ -157,7 +187,9 @@ def verify(package_dir: Path, prod_config: Path | None = None) -> None:
     require_make_profile(
         prod_config or package_dir / "dkms.conf.prod", "prod"
     )
+    require_package_version(prod_config or package_dir / "dkms.conf.prod", pkgver)
     require_make_profile(package_dir / "dkms.conf.dev", "mutate-dev")
+    require_package_version(package_dir / "dkms.conf.dev", pkgver)
 
     production_options = option_values(package_dir / "radeon-re.conf")
     if production_options.get("lockup_timeout") != "0":
@@ -207,6 +239,7 @@ def verify_hazard_stack(pkgbuild_text: str) -> None:
 
 def run_self_test(package_dir: Path, fixture: Path) -> None:
     verify(package_dir)
+    pkgver = shell_scalar(read_ascii(package_dir / "PKGBUILD"), "pkgver")
     try:
         verify(package_dir, prod_config=fixture)
     except ProfileError:
@@ -224,6 +257,115 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
         pass
     else:
         raise ProfileError("literal module dependency fixture passes")
+
+    identity_value = str(
+        read_toml(package_dir / "source-identity.toml")["driver_tree"]
+    )
+
+    with tempfile.TemporaryDirectory(prefix="radeon-package-profile.") as temp:
+        mutated = Path(temp) / "package"
+        shutil.copytree(package_dir, mutated)
+
+        def replace_once(path: Path, old: str, new: str) -> None:
+            text = read_ascii(path)
+            if text.count(old) != 1:
+                raise ProfileError(f"self-test cannot mutate {path.name}")
+            path.write_text(text.replace(old, new), encoding="ascii")
+
+        def expect_rejection(label: str, expected_text: str) -> None:
+            try:
+                verify(mutated)
+            except ProfileError as error:
+                if expected_text not in str(error):
+                    raise ProfileError(
+                        f"{label} rejected with an unexpected diagnostic: {error}"
+                    ) from error
+            else:
+                raise ProfileError(f"{label} passes the profile gate")
+
+        replace_once(
+            mutated / "source-identity.toml",
+            f'driver_tree = "{identity_value}"',
+            f'driver_tree = "{ZERO_SHA40}"',
+        )
+        expect_rejection("all-zero source driver tree", "driver_tree is the all-zero")
+
+        shutil.rmtree(mutated)
+        shutil.copytree(package_dir, mutated)
+        replace_once(
+            mutated / "radeon-build-profile.prod.h",
+            '#define RADEON_BUILD_DRIVER_TREE "'
+            + str(identity_value)
+            + '"',
+            f'#define RADEON_BUILD_DRIVER_TREE "{ZERO_SHA40}"',
+        )
+        expect_rejection(
+            "production header driver tree mutant",
+            "radeon-build-profile.prod.h disagrees on RADEON_BUILD_DRIVER_TREE",
+        )
+
+        shutil.rmtree(mutated)
+        shutil.copytree(package_dir, mutated)
+        replace_once(
+            mutated / "radeon-build-profile.dev.h",
+            '#define RADEON_BUILD_DRIVER_TREE "'
+            + str(identity_value)
+            + '"',
+            f'#define RADEON_BUILD_DRIVER_TREE "{WRONG_SHA40}"',
+        )
+        expect_rejection(
+            "development header driver tree mutant",
+            "radeon-build-profile.dev.h disagrees on RADEON_BUILD_DRIVER_TREE",
+        )
+
+        shutil.rmtree(mutated)
+        shutil.copytree(package_dir, mutated)
+        replace_once(
+            mutated / "radeon-build-profile.prod.toml",
+            f'driver_tree = "{identity_value}"',
+            f'driver_tree = "{WRONG_SHA40}"',
+        )
+        expect_rejection(
+            "production manifest driver tree mutant",
+            "prod build manifest disagrees on driver_tree",
+        )
+
+        shutil.rmtree(mutated)
+        shutil.copytree(package_dir, mutated)
+        replace_once(
+            mutated / "radeon-build-profile.dev.toml",
+            f'driver_tree = "{identity_value}"',
+            f'driver_tree = "{WRONG_SHA40}"',
+        )
+        expect_rejection(
+            "development manifest driver tree mutant",
+            "dev build manifest disagrees on driver_tree",
+        )
+
+        shutil.rmtree(mutated)
+        shutil.copytree(package_dir, mutated)
+        replace_once(
+            mutated / "dkms.conf.prod",
+            f'PACKAGE_VERSION="{pkgver}"',
+            'PACKAGE_VERSION="0.0"',
+        )
+        expect_rejection(
+            "production DKMS version mutant",
+            "dkms.conf.prod PACKAGE_VERSION",
+        )
+
+        shutil.rmtree(mutated)
+        shutil.copytree(package_dir, mutated)
+        replace_once(
+            mutated / "dkms.conf.dev",
+            f'PACKAGE_VERSION="{pkgver}"',
+            'PACKAGE_VERSION="0.0"',
+        )
+        expect_rejection(
+            "development DKMS version mutant",
+            "dkms.conf.dev PACKAGE_VERSION",
+        )
+
     print("radeon package profile calibration: PASS")
 
 
