@@ -21,6 +21,30 @@ class ProfileError(Exception):
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 ZERO_SHA40 = "0" * 40
 WRONG_SHA40 = "1" * 40
+PROFILE_INPUT_NAMES = (
+    "PKGBUILD",
+    "source-identity.toml",
+    "radeon-build-profile.prod.toml",
+    "radeon-build-profile.prod.h",
+    "radeon-build-profile.dev.toml",
+    "radeon-build-profile.dev.h",
+    "dkms.conf.prod",
+    "dkms.conf.dev",
+    "radeon-re.conf",
+    "radeon-dev.conf",
+    "observe-dev.conf",
+    "probe-dev.conf",
+    "mutate-dev.conf",
+)
+UNOWNED_ARTIFACT_PATHS = (
+    "src/linux/include/generated/autoconf.h",
+    "pkg/radeon-unified.pkg.tar.zst",
+    ".cache/ccache/index",
+    "cache/meson-private/coredata.dat",
+    "sources/radeon-unified.tar.xz",
+    "signatures/radeon-unified.tar.xz.sig",
+    "unowned-artifact.txt",
+)
 
 
 def read_ascii(path: Path) -> str:
@@ -35,6 +59,47 @@ def read_toml(path: Path) -> dict[str, object]:
         return tomllib.loads(read_ascii(path))
     except tomllib.TOMLDecodeError as error:
         raise ProfileError(f"invalid TOML in {path}: {error}") from error
+
+
+def copy_profile_inputs(source: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in PROFILE_INPUT_NAMES:
+        source_path = source / name
+        destination_path = destination / name
+        if not source_path.is_file():
+            raise ProfileError(f"self-test profile input is missing: {name}")
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(source_path, destination_path)
+        except OSError as error:
+            raise ProfileError(
+                f"self-test cannot copy profile input {name}: {error}"
+            ) from error
+
+
+def require_profile_copy_shape(
+    source: Path, destination: Path, unowned_paths: tuple[str, ...]
+) -> None:
+    expected_paths = {Path(name) for name in PROFILE_INPUT_NAMES}
+    actual_paths = {
+        path.relative_to(destination)
+        for path in destination.rglob("*")
+        if path.is_file()
+    }
+    if actual_paths != expected_paths:
+        raise ProfileError(
+            "self-test profile copy has an unexpected file set: "
+            f"{sorted(str(path) for path in actual_paths)}"
+        )
+    for name in unowned_paths:
+        source_path = source / name
+        destination_path = destination / name
+        if not source_path.is_file() or source_path.stat().st_size < 65536:
+            raise ProfileError(
+                f"self-test unowned fixture is not large enough: {name}"
+            )
+        if destination_path.exists():
+            raise ProfileError(f"self-test copied unowned artifact: {name}")
 
 
 def shell_integer(text: str, name: str) -> int:
@@ -263,8 +328,23 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
     )
 
     with tempfile.TemporaryDirectory(prefix="radeon-package-profile.") as temp:
+        profile_source = Path(temp) / "profile-source"
+        copy_profile_inputs(package_dir, profile_source)
+        artifact_payload = "generated package artifact\n" * 4096
+        for name in UNOWNED_ARTIFACT_PATHS:
+            artifact_path = profile_source / name
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_text(artifact_payload, encoding="ascii")
+
         mutated = Path(temp) / "package"
-        shutil.copytree(package_dir, mutated)
+
+        def reset_mutated() -> None:
+            if mutated.exists():
+                shutil.rmtree(mutated)
+            copy_profile_inputs(profile_source, mutated)
+            require_profile_copy_shape(
+                profile_source, mutated, UNOWNED_ARTIFACT_PATHS
+            )
 
         def replace_once(path: Path, old: str, new: str) -> None:
             text = read_ascii(path)
@@ -283,6 +363,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
             else:
                 raise ProfileError(f"{label} passes the profile gate")
 
+        reset_mutated()
         replace_once(
             mutated / "source-identity.toml",
             f'driver_tree = "{identity_value}"',
@@ -290,8 +371,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
         )
         expect_rejection("all-zero source driver tree", "driver_tree is the all-zero")
 
-        shutil.rmtree(mutated)
-        shutil.copytree(package_dir, mutated)
+        reset_mutated()
         replace_once(
             mutated / "radeon-build-profile.prod.h",
             '#define RADEON_BUILD_DRIVER_TREE "'
@@ -304,8 +384,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
             "radeon-build-profile.prod.h disagrees on RADEON_BUILD_DRIVER_TREE",
         )
 
-        shutil.rmtree(mutated)
-        shutil.copytree(package_dir, mutated)
+        reset_mutated()
         replace_once(
             mutated / "radeon-build-profile.dev.h",
             '#define RADEON_BUILD_DRIVER_TREE "'
@@ -318,8 +397,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
             "radeon-build-profile.dev.h disagrees on RADEON_BUILD_DRIVER_TREE",
         )
 
-        shutil.rmtree(mutated)
-        shutil.copytree(package_dir, mutated)
+        reset_mutated()
         replace_once(
             mutated / "radeon-build-profile.prod.toml",
             f'driver_tree = "{identity_value}"',
@@ -330,8 +408,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
             "prod build manifest disagrees on driver_tree",
         )
 
-        shutil.rmtree(mutated)
-        shutil.copytree(package_dir, mutated)
+        reset_mutated()
         replace_once(
             mutated / "radeon-build-profile.dev.toml",
             f'driver_tree = "{identity_value}"',
@@ -342,8 +419,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
             "dev build manifest disagrees on driver_tree",
         )
 
-        shutil.rmtree(mutated)
-        shutil.copytree(package_dir, mutated)
+        reset_mutated()
         replace_once(
             mutated / "dkms.conf.prod",
             f'PACKAGE_VERSION="{pkgver}"',
@@ -354,8 +430,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
             "dkms.conf.prod PACKAGE_VERSION",
         )
 
-        shutil.rmtree(mutated)
-        shutil.copytree(package_dir, mutated)
+        reset_mutated()
         replace_once(
             mutated / "dkms.conf.dev",
             f'PACKAGE_VERSION="{pkgver}"',
