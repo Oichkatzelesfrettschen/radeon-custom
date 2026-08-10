@@ -20,6 +20,11 @@ contiguous from zero, patch names unique.
 The final output tree must reproduce the exact-context payload manifest,
 which ties the whole walk to the pkgrel-91 migration baseline.
 
+The ledger contract pins SHA-1 tree identity and histogram diff selection.
+Diff prefixes, context, rename detection, text conversion, external diff,
+color, and related Git rendering settings remain ambient inputs outside this
+contract.
+
 Exit: 0 ledger emitted, 1 calibration failure or an invariant violation,
 2 missing inputs.
 """
@@ -28,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -36,6 +42,8 @@ import tempfile
 from pathlib import Path
 
 SCHEMA = "gororoba-legacy-patch-transitions-v1"
+LEDGER_OBJECT_FORMAT = "sha1"
+LEDGER_DIFF_ALGORITHM = "histogram"
 COLUMNS = [
     "patch_index",
     "patch",
@@ -52,8 +60,9 @@ COLUMNS = [
 ]
 
 
-def run(args: list[str], cwd: Path, inp: bytes | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=cwd, input=inp, capture_output=True)
+def run(args: list[str], cwd: Path, inp: bytes | None = None,
+        env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(args, cwd=cwd, input=inp, capture_output=True, env=env)
 
 
 def git_out(args: list[str], cwd: Path) -> str:
@@ -64,8 +73,8 @@ def git_out(args: list[str], cwd: Path) -> str:
 
 
 def init_repo(work: Path) -> str:
-    """Initialize a throwaway repository over the tree and return its tree ID."""
-    git_out(["init", "-q"], work)
+    """Initialize a SHA-1 throwaway repository and return its tree ID."""
+    git_out(["init", "-q", f"--object-format={LEDGER_OBJECT_FORMAT}"], work)
     git_out(["config", "user.email", "ledger@localhost"], work)
     git_out(["config", "user.name", "transition-ledger"], work)
     # A host-level core.fsmonitor daemon plants a socket under .git that
@@ -141,9 +150,17 @@ def apply_both(work: Path, raw: bytes) -> tuple[str, str]:
         return "gnu-patch", "git-apply-false-reject-zero-context-hunk"
 
 
-def diff_stats(work: Path, in_tree: str, out_tree: str) -> tuple[str, int, int, int, int]:
-    """Hash the actual full-index diff and count its measured footprint."""
-    r = run(["git", "diff", "--full-index", in_tree, out_tree], work)
+def diff_stats(work: Path, in_tree: str, out_tree: str,
+               env: dict[str, str] | None = None) -> tuple[str, int, int, int, int]:
+    """Hash the histogram full-index diff and count its measured footprint."""
+    r = run([
+        "git",
+        "diff",
+        f"--diff-algorithm={LEDGER_DIFF_ALGORITHM}",
+        "--full-index",
+        in_tree,
+        out_tree,
+    ], work, env=env)
     if r.returncode not in (0, 1):
         raise RuntimeError(r.stderr.decode(errors="replace"))
     diff = r.stdout
@@ -214,6 +231,15 @@ def self_test() -> int:
     import io
     print("legacy-patch-transitions calibration:")
 
+    clean_git_env = os.environ.copy()
+    for name in list(clean_git_env):
+        if (name in ("GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS")
+                or name.startswith("GIT_CONFIG_KEY_")
+                or name.startswith("GIT_CONFIG_VALUE_")):
+            del clean_git_env[name]
+    clean_git_env["GIT_CONFIG_GLOBAL"] = os.devnull
+    clean_git_env["GIT_CONFIG_SYSTEM"] = os.devnull
+
     try:
         parse_series_text = 'PATCH[0]="a.patch"\nPATCH[1]="b.patch"\n'
         with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as fh:
@@ -273,10 +299,69 @@ def self_test() -> int:
         buf4 = io.StringIO()
         check("missing patch refused", walk(tree, pd, ["absent.patch"], buf4) == 2)
 
+    with tempfile.TemporaryDirectory() as td:
+        work = Path(td) / "object-format"
+        work.mkdir()
+        saved_default_hash = os.environ.get("GIT_DEFAULT_HASH")
+        os.environ["GIT_DEFAULT_HASH"] = "sha256"
+        try:
+            init_repo(work)
+        finally:
+            if saved_default_hash is None:
+                os.environ.pop("GIT_DEFAULT_HASH", None)
+            else:
+                os.environ["GIT_DEFAULT_HASH"] = saved_default_hash
+        check(
+            "ledger repository pins SHA-1 under a SHA-256 default",
+            git_out(["rev-parse", "--show-object-format"], work) == "sha1",
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        work = Path(td) / "diff-algorithm"
+        work.mkdir()
+        fixture = work / "fixture.txt"
+        fixture.write_text("a\nb\na\nb\nc\n")
+        input_tree = init_repo(work)
+        fixture.write_text("a\nb\nc\na\nb\n")
+        output_tree = snapshot(work)
+        histogram = run([
+            "git",
+            "diff",
+            "--diff-algorithm=histogram",
+            "--full-index",
+            input_tree,
+            output_tree,
+        ], work, env=clean_git_env)
+        myers = run([
+            "git",
+            "diff",
+            "--diff-algorithm=myers",
+            "--full-index",
+            input_tree,
+            output_tree,
+        ], work, env=clean_git_env)
+        measured = diff_stats(work, input_tree, output_tree, env=clean_git_env)
+        histogram_lines = histogram.stdout.splitlines()
+        check("diff fixture distinguishes histogram from Myers", histogram.stdout != myers.stdout)
+        check(
+            "ledger diff stats pin histogram",
+            measured[0] == hashlib.sha256(histogram.stdout).hexdigest()
+            and measured[1] == sum(line.startswith(b"diff --git ") for line in histogram_lines)
+            and measured[2] == sum(line.startswith(b"@@ ") for line in histogram_lines)
+            and measured[3] == sum(
+                line.startswith(b"+") and not line.startswith(b"+++")
+                for line in histogram_lines
+            )
+            and measured[4] == sum(
+                line.startswith(b"-") and not line.startswith(b"---")
+                for line in histogram_lines
+            ),
+        )
+
     if fails:
         print(f"legacy-patch-transitions calibration: FAIL ({fails})")
         return 1
-    print("legacy-patch-transitions calibration: 3 series facts, 7 walk verdicts")
+    print("legacy-patch-transitions calibration: 3 series facts, 7 walk verdicts, 3 reproducibility controls")
     return 0
 
 
