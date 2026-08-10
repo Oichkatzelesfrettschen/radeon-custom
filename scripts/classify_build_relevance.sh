@@ -1,7 +1,9 @@
 #!/bin/sh
-# Classify a pull request's changed paths as build-relevant or
-# documentation-only, so the kernel-build and packaging CI jobs run only when a
-# change can alter a compiled object, a packaged input, or a reproduction
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Terascale Functionalists
+# Classify pull-request paths as build-relevant or documentation-only.
+# Kernel-build and packaging CI jobs run only when a changed path can alter a
+# compiled object, a packaged input, or a reproduction
 # oracle. Those jobs recompile radeon.ko and reproduce the tracked source and
 # patch-effect manifests, and a Markdown file is neither compiled nor read by
 # any reproduction gate, so a change touching only *.md files is
