@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the production Radeon source carried by an admitted package artifact.
+# Build one profiled Radeon source export carried by an admitted package artifact.
 
 set -eu
 
@@ -7,11 +7,15 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
 package_dir="$repo_root/packaging/arch/radeon-unified-dkms"
 expected_identity="$package_dir/source-identity.toml"
-expected_profile="$package_dir/radeon-build-profile.prod.toml"
-expected_header="$package_dir/radeon-build-profile.prod.h"
-expected_dkms="$package_dir/dkms.conf.prod"
 package_path=
 kernel_build_root=
+requested_profile=prod
+profile_suffix=
+expected_profile=
+expected_header=
+expected_dkms=
+expected_package_name=
+expected_module_profile=
 self_test=0
 
 die() {
@@ -86,6 +90,11 @@ while [ "$#" -gt 0 ]; do
             kernel_build_root=$2
             shift 2
             ;;
+        --profile)
+            [ "$#" -ge 2 ] || die "--profile requires prod or all-dev"
+            requested_profile=$2
+            shift 2
+            ;;
         --self-test)
             self_test=1
             shift
@@ -95,6 +104,25 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+case $requested_profile in
+    prod)
+        profile_suffix=prod
+        expected_package_name=radeon-unified-dkms
+        expected_module_profile=prod
+        ;;
+    all-dev)
+        profile_suffix=dev
+        expected_package_name=radeon-unified-dkms-dev
+        expected_module_profile=mutate-dev
+        ;;
+    *)
+        die "--profile requires prod or all-dev"
+        ;;
+esac
+expected_profile="$package_dir/radeon-build-profile.${profile_suffix}.toml"
+expected_header="$package_dir/radeon-build-profile.${profile_suffix}.h"
+expected_dkms="$package_dir/dkms.conf.${profile_suffix}"
 
 if [ "$self_test" -eq 1 ]; then
     work=$(make_work_dir)
@@ -114,8 +142,9 @@ if [ "$self_test" -eq 1 ]; then
     if cmp -s "$expected_profile" "$work/profile.toml"; then
         die "profile calibration accepts changed package policy"
     fi
-    [ "$(toml_string "$expected_profile" compiled_ceiling)" = prod ] ||
-        die "profile calibration resolves a non-production ceiling"
+    [ "$(toml_string "$expected_profile" compiled_ceiling)" = \
+        "$expected_module_profile" ] ||
+        die "profile calibration resolves the wrong compiled ceiling"
     [ "$(toml_integer "$expected_profile" kernel_build_interface)" -eq 1 ] ||
         die "profile calibration resolves the wrong build interface"
     expected_driver_tree=$(toml_string "$expected_identity" driver_tree)
@@ -146,6 +175,8 @@ fi
     die "package is not a regular non-symlink file: $package_path"
 
 package_name=$(toml_string "$expected_profile" package_name)
+[ "$package_name" = "$expected_package_name" ] ||
+    die "profile package name is $package_name, expected $expected_package_name"
 package_version=$(toml_string "$expected_profile" package_version)
 package_release=$(toml_integer "$expected_profile" package_release)
 expected_basename="${package_name}-${package_version}-${package_release}-x86_64.pkg.tar.zst"
@@ -191,29 +222,43 @@ source_root="$package_root/usr/src/radeon-unified-${package_version}"
 cmp "$source_root/source-identity.toml" "$expected_identity" ||
     die "package source identity differs from the repository declaration"
 cmp "$source_root/radeon-build-profile.toml" "$expected_profile" ||
-    die "package build profile differs from the production declaration"
+    die "package build profile differs from the $requested_profile declaration"
 cmp "$source_root/radeon-build-profile.h" "$expected_header" ||
-    die "package build header differs from the production declaration"
+    die "package build header differs from the $requested_profile declaration"
 cmp "$source_root/dkms.conf" "$expected_dkms" ||
-    die "package DKMS recipe differs from the production declaration"
+    die "package DKMS recipe differs from the $requested_profile declaration"
 expected_driver_tree=$(toml_string "$expected_identity" driver_tree)
 profile_driver_tree=$(toml_string "$expected_profile" driver_tree)
 [ "$profile_driver_tree" = "$expected_driver_tree" ] ||
-    die "production profile driver tree differs from the pinned source identity"
+    die "package profile driver tree differs from the pinned source identity"
 # Board policy ships in radeon-rs482-policy, so the module package carries
 # no radeon-re.conf; a stray copy here would reintroduce board-global
 # options into the capability package.
 [ ! -e "$package_root/etc/modprobe.d/radeon-re.conf" ] ||
     die "module package carries board policy radeon-re.conf"
 
-for development_path in \
-    "$package_root/etc/modprobe.d/radeon-unified-dev.conf" \
-    "$package_root/usr/bin/radeon-profile-dev" \
-    "$package_root/usr/share/radeon-unified/profiles"
-do
-    [ ! -e "$development_path" ] ||
-        die "production package contains development surface: $development_path"
-done
+case $requested_profile in
+    prod)
+        for development_path in \
+            "$package_root/etc/modprobe.d/radeon-unified-dev.conf" \
+            "$package_root/usr/bin/radeon-profile-dev" \
+            "$package_root/usr/share/radeon-unified/profiles"
+        do
+            [ ! -e "$development_path" ] ||
+                die "production package contains development surface: $development_path"
+        done
+        ;;
+    all-dev)
+        for development_path in \
+            "$package_root/etc/modprobe.d/radeon-unified-dev.conf" \
+            "$package_root/usr/bin/radeon-profile-dev" \
+            "$package_root/usr/share/radeon-unified/profiles"
+        do
+            [ -e "$development_path" ] ||
+                die "development package omits required surface: $development_path"
+        done
+        ;;
+esac
 
 # radeon_trace.h records ../../drivers/gpu/drm/radeon as its trace include
 # path. The package pre-build hook stages that relative path under a private
@@ -242,7 +287,7 @@ build_status=0
 (
     cd "$source_root/radeon"
     "$source_root/radeon-dkms-make" "$@" \
-        RADEON_BUILD_PROFILE=prod \
+        RADEON_BUILD_PROFILE="$expected_module_profile" \
         -C "$kernel_build_root" M="$PWD" modules
 ) >"$build_log" 2>&1 || build_status=$?
 cat "$build_log"
@@ -275,5 +320,6 @@ do
 done
 
 package_sha256=$(sha256sum "$package_path" | cut -d' ' -f1)
-printf 'packaged production source build: PASS against %s\n' "$kernel_release"
+printf 'packaged %s source build: PASS against %s\n' \
+    "$requested_profile" "$kernel_release"
 printf 'package_sha256=%s\n' "$package_sha256"

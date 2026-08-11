@@ -88,6 +88,10 @@ jobs:
       - name: Packaged-source build calibration
         run: sh scripts/check_radeon_packaged_source_compiles.sh --self-test
 
+      - name: Packaged development-source build calibration
+        run: sh scripts/check_radeon_packaged_source_compiles.sh \
+          --self-test --profile all-dev
+
       - name: Base-delta closure calibration
         run: python3 scripts/check_base_delta_map_closure.py --self-test
 
@@ -139,6 +143,9 @@ jobs:
 
       - name: Package profile calibration
         run: python3 scripts/check_radeon_package_profiles.py --self-test
+
+      - name: Package QA calibration
+        run: python3 scripts/check_radeon_package_qa.py --self-test
 
       - name: Package profiles
         run: python3 scripts/check_radeon_package_profiles.py
@@ -225,10 +232,18 @@ jobs:
             -name "radeon-unified-dkms-${pkgver}-${pkgrel}-*.pkg.tar.zst")
           dev_package=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
             -name "radeon-unified-dkms-dev-${pkgver}-${pkgrel}-*.pkg.tar.zst")
-          [ -f "$prod_package" ] && [ -f "$dev_package" ] || {
-            echo "makepkg did not produce both split packages" >&2
+          policy_package=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
+            -name "radeon-rs482-policy-${pkgver}-${pkgrel}-*.pkg.tar.zst")
+          [ -f "$prod_package" ] && [ -f "$dev_package" ] && \
+            [ -f "$policy_package" ] || {
+            echo "makepkg did not produce the complete split package set" >&2
             exit 1
           }
+          python3 scripts/check_radeon_package_qa.py \
+            --package "$prod_package" \
+            --package "$dev_package" \
+            --package "$policy_package"
+          printf 'POLICY_PACKAGE_PATH=%s\n' "$policy_package" >>"$GITHUB_ENV"
           for profile in prod dev; do
             if [ "$profile" = prod ]; then
               package_path=$prod_package
@@ -254,6 +269,24 @@ jobs:
               >>"$GITHUB_ENV"
             RADEON_UNIFIED_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" \
               bash scripts/test_radeon_dkms_package_verifier.sh "$package_path"
+          done
+
+      - name: Build both verified package exports against 7.1
+        run: |
+          set -euo pipefail
+          : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
+          mkdir -p "$HOME/.cache/gororoba-ci"
+          for profile in prod all-dev; do
+            if [ "$profile" = prod ]; then
+              package_path=$PROD_PACKAGE_PATH
+            else
+              package_path=$DEV_PACKAGE_PATH
+            fi
+            flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+              timeout 15m sh scripts/check_radeon_packaged_source_compiles.sh \
+                --package "$package_path" \
+                --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
+                --profile "$profile"
           done
 
       - name: Exercise both disposable DKMS lifecycles
@@ -287,17 +320,13 @@ jobs:
       - name: Exercise the pacman transition matrix
         run: |
           set -euo pipefail
-          policy_package=$(find "$PACKAGE_WORK/package" -maxdepth 1 -type f \
-            -name 'radeon-rs482-policy-*.pkg.tar.zst' | head -n 1)
-          [ -n "$policy_package" ] ||
-            { echo 'policy package artifact not found' >&2; exit 1; }
           transition_temp="$PACKAGE_WORK/transition-temp"
           mkdir -p -- "$transition_temp"
           sudo bash scripts/test_radeon_package_transitions.sh \
             --temp-root "$transition_temp" \
             --prod-package "$PROD_PACKAGE_PATH" \
             --dev-package "$DEV_PACKAGE_PATH" \
-            --policy-package "$policy_package" \
+            --policy-package "$POLICY_PACKAGE_PATH" \
             --log-dir "$PACKAGE_WORK/transition-matrix-logs"
           sudo chown -R "$(id -u):$(id -g)" \
             "$PACKAGE_WORK/transition-matrix-logs"
