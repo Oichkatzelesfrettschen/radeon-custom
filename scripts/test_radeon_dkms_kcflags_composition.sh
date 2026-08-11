@@ -383,6 +383,26 @@ run_recursive_make_case() {
     ) >"$capture" 2>"$trace"
 }
 
+run_recursive_makeoverrides_case() {
+    local source_helper=$1
+    local fixture_dir=$2
+    local capture=$3
+    local trace=$4
+    local incoming_makeoverrides=$5
+    shift 5
+    if [ "$#" -eq 0 ]; then
+        set -- capture
+    fi
+
+    (
+        cd "$fixture_dir"
+        PATH=/usr/bin:/bin \
+            KCFLAGS='-DRADEON_CALLER_SENTINEL=1' \
+            MAKEOVERRIDES="$incoming_makeoverrides" \
+            "$source_helper" "$@"
+    ) >"$capture" 2>"$trace"
+}
+
 run_recursive_fake_make_case() {
     local source_helper=$1
     local fixture_dir=$2
@@ -651,12 +671,13 @@ sed '/^unset MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES$/s/ MAKEOVERR
 chmod 0755 "$makeoverrides_mutant"
 makeoverrides_mutant_capture="$tmpdir/makeoverrides-mutant.capture"
 makeoverrides_mutant_trace="$tmpdir/makeoverrides-mutant.trace"
-if ! run_actual_make_case "$makeoverrides_mutant" \
+if ! run_recursive_makeoverrides_case "$makeoverrides_mutant" \
+    "$supported_recursive_fixture" \
     "$makeoverrides_mutant_capture" \
     "$makeoverrides_mutant_trace" 'KCFLAGS=-O3' \
     -s capture ||
     ! grep -Fxq 'ARG=-O3' "$makeoverrides_mutant_capture"; then
-    die 'MAKEOVERRIDES known-bad mutant does not reproduce the override bypass'
+    die 'recursive MAKEOVERRIDES known-bad mutant does not reproduce the override bypass'
 fi
 makeoverrides_file_capture="$tmpdir/makeoverrides-file.capture"
 makeoverrides_file_trace="$tmpdir/makeoverrides-file.trace"
@@ -671,25 +692,6 @@ run_actual_make_flags_case "$helper" "$makeflags_capture" \
     "$makeflags_trace" "-f$override_makefile" -s capture
 validate_actual_make_capture "$makeflags_capture" ||
     die 'inherited MAKEFLAGS makefile selector replaces package KCFLAGS'
-makeflags_mutant="$tmpdir/makeflags-mutant"
-sed '/^unset MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES$/s/^unset MAKEFLAGS /unset /' \
-    "$canonical_helper" >"$makeflags_mutant"
-chmod 0755 "$makeflags_mutant"
-makeflags_mutant_capture="$tmpdir/makeflags-mutant.capture"
-makeflags_mutant_trace="$tmpdir/makeflags-mutant.trace"
-case "$override_makefile" in
-    *[!A-Za-z0-9_./:-]*)
-        ;;
-    *)
-        if ! run_actual_make_flags_case "$makeflags_mutant" \
-            "$makeflags_mutant_capture" \
-            "$makeflags_mutant_trace" "-f$override_makefile" -s capture ||
-            ! grep -Fxq 'ARG=-O3' "$makeflags_mutant_capture"; then
-            die 'MAKEFLAGS makefile selector known-bad mutant does not reproduce the override bypass'
-        fi
-        ;;
-esac
-
 assert_helper_rejects() {
     local name=$1
     local incoming_kcflags=$2
@@ -827,6 +829,11 @@ assert_helper_rejects_arguments reserved_eval_define \
     --eval $'define KCFLAGS\n-O3\nendef'
 assert_helper_preserves_make_arguments old_file_option -oEfile -s
 assert_helper_preserves_make_arguments output_sync_option -OE -s
+assert_helper_preserves_make_arguments warn_undefined_variables \
+    --warn-undefined-variables -s
+assert_helper_preserves_make_arguments what_if_option \
+    --what-if=Makefile -s
+assert_helper_preserves_make_arguments shuffle_option --shuffle -s
 assert_helper_rejects_arguments reserved_include_directory_short_attached \
     'GNU Make include-directory options are reserved' \
     -I/usr/include/f -s

@@ -67,8 +67,8 @@ bash scripts/verify_radeon_unified_dkms_sources.sh \
 )
 
 for package in \
-  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.8.1-1-x86_64.pkg.tar.zst \
-  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-dev-0.8.1-1-x86_64.pkg.tar.zst
+  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.8.1-2-x86_64.pkg.tar.zst \
+  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-dev-0.8.1-2-x86_64.pkg.tar.zst
 do
   bash scripts/verify_radeon_unified_dkms_package.sh \
     --source-repository "$RADEON_UNIFIED_SOURCE_REPOSITORY" \

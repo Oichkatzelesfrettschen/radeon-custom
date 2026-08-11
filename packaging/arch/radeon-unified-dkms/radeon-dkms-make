@@ -210,6 +210,8 @@ for argument in "$@"; do
         --in*)
             reject_include_option
             ;;
+        --*)
+            ;;
         -?*)
             inspect_short_make_options "$argument"
             ;;
