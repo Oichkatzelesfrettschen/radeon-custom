@@ -7,6 +7,12 @@ set -f
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 trace_include="${script_dir}/.radeon-trace-include/include/trace"
 profile_header="${script_dir}/radeon-build-profile.h"
+package_profile=
+if [ -f "$profile_header" ]; then
+    package_profile=$(sed -n \
+        's/^#define RADEON_BUILD_PROFILE "\([^"]*\)"$/\1/p' \
+        "$profile_header")
+fi
 
 encode_make_path() {
     case "$1" in
@@ -136,6 +142,55 @@ reject_shell_assignment() {
     exit 2
 }
 
+validate_package_assignment() {
+    case "$assignment_name" in
+        M | R300_RS480_KERNEL_BUILD_ROOT)
+            case "$assignment_value" in
+                '' | *[!A-Za-z0-9_./:+,\ -]*)
+                    reject_reserved_assignment
+                    ;;
+            esac
+            ;;
+        RADEON_BUILD_PROFILE)
+            [ -n "$package_profile" ] &&
+                [ "$assignment_value" = "$package_profile" ] ||
+                reject_reserved_assignment
+            ;;
+        KERNELRELEASE)
+            case "$assignment_value" in
+                '' | *[!A-Za-z0-9._+-]*)
+                    reject_reserved_assignment
+                    ;;
+            esac
+            ;;
+        CC)
+            case "$assignment_value" in
+                "$script_dir/radeon-dkms-compiler" | \
+                "$script_dir/radeon-dkms-ccache-gcc" | \
+                "$script_dir/radeon-dkms-ccache-clang")
+                    ;;
+                *)
+                    reject_reserved_assignment
+                    ;;
+            esac
+            ;;
+        V | W)
+            case "$assignment_value" in
+                '' | *[!0-9]*)
+                    reject_reserved_assignment
+                    ;;
+            esac
+            ;;
+        LLVM)
+            [ "$assignment_value" = 1 ] ||
+                reject_reserved_assignment
+            ;;
+        *)
+            reject_reserved_assignment
+            ;;
+    esac
+}
+
 reject_reserved_make_assignment() {
     argument_value=$1
     assignment_name=
@@ -193,6 +248,9 @@ reject_reserved_make_assignment() {
             reject_shell_assignment
             ;;
     esac
+    if [ -n "$assignment_name" ]; then
+        validate_package_assignment
+    fi
 }
 
 reject_eval_option() {
@@ -272,6 +330,22 @@ KCFLAGS=$kcflags
 export KCFLAGS
 unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS
 unset MAKE MAKE_COMMAND MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES
+unset KBUILD_CPPFLAGS
+unset KBUILD_AFLAGS KBUILD_CFLAGS KBUILD_RUSTFLAGS KBUILD_LDFLAGS
+unset KBUILD_AFLAGS_KERNEL KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_KERNEL
+unset KBUILD_CFLAGS_MODULE KBUILD_RUSTFLAGS_KERNEL KBUILD_RUSTFLAGS_MODULE
+unset KBUILD_LDFLAGS_MODULE KBUILD_USERCFLAGS KBUILD_USERLDFLAGS
+unset KCPPFLAGS KAFLAGS KRUSTFLAGS AFLAGS_KERNEL AFLAGS_MODULE
+unset CFLAGS_KERNEL CFLAGS_MODULE RUSTFLAGS_KERNEL RUSTFLAGS_MODULE
+unset LDFLAGS_MODULE HOSTCFLAGS HOSTCXXFLAGS HOSTRUSTFLAGS HOSTLDFLAGS
+unset HOSTLDLIBS USERCFLAGS USERLDFLAGS PROCMACROLDFLAGS
+unset KBUILD_KCONFIG KBUILD_VERBOSE KBUILD_EXTMOD KBUILD_OUTPUT
+unset KBUILD_EXTMOD_OUTPUT KBUILD_EXTRA_WARN KBUILD_EXTRA_SYMBOLS
+unset KBUILD_ABS_SRCTREE KBUILD_SIGN_PIN KBUILD_MODPOST_WARN
+unset KBUILD_MODPOST_NOFINAL KBUILD_DEBARCH KDOCFLAGS
+unset ARCH CROSS_COMPILE CF CC LD AR AS NM OBJCOPY OBJDUMP STRIP
+unset HOSTCC HOSTCXX RUSTC RUSTDOC RUSTFMT BINDGEN LLVM LLVM_IAS
+unset LLVM_IAS_FLAGS LLVM_SUFFIX LLVM_LINK SHELL M MO O
 
 if [ "${RADEON_DKMS_MAKE_TRACE:-0}" = 1 ]; then
     printf 'radeon-dkms-make: KCFLAGS=%s\n' "$KCFLAGS" >&2
