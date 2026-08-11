@@ -9,6 +9,8 @@
 # kernel target, the hooks no-op, and every assertion is about package,
 # source-tree, and modprobe identity; --with-kernel adds a real kernel and
 # asserts the built module's profile, vermagic, and DKMS state per row.
+# --temp-root selects an existing writable directory for the disposable root.
+# Without it, RUNNER_TEMP, TMPDIR, or /var/tmp supplies the temporary parent.
 set -euo pipefail
 
 die() {
@@ -18,6 +20,37 @@ die() {
 
 log() {
     printf 'test_radeon_package_transitions: %s\n' "$*"
+}
+
+validate_temp_root() {
+    local candidate=$1
+
+    [[ -d $candidate && ! -L $candidate && -w $candidate ]]
+}
+
+run_self_test() {
+    local tmpdir
+
+    tmpdir=$(mktemp -d "${TMPDIR:-/var/tmp}/radeon-package-transitions-self-test.XXXXXX")
+    trap 'rm -rf -- "$tmpdir"' RETURN
+    mkdir -p -- "$tmpdir/good"
+    validate_temp_root "$tmpdir/good" ||
+        die "temporary root validator rejects its known-good calibration"
+    : >"$tmpdir/regular-file"
+    if validate_temp_root "$tmpdir/regular-file"; then
+        die "temporary root validator accepts a regular file"
+    fi
+    if validate_temp_root "$tmpdir/absent"; then
+        die "temporary root validator accepts an absent directory"
+    fi
+    if validate_temp_root ''; then
+        die "temporary root validator accepts an empty path"
+    fi
+    ln -s -- "$tmpdir/good" "$tmpdir/symlink"
+    if validate_temp_root "$tmpdir/symlink"; then
+        die "temporary root validator accepts a symbolic link"
+    fi
+    printf 'radeon package transition temp-root calibration: PASS\n'
 }
 
 prod_package=
@@ -30,6 +63,9 @@ keep_root=0
 with_kernel=0
 cleanup_root=
 log_dir=
+temp_root_override=
+temp_root_set=0
+self_test=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --prod-package)
@@ -80,11 +116,26 @@ while [[ $# -gt 0 ]]; do
             log_dir=$2
             shift 2
             ;;
+        --temp-root)
+            [[ $# -ge 2 ]] || die "--temp-root requires a path"
+            [[ -n $2 ]] || die "--temp-root requires a non-empty path"
+            temp_root_override=$2
+            temp_root_set=1
+            shift 2
+            ;;
+        --self-test)
+            self_test=1
+            shift
+            ;;
         *)
             die "unknown argument: $1"
             ;;
     esac
 done
+if [[ $self_test -eq 1 ]]; then
+    run_self_test
+    exit 0
+fi
 [[ -z $prod_package || -f $prod_package ]] ||
     die "production package is absent: $prod_package"
 [[ -z $dev_package || -f $dev_package ]] ||
@@ -156,7 +207,13 @@ if [[ -n $legacy_package ]]; then
     [[ -n $legacy_pkgver ]] || die "cannot derive pkgver from $legacy_package"
 fi
 
-temp_base=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
+if [[ $temp_root_set -eq 1 ]]; then
+    temp_base=$temp_root_override
+else
+    temp_base=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
+fi
+validate_temp_root "$temp_base" ||
+    die "temporary transition root is absent, indirect, or not writable: $temp_base"
 root=$(mktemp -d "$temp_base/radeon-package-transitions.XXXXXX")
 matrix_status=0
 cleanup() {

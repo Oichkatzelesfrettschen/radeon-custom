@@ -164,11 +164,17 @@ printf 'unsafe archive fixture\n' >"$tmpdir/safe-name"
 expect_rejection traversal "$tmpdir/traversal.tar" \
     "archive member contains parent traversal"
 
-ln -s target "$tmpdir/link"
+printf 'symbolic-link archive target\n' >"$tmpdir/link-target"
+ln -s link-target "$tmpdir/link"
 (
     cd "$tmpdir"
-    bsdtar -cf symbolic-link.tar link
+    bsdtar -cf symbolic-link.tar --uid 0 --gid 0 --uname root --gname root link
 )
+if ! LC_ALL=C bsdtar --numeric-owner -tvf "$tmpdir/symbolic-link.tar" |
+    LC_ALL=C awk '$1 ~ /^l/ { found = 1 }
+        END { exit found ? 0 : 1 }'; then
+    die "symbolic-link fixture does not preserve its link member"
+fi
 expect_rejection symbolic-link "$tmpdir/symbolic-link.tar" \
     "archive contains a symbolic link, hard link, or special file"
 
