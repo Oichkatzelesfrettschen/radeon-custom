@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2153
 set -euo pipefail
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -35,7 +36,7 @@ assert_pkgbuild_identity() {
 }
 
 assert_pkgbuild_identity "$package_dir/PKGBUILD" \
-    radeon-unified-dkms 0.8.1 3
+    radeon-unified-dkms 0.8.1 4
 assert_pkgbuild_identity \
     "$package_dir/PKGBUILD.radeon-rs480-safe-regs-0.2" \
     radeon-rs480-safe-regs-dkms 0.2 12
@@ -123,6 +124,12 @@ validate_capture() {
         control_value=$(sed -n "s/^${variable}=//p" "$capture")
         [[ -z $control_value ]] || return 1
     done
+    for variable in KBUILD_CPPFLAGS KBUILD_AFLAGS KBUILD_CFLAGS KBUILD_RUSTFLAGS \
+        KBUILD_LDFLAGS KBUILD_EXTMOD KBUILD_OUTPUT KCPPFLAGS KAFLAGS KRUSTFLAGS \
+        CC LD M MO O RUSTC RUSTDOC RUSTFMT BINDGEN LLVM LLVM_IAS LLVM_IAS_FLAGS \
+        LLVM_SUFFIX LLVM_LINK SHELL; do
+        ! grep -q "^${variable}=" "$capture" || return 1
+    done
 }
 
 temp_root=${RUNNER_TEMP:-${TMPDIR:-/var/tmp}}
@@ -163,7 +170,9 @@ helper="$tmpdir/radeon-dkms-make"
 cp "$canonical_helper" "$helper"
 cp "$package_dir/radeon-build-profile.prod.h" \
     "$tmpdir/radeon-build-profile.h"
+cp "$package_dir/radeon-dkms-compiler" "$tmpdir/radeon-dkms-compiler"
 chmod 0755 "$helper"
+chmod 0755 "$tmpdir/radeon-dkms-compiler"
 sh -n "$canonical_helper" ||
     die 'package Make wrapper fails the configured /bin/sh syntax check'
 if grep -Eq \
@@ -184,6 +193,9 @@ set -f
     done
     printf '\n'
     printf 'CFLAGS=%s\n' "${CFLAGS-}"
+    env | grep -E \
+        '^(KBUILD_CPPFLAGS|KBUILD_AFLAGS|KBUILD_CFLAGS|KBUILD_RUSTFLAGS|KBUILD_LDFLAGS|KBUILD_EXTMOD|KBUILD_OUTPUT|KCPPFLAGS|KAFLAGS|KRUSTFLAGS|CC|LD|M|MO|O|RUSTC|RUSTDOC|RUSTFMT|BINDGEN|LLVM|LLVM_IAS|LLVM_IAS_FLAGS|LLVM_SUFFIX|LLVM_LINK|SHELL)=' \
+        >>"$RADEON_DKMS_CAPTURE" || :
     printf 'MAKE=%s\n' "${MAKE-}"
     printf 'MAKE_COMMAND=%s\n' "${MAKE_COMMAND-}"
     printf 'MAKEFLAGS=%s\n' "${MAKEFLAGS-}"
@@ -215,6 +227,8 @@ EOF
 actual_make_dir="$tmpdir/actual-make"
 mkdir -p "$actual_make_dir"
 cat >"$actual_make_dir/Makefile" <<'EOF'
+KBUILD_CPPFLAGS += $(KCPPFLAGS)
+KBUILD_AFLAGS += $(KAFLAGS)
 .PHONY: capture -f -E -I --include-dir
 capture:
 	@printf 'KBUILD_CPPFLAGS=%s\n' "$(KBUILD_CPPFLAGS)" >/dev/null
@@ -279,6 +293,31 @@ run_helper_case() {
         GNUMAKEFLAGS='-s' \
         MAKEFILES='/tmp/untrusted.mk' \
         MAKEOVERRIDES="$incoming_makeoverrides" \
+        KBUILD_CPPFLAGS='$(eval override KCFLAGS=-O3)' \
+        KBUILD_AFLAGS='-DUNTRUSTED_ASSEMBLY' \
+        KBUILD_CFLAGS='-DUNTRUSTED_CFLAGS' \
+        KBUILD_RUSTFLAGS='-DUNTRUSTED_RUST' \
+        KBUILD_LDFLAGS='-Wl,-z,untrusted' \
+        KBUILD_EXTMOD='/tmp/untrusted-extmod' \
+        KBUILD_OUTPUT='/tmp/untrusted-output' \
+        KCPPFLAGS='-DUNTRUSTED_CPPFLAGS' \
+        KAFLAGS='-DUNTRUSTED_AFLAGS' \
+        KRUSTFLAGS='-DUNTRUSTED_RUSTFLAGS' \
+        CC='/tmp/untrusted-cc' \
+        LD='/tmp/untrusted-ld' \
+        M='/tmp/untrusted-module' \
+        MO='/tmp/untrusted-module-output' \
+        O='/tmp/untrusted-kernel-output' \
+        SHELL='/tmp/untrusted-shell' \
+        RUSTC='/tmp/untrusted-rustc' \
+        RUSTDOC='/tmp/untrusted-rustdoc' \
+        RUSTFMT='/tmp/untrusted-rustfmt' \
+        BINDGEN='/tmp/untrusted-bindgen' \
+        LLVM='1' \
+        LLVM_IAS='0' \
+        LLVM_IAS_FLAGS='-march=untrusted' \
+        LLVM_SUFFIX='-untrusted' \
+        LLVM_LINK='/tmp/untrusted-llvm-link' \
         "$source_helper" modules 2>"$trace"
     validate_capture "$capture" "$sentinel" ||
         die "$name does not preserve the KCFLAGS composition contract"
@@ -328,6 +367,24 @@ run_actual_make_case() {
         PATH=/usr/bin:/bin \
             KCFLAGS='-DRADEON_CALLER_SENTINEL=1' \
             MAKEOVERRIDES="$incoming_makeoverrides" \
+            "$source_helper" "$@"
+    ) >"$capture" 2>"$trace"
+}
+
+run_actual_make_environment_case() {
+    local source_helper=$1
+    local capture=$2
+    local trace=$3
+    local variable=$4
+    local value=$5
+    shift 5
+
+    (
+        cd "$actual_make_dir"
+        env PATH=/usr/bin:/bin \
+            KCFLAGS='-DRADEON_CALLER_SENTINEL=1' \
+            MAKEOVERRIDES='' \
+            "$variable=$value" \
             "$source_helper" "$@"
     ) >"$capture" 2>"$trace"
 }
@@ -632,7 +689,7 @@ assert_shell_assignment_mutant_executes() {
 
     if ! run_actual_make_case "$shell_assignment_mutant" \
         "$capture" "$trace" '' "$@" \
-        SHELL=/bin/sh "PROBE!=printf exploited >$marker" capture; then
+        "PROBE!=printf exploited >$marker" capture; then
         die "GNU Make shell-assignment mutant does not run in $name"
     fi
     [[ -e $marker ]] ||
@@ -851,6 +908,26 @@ run_actual_make_flags_case "$helper" "$makeflags_capture" \
     "$makeflags_trace" "-f$override_makefile" -s capture
 validate_actual_make_capture "$makeflags_capture" ||
     die 'inherited MAKEFLAGS makefile selector replaces package KCFLAGS'
+kbuild_environment_capture="$tmpdir/kbuild-environment.capture"
+kbuild_environment_trace="$tmpdir/kbuild-environment.trace"
+run_actual_make_environment_case "$helper" "$kbuild_environment_capture" \
+    "$kbuild_environment_trace" KBUILD_CPPFLAGS \
+    '$(eval override KCFLAGS=-O3)' -e -s capture
+validate_actual_make_capture "$kbuild_environment_capture" ||
+    die 'inherited KBUILD_CPPFLAGS changes the package KCFLAGS composition'
+kbuild_environment_mutant="$tmpdir/kbuild-environment-mutant"
+sed '/^unset KBUILD_CPPFLAGS$/d' "$canonical_helper" \
+    >"$kbuild_environment_mutant"
+chmod 0755 "$kbuild_environment_mutant"
+kbuild_environment_mutant_capture="$tmpdir/kbuild-environment-mutant.capture"
+kbuild_environment_mutant_trace="$tmpdir/kbuild-environment-mutant.trace"
+if ! run_actual_make_environment_case "$kbuild_environment_mutant" \
+    "$kbuild_environment_mutant_capture" \
+    "$kbuild_environment_mutant_trace" KBUILD_CPPFLAGS \
+    '$(eval override KCFLAGS=-O3)' -e -s capture ||
+    ! grep -Fxq 'ARG=-O3' "$kbuild_environment_mutant_capture"; then
+    die 'inherited KBUILD_CPPFLAGS known-bad mutant does not reproduce the override bypass'
+fi
 assert_helper_rejects() {
     local name=$1
     local incoming_kcflags=$2
@@ -947,9 +1024,12 @@ assert_helper_rejects_arguments reserved_make_assignment \
 assert_helper_rejects_arguments reserved_make_command_assignment \
     'command-line package-controlled variable assignment is reserved' \
     MAKE_COMMAND=make
+assert_helper_rejects_arguments reserved_shell_assignment \
+    'command-line package-controlled variable assignment is reserved' \
+    SHELL=/bin/sh
 assert_helper_rejects_arguments shell_assignment_operator \
     'command-line shell assignment operators are reserved' \
-    SHELL=/bin/sh 'PROBE!=printf exploited >PATH'
+    'PROBE!=printf exploited >PATH'
 computed_assignment_values=(
     'KC$()FLAGS=-O3'
     'K$()CFLAGS=-O3'
@@ -964,9 +1044,8 @@ for assignment in "${computed_assignment_values[@]}"; do
         "$assignment"
 done
 safe_assignment_values=(
-    'KBUILD_CPPFLAGS=-DNAME=VALUE'
-    'KBUILD_CPPFLAGS+=-DSECOND=VALUE'
     'V=1'
+    'W=1'
 )
 for assignment in "${safe_assignment_values[@]}"; do
     assignment_name=${assignment%%=*}
@@ -976,7 +1055,21 @@ for assignment in "${safe_assignment_values[@]}"; do
     assert_safe_assignment_value \
         "safe_argument_${assignment_name}" "$assignment"
 done
+for assignment in \
+    'M=/tmp/radeon-module' \
+    'R300_RS480_KERNEL_BUILD_ROOT=/tmp/kernel build' \
+    'RADEON_BUILD_PROFILE=prod' \
+    'KERNELRELEASE=6.18.42-1-cachyos-lts' \
+    'LLVM=1' \
+    "CC=$tmpdir/radeon-dkms-compiler"; do
+    assignment_name=${assignment%%=*}
+    assert_helper_preserves_make_arguments \
+        "package_argument_${assignment_name}" "$assignment"
+done
 reserved_assignment_values=(
+    'M=/tmp/radeon;touch'
+    'M=/tmp/radeon`touch`'
+    'R300_RS480_KERNEL_BUILD_ROOT=/tmp/kernel>output'
     'KCFLAGS=-O3'
     'KCFLAGS+=-O3'
     'KCFLAGS:=-O3'
@@ -984,6 +1077,13 @@ reserved_assignment_values=(
     'KCFLAGS:::= -O3'
     'KCFLAGS?=-O3'
     'KCFLAGS!=-O3'
+    'KBUILD_CPPFLAGS=-DNAME=VALUE'
+    'KBUILD_CPPFLAGS+=-DSECOND=VALUE'
+    'KCPPFLAGS=-DUNTRUSTED'
+    'KAFLAGS=-DUNTRUSTED'
+    'LLVM=0'
+    'CC=/tmp/untrusted-cc'
+    'RADEON_BUILD_PROFILE=mutate-dev'
 )
 for variable in MAKE MAKE_COMMAND MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
     CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
@@ -1050,15 +1150,20 @@ sed '/^for argument in "\$@"; do$/,/^done$/d' \
     "$canonical_helper" >"$commandline_mutant"
 chmod 0755 "$commandline_mutant"
 expanded_assignment_mutant="$tmpdir/expanded-assignment-mutant"
-sed '/^[[:space:]]*reject_expanded_assignment_name$/d' \
+sed -e '/^[[:space:]]*reject_expanded_assignment_name$/d' \
+    -e 's/^\([[:space:]]*\)validate_package_assignment$/\1:/' \
     "$canonical_helper" >"$expanded_assignment_mutant"
 chmod 0755 "$expanded_assignment_mutant"
 assignment_value_mutant="$tmpdir/assignment-value-mutant"
-sed '/^[[:space:]]*reject_expanded_assignment_value$/d' \
+sed -e '/^[[:space:]]*reject_expanded_assignment_value$/d' \
+    -e 's/^\([[:space:]]*\)validate_package_assignment$/\1:/' \
     "$canonical_helper" >"$assignment_value_mutant"
 chmod 0755 "$assignment_value_mutant"
 shell_assignment_mutant="$tmpdir/shell-assignment-mutant"
-sed '/^[[:space:]]*reject_shell_assignment$/d' \
+sed -e 's/^\([[:space:]]*\)reject_shell_assignment$/\1:/' \
+    -e 's/^\([[:space:]]*\)validate_package_assignment$/\1:/' \
+    -e 's/ HOSTCC HOSTCXX RUSTC SHELL M MO O$/ HOSTCC HOSTCXX RUSTC M MO O/' \
+    -e 's/ LLVM_IAS_FLAGS LLVM_SUFFIX LLVM_LINK SHELL M MO O$/ LLVM_IAS_FLAGS LLVM_SUFFIX LLVM_LINK M MO O/' \
     "$canonical_helper" >"$shell_assignment_mutant"
 chmod 0755 "$shell_assignment_mutant"
 
@@ -1199,7 +1304,7 @@ assert_actual_make_rejects_arguments reserved_make_after_terminator \
     -s -- MAKE=make capture
 assert_actual_make_rejects_arguments shell_assignment_after_terminator \
     'command-line shell assignment operators are reserved' \
-    -s -- SHELL=/bin/sh 'PROBE!=printf exploited >PATH' capture
+    -s -- 'PROBE!=printf exploited >PATH' capture
 assert_shell_assignment_mutant_executes shell_assignment_before_terminator -s
 assert_shell_assignment_mutant_executes shell_assignment_after_terminator -s --
 post_terminator_kbuild_mutant="$tmpdir/post-terminator-kbuild-mutant"
@@ -1460,6 +1565,7 @@ run_dkms_recipe() {
     local package_name
     local package_version
     local make_command
+    local profile_file=radeon-build-profile.prod.h
     local kernel_build_root="$tmpdir/kernel build"
     local kernel_build_root_q
     local kernel_release_q
@@ -1479,11 +1585,16 @@ run_dkms_recipe() {
     mkdir -p "$dkms_tree/$package_name/$package_version/build"
     cp "$helper" \
         "$dkms_tree/$package_name/$package_version/build/radeon-dkms-make"
-    cp "$package_dir/radeon-build-profile.prod.h" \
+    make_command=${MAKE[0]}
+    case "$make_command" in
+        *'RADEON_BUILD_PROFILE=mutate-dev'*)
+            profile_file=radeon-build-profile.dev.h
+            ;;
+    esac
+    cp "$package_dir/$profile_file" \
         "$dkms_tree/$package_name/$package_version/build/radeon-build-profile.h"
     chmod 0755 \
         "$dkms_tree/$package_name/$package_version/build/radeon-dkms-make"
-    make_command=${MAKE[0]}
     printf -v kernel_release_q '%q' "$kernel_release"
     printf -v kernel_build_root_q '%q' "$kernel_build_root"
     [[ $PRE_BUILD == \
@@ -1565,12 +1676,9 @@ run_dkms_recipe "$package_dir/dkms.conf.dev" \
 run_dkms_recipe "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
     "$tmpdir/legacy-unlimited.capture" ''
 hostile_release='fixture; printf PREBUILD_INJECTION; #'
-run_dkms_recipe "$package_dir/dkms.conf.prod" "$tmpdir/primary-hostile.capture" \
-    3 "$hostile_release"
-run_dkms_recipe "$package_dir/dkms.conf.dev" \
-    "$tmpdir/development-hostile.capture" 3 "$hostile_release"
-run_dkms_recipe "$package_dir/dkms.conf.radeon-rs480-safe-regs-0.2" \
-    "$tmpdir/legacy-hostile.capture" 3 "$hostile_release"
+assert_helper_rejects_arguments hostile_kernel_release_assignment \
+    'command-line package-controlled variable assignment is reserved' \
+    "KERNELRELEASE=$hostile_release"
 run_invalid_parallel_recipe "$package_dir/dkms.conf.prod"
 run_invalid_parallel_recipe "$package_dir/dkms.conf.dev"
 run_invalid_parallel_recipe \
