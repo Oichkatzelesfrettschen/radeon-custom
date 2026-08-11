@@ -288,7 +288,10 @@ jobs:
             -name 'radeon-rs482-policy-*.pkg.tar.zst' | head -n 1)
           [ -n "$policy_package" ] ||
             { echo 'policy package artifact not found' >&2; exit 1; }
-          sudo bash scripts/test_radeon_package_transitions.sh \
+          transition_temp="$PACKAGE_WORK/transition-temp"
+          mkdir -p -- "$transition_temp"
+          sudo env RUNNER_TEMP="$transition_temp" \
+            bash scripts/test_radeon_package_transitions.sh \
             --prod-package "$PROD_PACKAGE_PATH" \
             --dev-package "$DEV_PACKAGE_PATH" \
             --policy-package "$policy_package" \
