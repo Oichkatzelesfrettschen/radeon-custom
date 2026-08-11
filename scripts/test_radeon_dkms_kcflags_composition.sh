@@ -71,7 +71,7 @@ without_trace_include() {
 make_kcflags_args() {
     local value=$1
 
-    env -u MAKE -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS -u MAKEFILES \
+    env -u MAKE -u MAKE_COMMAND -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS -u MAKEFILES \
         -u MAKEOVERRIDES \
         KCFLAGS="$value" make -s -f "$trace_include_makefile" capture
 }
@@ -119,7 +119,7 @@ validate_capture() {
     [[ $trace_include_count -eq 1 ]] || return 1
     [[ $profile_header_count -eq 1 ]] || return 1
     [[ -z $cflags_value ]] || return 1
-    for variable in MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES; do
+    for variable in MAKE MAKE_COMMAND MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES; do
         control_value=$(sed -n "s/^${variable}=//p" "$capture")
         [[ -z $control_value ]] || return 1
     done
@@ -185,6 +185,7 @@ set -f
     printf '\n'
     printf 'CFLAGS=%s\n' "${CFLAGS-}"
     printf 'MAKE=%s\n' "${MAKE-}"
+    printf 'MAKE_COMMAND=%s\n' "${MAKE_COMMAND-}"
     printf 'MAKEFLAGS=%s\n' "${MAKEFLAGS-}"
     printf 'MFLAGS=%s\n' "${MFLAGS-}"
     printf 'GNUMAKEFLAGS=%s\n' "${GNUMAKEFLAGS-}"
@@ -272,6 +273,7 @@ run_helper_case() {
         RADEON_DKMS_MAKE_TRACE=1 \
         KCFLAGS="$incoming_kcflags" \
         CFLAGS='-march=native -funsafe-math-optimizations' \
+        MAKE_COMMAND='/tmp/untrusted-make' \
         MAKEFLAGS='-j99' \
         MFLAGS='-k' \
         GNUMAKEFLAGS='-s' \
@@ -421,6 +423,27 @@ run_recursive_make_environment_case() {
         PATH=/usr/bin:/bin \
             KCFLAGS='-DRADEON_CALLER_SENTINEL=1' \
             MAKE="$incoming_make" \
+            RADEON_FAKE_MAKE_MARKER="${RADEON_FAKE_MAKE_MARKER-}" \
+            "$source_helper" "$@"
+    ) >"$capture" 2>"$trace"
+}
+
+run_recursive_make_command_case() {
+    local source_helper=$1
+    local fixture_dir=$2
+    local capture=$3
+    local trace=$4
+    local incoming_make_command=$5
+    shift 5
+    if [ "$#" -eq 0 ]; then
+        set -- capture
+    fi
+
+    (
+        cd "$fixture_dir"
+        PATH=/usr/bin:/bin \
+            KCFLAGS='-DRADEON_CALLER_SENTINEL=1' \
+            MAKE_COMMAND="$incoming_make_command" \
             RADEON_FAKE_MAKE_MARKER="${RADEON_FAKE_MAKE_MARKER-}" \
             "$source_helper" "$@"
     ) >"$capture" 2>"$trace"
@@ -750,6 +773,21 @@ validate_recursive_capture "$supported_recursive_fixture" \
     die 'inherited MAKE changes the recursive KCFLAGS composition'
 [[ ! -e $fake_make_marker ]] ||
     die 'inherited MAKE executes its caller-controlled replacement'
+fake_make_command_marker="$tmpdir/inherited-make-command.marker"
+if ! RADEON_FAKE_MAKE_MARKER="$fake_make_command_marker" \
+    run_recursive_make_command_case \
+    "$supported_recursive_fixture/radeon-dkms-make" \
+    "$supported_recursive_fixture" \
+    "$tmpdir/inherited-make-command.capture" \
+    "$tmpdir/inherited-make-command.trace" \
+    "$fake_make" capture; then
+    die 'inherited MAKE_COMMAND prevents recursive Kbuild execution'
+fi
+validate_recursive_capture "$supported_recursive_fixture" \
+    "$tmpdir/inherited-make-command.capture" ||
+    die 'inherited MAKE_COMMAND changes the recursive KCFLAGS composition'
+[[ ! -e $fake_make_command_marker ]] ||
+    die 'inherited MAKE_COMMAND executes its caller-controlled replacement'
 single_quote_recursive_fixture="$tmpdir/single'quote recursive path"
 prepare_recursive_fixture "$single_quote_recursive_fixture"
 run_recursive_make_case \
@@ -787,7 +825,7 @@ run_actual_make_case "$helper" "$makeoverrides_capture" \
 validate_actual_make_capture "$makeoverrides_capture" ||
     die 'inherited MAKEOVERRIDES replaces the package KCFLAGS'
 makeoverrides_mutant="$tmpdir/makeoverrides-mutant"
-sed '/^unset MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES$/s/ MAKEOVERRIDES$//' \
+sed '/^unset MAKE MAKE_COMMAND MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES$/s/ MAKEOVERRIDES$//' \
     "$canonical_helper" >"$makeoverrides_mutant"
 chmod 0755 "$makeoverrides_mutant"
 makeoverrides_mutant_capture="$tmpdir/makeoverrides-mutant.capture"
@@ -897,7 +935,7 @@ for assignment in 'KCFLAGS=-O3' 'KCFLAGS+=-O3' 'KCFLAGS:=-O3' \
         'command-line package-controlled variable assignment is reserved' \
         "$assignment"
 done
-for variable in MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
+for variable in MAKE MAKE_COMMAND MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
     CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
     assert_helper_rejects_arguments "reserved_argument_${variable}" \
         'command-line package-controlled variable assignment is reserved' \
@@ -906,6 +944,9 @@ done
 assert_helper_rejects_arguments reserved_make_assignment \
     'command-line package-controlled variable assignment is reserved' \
     MAKE=make
+assert_helper_rejects_arguments reserved_make_command_assignment \
+    'command-line package-controlled variable assignment is reserved' \
+    MAKE_COMMAND=make
 assert_helper_rejects_arguments shell_assignment_operator \
     'command-line shell assignment operators are reserved' \
     SHELL=/bin/sh 'PROBE!=printf exploited >PATH'
@@ -944,7 +985,7 @@ reserved_assignment_values=(
     'KCFLAGS?=-O3'
     'KCFLAGS!=-O3'
 )
-for variable in MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
+for variable in MAKE MAKE_COMMAND MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
     CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
     reserved_assignment_values+=("${variable}=KCFLAGS=-O3")
 done
@@ -1091,7 +1132,7 @@ for assignment in 'KCFLAGS=-O3' 'KCFLAGS+=-O3' 'KCFLAGS:=-O3' \
         'command-line package-controlled variable assignment is reserved' \
         -s -- "$assignment" capture
 done
-for variable in MAKE MAKEFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
+for variable in MAKE MAKE_COMMAND MAKEFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
     CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
     assert_actual_make_rejects_arguments \
         "reserved_after_terminator_${variable}" \
