@@ -182,6 +182,9 @@ bash scripts/test_radeon_profile_dev.sh
 # a development override survives, and override cleanup versus foreign
 # retention at development removal. Requires root, pacstrap, and arch-chroot;
 # module compilation stays in the DKMS lifecycle test.
+# The script uses RUNNER_TEMP, TMPDIR, or /var/tmp by default. Pass --temp-root
+# with an existing writable directory when a privilege boundary drops those
+# environment variables.
 sudo bash scripts/test_radeon_package_transitions.sh \
   --prod-package /path/to/radeon-unified-dkms-0.4-3-x86_64.pkg.tar.zst \
   --dev-package /path/to/radeon-unified-dkms-dev-0.4-3-x86_64.pkg.tar.zst
