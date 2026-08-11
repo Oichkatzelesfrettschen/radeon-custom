@@ -529,6 +529,20 @@ assert_mutant_make_bypass() {
         die "GNU Make known-bad mutant does not reproduce the bypass in $name"
 }
 
+assert_expanded_assignment_mutant_bypass() {
+    local name=$1
+    shift
+    local capture="$tmpdir/$name.expanded-assignment.mutant.capture"
+    local trace="$tmpdir/$name.expanded-assignment.mutant.trace"
+
+    if ! run_actual_make_case "$expanded_assignment_mutant" \
+        "$capture" "$trace" '' "$@"; then
+        die "GNU Make expanded-assignment mutant does not run in $name"
+    fi
+    grep -Fxq 'ARG=-O3' "$capture" ||
+        die "GNU Make expanded-assignment mutant does not reproduce the bypass in $name"
+}
+
 assert_actual_make_include_rejects_arguments() {
     local name=$1
     shift
@@ -782,6 +796,19 @@ for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
         'command-line package-controlled variable assignment is reserved' \
         "${variable}=KCFLAGS=-O3"
 done
+computed_assignment_values=(
+    'KC$()FLAGS=-O3'
+    'K$()CFLAGS=-O3'
+    '$(empty)KCFLAGS=-O3'
+)
+for assignment in "${computed_assignment_values[@]}"; do
+    assignment_name=${assignment%%=*}
+    assignment_name=${assignment_name//[^A-Za-z0-9]/_}
+    assert_helper_rejects_arguments \
+        "expanded_argument_${assignment_name}" \
+        'command-line assignment names must not use GNU Make expansion syntax' \
+        "$assignment"
+done
 reserved_assignment_values=(
     'KCFLAGS=-O3'
     'KCFLAGS+=-O3'
@@ -855,6 +882,10 @@ commandline_mutant="$tmpdir/commandline-mutant"
 sed '/^for argument in "\$@"; do$/,/^done$/d' \
     "$canonical_helper" >"$commandline_mutant"
 chmod 0755 "$commandline_mutant"
+expanded_assignment_mutant="$tmpdir/expanded-assignment-mutant"
+sed '/^[[:space:]]*reject_expanded_assignment_name$/d' \
+    "$canonical_helper" >"$expanded_assignment_mutant"
+chmod 0755 "$expanded_assignment_mutant"
 
 post_terminator_capture="$tmpdir/post-terminator.capture"
 post_terminator_trace="$tmpdir/post-terminator.trace"
@@ -933,6 +964,14 @@ for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
         'command-line package-controlled variable assignment is reserved' \
         -s -- "${variable}=KCFLAGS=-O3" capture
 done
+for assignment in "${computed_assignment_values[@]}"; do
+    assignment_name=${assignment%%=*}
+    assignment_name=${assignment_name//[^A-Za-z0-9]/_}
+    assert_actual_make_rejects_arguments \
+        "expanded_after_terminator_${assignment_name}" \
+        'command-line assignment names must not use GNU Make expansion syntax' \
+        -s -- "$assignment" capture
+done
 for whitespace_index in "${!leading_assignment_whitespace[@]}"; do
     whitespace=${leading_assignment_whitespace[whitespace_index]}
     whitespace_name=${leading_assignment_names[whitespace_index]}
@@ -959,6 +998,15 @@ for whitespace_index in "${!leading_assignment_whitespace[@]}"; do
         "mutant_leading_${whitespace_name}_after_terminator" \
         -s -- "${whitespace}KCFLAGS=-O3" capture
 done
+assert_actual_make_rejects_arguments expanded_assignment_before_terminator \
+    'command-line assignment names must not use GNU Make expansion syntax' \
+    'KC$()FLAGS=-O3' -s capture
+assert_expanded_assignment_mutant_bypass \
+    expanded_assignment_before_terminator_mutant \
+    'KC$()FLAGS=-O3' -s capture
+assert_expanded_assignment_mutant_bypass \
+    expanded_assignment_after_terminator_mutant \
+    -s -- 'KC$()FLAGS=-O3' capture
 post_terminator_kbuild_mutant="$tmpdir/post-terminator-kbuild-mutant"
 cp "$commandline_mutant" "$post_terminator_kbuild_mutant"
 chmod 0755 "$post_terminator_kbuild_mutant"

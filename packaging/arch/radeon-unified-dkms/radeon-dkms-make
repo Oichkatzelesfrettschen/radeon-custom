@@ -115,8 +115,16 @@ reject_reserved_assignment() {
     exit 2
 }
 
+reject_expanded_assignment_name() {
+    printf '%s\n' \
+        'radeon-dkms-make: command-line assignment names must not use GNU Make expansion syntax' \
+        >&2
+    exit 2
+}
+
 reject_reserved_make_assignment() {
     argument_value=$1
+    local assignment_name
     while :; do
         case "$argument_value" in
             [[:space:]]*)
@@ -127,6 +135,18 @@ reject_reserved_make_assignment() {
                 ;;
         esac
     done
+    # GNU Make expands variable references in assignment names before applying
+    # the assignment, so a literal-safe spelling can still target KCFLAGS.
+    case "$argument_value" in
+        *=*)
+            assignment_name=${argument_value%%=*}
+            case "$assignment_name" in
+                *\$*)
+                    reject_expanded_assignment_name
+                    ;;
+            esac
+            ;;
+    esac
     for reserved_variable in \
         KCFLAGS MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
         CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
