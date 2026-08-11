@@ -129,10 +129,17 @@ reject_expanded_assignment_value() {
     exit 2
 }
 
+reject_shell_assignment() {
+    printf '%s\n' \
+        'radeon-dkms-make: command-line shell assignment operators are reserved' \
+        >&2
+    exit 2
+}
+
 reject_reserved_make_assignment() {
     argument_value=$1
-    local assignment_name
-    local assignment_value
+    assignment_name=
+    assignment_value=
     while :; do
         case "$argument_value" in
             [[:space:]]*)
@@ -163,7 +170,7 @@ reject_reserved_make_assignment() {
             ;;
     esac
     for reserved_variable in \
-        KCFLAGS MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
+        KCFLAGS MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
         CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
         case "$argument_value" in
             "$reserved_variable"=* | "$reserved_variable"+=* | \
@@ -181,6 +188,11 @@ reject_reserved_make_assignment() {
                 ;;
         esac
     done
+    case "$assignment_name" in
+        *!)
+            reject_shell_assignment
+            ;;
+    esac
 }
 
 reject_eval_option() {
@@ -259,7 +271,7 @@ done
 KCFLAGS=$kcflags
 export KCFLAGS
 unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS
-unset MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES
+unset MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES
 
 if [ "${RADEON_DKMS_MAKE_TRACE:-0}" = 1 ]; then
     printf 'radeon-dkms-make: KCFLAGS=%s\n' "$KCFLAGS" >&2

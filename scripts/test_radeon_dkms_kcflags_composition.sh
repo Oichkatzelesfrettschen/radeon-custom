@@ -71,7 +71,8 @@ without_trace_include() {
 make_kcflags_args() {
     local value=$1
 
-    env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS -u MAKEFILES -u MAKEOVERRIDES \
+    env -u MAKE -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS -u MAKEFILES \
+        -u MAKEOVERRIDES \
         KCFLAGS="$value" make -s -f "$trace_include_makefile" capture
 }
 
@@ -118,7 +119,7 @@ validate_capture() {
     [[ $trace_include_count -eq 1 ]] || return 1
     [[ $profile_header_count -eq 1 ]] || return 1
     [[ -z $cflags_value ]] || return 1
-    for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES; do
+    for variable in MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES; do
         control_value=$(sed -n "s/^${variable}=//p" "$capture")
         [[ -z $control_value ]] || return 1
     done
@@ -163,6 +164,13 @@ cp "$canonical_helper" "$helper"
 cp "$package_dir/radeon-build-profile.prod.h" \
     "$tmpdir/radeon-build-profile.h"
 chmod 0755 "$helper"
+sh -n "$canonical_helper" ||
+    die 'package Make wrapper fails the configured /bin/sh syntax check'
+if grep -Eq \
+    '^[[:space:]]*local[[:space:]]+(assignment_name|assignment_value)([[:space:]]|=|$)' \
+    "$canonical_helper"; then
+    die 'package Make wrapper uses non-POSIX local assignment declarations'
+fi
 
 cat >"$tmpdir/bin/make" <<'EOF'
 #!/bin/sh
@@ -176,6 +184,7 @@ set -f
     done
     printf '\n'
     printf 'CFLAGS=%s\n' "${CFLAGS-}"
+    printf 'MAKE=%s\n' "${MAKE-}"
     printf 'MAKEFLAGS=%s\n' "${MAKEFLAGS-}"
     printf 'MFLAGS=%s\n' "${MFLAGS-}"
     printf 'GNUMAKEFLAGS=%s\n' "${GNUMAKEFLAGS-}"
@@ -396,6 +405,27 @@ run_recursive_make_case() {
     ) >"$capture" 2>"$trace"
 }
 
+run_recursive_make_environment_case() {
+    local source_helper=$1
+    local fixture_dir=$2
+    local capture=$3
+    local trace=$4
+    local incoming_make=$5
+    shift 5
+    if [ "$#" -eq 0 ]; then
+        set -- capture
+    fi
+
+    (
+        cd "$fixture_dir"
+        PATH=/usr/bin:/bin \
+            KCFLAGS='-DRADEON_CALLER_SENTINEL=1' \
+            MAKE="$incoming_make" \
+            RADEON_FAKE_MAKE_MARKER="${RADEON_FAKE_MAKE_MARKER-}" \
+            "$source_helper" "$@"
+    ) >"$capture" 2>"$trace"
+}
+
 run_recursive_makeoverrides_case() {
     local source_helper=$1
     local fixture_dir=$2
@@ -570,6 +600,22 @@ assert_assignment_value_mutant_bypass() {
         die "GNU Make assignment-value mutant does not reproduce the bypass in $name"
 }
 
+assert_shell_assignment_mutant_executes() {
+    local name=$1
+    shift
+    local marker="$tmpdir/$name.shell-assignment.mutant.marker"
+    local capture="$tmpdir/$name.shell-assignment.mutant.capture"
+    local trace="$tmpdir/$name.shell-assignment.mutant.trace"
+
+    if ! run_actual_make_case "$shell_assignment_mutant" \
+        "$capture" "$trace" '' "$@" \
+        SHELL=/bin/sh "PROBE!=printf exploited >$marker" capture; then
+        die "GNU Make shell-assignment mutant does not run in $name"
+    fi
+    [[ -e $marker ]] ||
+        die "GNU Make shell-assignment mutant does not execute its probe in $name"
+}
+
 assert_safe_assignment_value() {
     local name=$1
     local assignment=$2
@@ -682,6 +728,28 @@ run_recursive_make_case \
 validate_recursive_capture "$supported_recursive_fixture" \
     "$tmpdir/supported-recursive.capture" ||
     die 'recursive Kbuild loses its supported spaced path token'
+fake_make_marker="$tmpdir/inherited-make.marker"
+fake_make="$tmpdir/inherited-make"
+cat >"$fake_make" <<'EOF'
+#!/bin/sh
+printf '%s\n' invoked >"$RADEON_FAKE_MAKE_MARKER"
+exit 1
+EOF
+chmod 0755 "$fake_make"
+if ! RADEON_FAKE_MAKE_MARKER="$fake_make_marker" \
+    run_recursive_make_environment_case \
+    "$supported_recursive_fixture/radeon-dkms-make" \
+    "$supported_recursive_fixture" \
+    "$tmpdir/inherited-make.capture" \
+    "$tmpdir/inherited-make.trace" \
+    "$fake_make" capture; then
+    die 'inherited MAKE prevents recursive Kbuild execution'
+fi
+validate_recursive_capture "$supported_recursive_fixture" \
+    "$tmpdir/inherited-make.capture" ||
+    die 'inherited MAKE changes the recursive KCFLAGS composition'
+[[ ! -e $fake_make_marker ]] ||
+    die 'inherited MAKE executes its caller-controlled replacement'
 single_quote_recursive_fixture="$tmpdir/single'quote recursive path"
 prepare_recursive_fixture "$single_quote_recursive_fixture"
 run_recursive_make_case \
@@ -719,7 +787,7 @@ run_actual_make_case "$helper" "$makeoverrides_capture" \
 validate_actual_make_capture "$makeoverrides_capture" ||
     die 'inherited MAKEOVERRIDES replaces the package KCFLAGS'
 makeoverrides_mutant="$tmpdir/makeoverrides-mutant"
-sed '/^unset MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES$/s/ MAKEOVERRIDES$//' \
+sed '/^unset MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES$/s/ MAKEOVERRIDES$//' \
     "$canonical_helper" >"$makeoverrides_mutant"
 chmod 0755 "$makeoverrides_mutant"
 makeoverrides_mutant_capture="$tmpdir/makeoverrides-mutant.capture"
@@ -829,12 +897,18 @@ for assignment in 'KCFLAGS=-O3' 'KCFLAGS+=-O3' 'KCFLAGS:=-O3' \
         'command-line package-controlled variable assignment is reserved' \
         "$assignment"
 done
-for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
+for variable in MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
     CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
     assert_helper_rejects_arguments "reserved_argument_${variable}" \
         'command-line package-controlled variable assignment is reserved' \
         "${variable}=KCFLAGS=-O3"
 done
+assert_helper_rejects_arguments reserved_make_assignment \
+    'command-line package-controlled variable assignment is reserved' \
+    MAKE=make
+assert_helper_rejects_arguments shell_assignment_operator \
+    'command-line shell assignment operators are reserved' \
+    SHELL=/bin/sh 'PROBE!=printf exploited >PATH'
 computed_assignment_values=(
     'KC$()FLAGS=-O3'
     'K$()CFLAGS=-O3'
@@ -870,7 +944,7 @@ reserved_assignment_values=(
     'KCFLAGS?=-O3'
     'KCFLAGS!=-O3'
 )
-for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
+for variable in MAKE MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
     CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
     reserved_assignment_values+=("${variable}=KCFLAGS=-O3")
 done
@@ -942,6 +1016,10 @@ assignment_value_mutant="$tmpdir/assignment-value-mutant"
 sed '/^[[:space:]]*reject_expanded_assignment_value$/d' \
     "$canonical_helper" >"$assignment_value_mutant"
 chmod 0755 "$assignment_value_mutant"
+shell_assignment_mutant="$tmpdir/shell-assignment-mutant"
+sed '/^[[:space:]]*reject_shell_assignment$/d' \
+    "$canonical_helper" >"$shell_assignment_mutant"
+chmod 0755 "$shell_assignment_mutant"
 
 post_terminator_capture="$tmpdir/post-terminator.capture"
 post_terminator_trace="$tmpdir/post-terminator.trace"
@@ -1013,7 +1091,7 @@ for assignment in 'KCFLAGS=-O3' 'KCFLAGS+=-O3' 'KCFLAGS:=-O3' \
         'command-line package-controlled variable assignment is reserved' \
         -s -- "$assignment" capture
 done
-for variable in MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
+for variable in MAKE MAKEFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES \
     CFLAGS CPPFLAGS CXXFLAGS LDFLAGS; do
     assert_actual_make_rejects_arguments \
         "reserved_after_terminator_${variable}" \
@@ -1075,6 +1153,14 @@ assert_actual_make_rejects_arguments expanded_assignment_value_after_terminator 
 assert_assignment_value_mutant_bypass \
     expanded_assignment_value_after_terminator_mutant \
     -s -- 'KBUILD_CPPFLAGS=$(eval override KCFLAGS=-O3)' capture
+assert_actual_make_rejects_arguments reserved_make_after_terminator \
+    'command-line package-controlled variable assignment is reserved' \
+    -s -- MAKE=make capture
+assert_actual_make_rejects_arguments shell_assignment_after_terminator \
+    'command-line shell assignment operators are reserved' \
+    -s -- SHELL=/bin/sh 'PROBE!=printf exploited >PATH' capture
+assert_shell_assignment_mutant_executes shell_assignment_before_terminator -s
+assert_shell_assignment_mutant_executes shell_assignment_after_terminator -s --
 post_terminator_kbuild_mutant="$tmpdir/post-terminator-kbuild-mutant"
 cp "$commandline_mutant" "$post_terminator_kbuild_mutant"
 chmod 0755 "$post_terminator_kbuild_mutant"
