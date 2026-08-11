@@ -204,7 +204,20 @@ capture:
 EOF
 actual_make_dir="$tmpdir/actual-make"
 mkdir -p "$actual_make_dir"
-cp "$trace_include_makefile" "$actual_make_dir/Makefile"
+cat >"$actual_make_dir/Makefile" <<'EOF'
+.PHONY: capture -f -E -I --include-dir
+capture:
+	@printf 'KBUILD_CPPFLAGS=%s\n' "$(KBUILD_CPPFLAGS)" >/dev/null
+	@for word in $(KCFLAGS); do printf 'ARG=%s\n' "$$word"; done
+-f:
+	@printf 'TARGET=-f\n'
+-E:
+	@printf 'TARGET=-E\n'
+-I:
+	@printf 'TARGET=-I\n'
+--include-dir:
+	@printf 'TARGET=--include-dir\n'
+EOF
 override_makefile="$tmpdir/override-makefile.mk"
 cat >"$override_makefile" <<'EOF'
 override KCFLAGS=-O3
@@ -543,6 +556,32 @@ assert_expanded_assignment_mutant_bypass() {
         die "GNU Make expanded-assignment mutant does not reproduce the bypass in $name"
 }
 
+assert_assignment_value_mutant_bypass() {
+    local name=$1
+    shift
+    local capture="$tmpdir/$name.assignment-value.mutant.capture"
+    local trace="$tmpdir/$name.assignment-value.mutant.trace"
+
+    if ! run_actual_make_case "$assignment_value_mutant" \
+        "$capture" "$trace" '' "$@"; then
+        die "GNU Make assignment-value mutant does not run in $name"
+    fi
+    grep -Fxq 'ARG=-O3' "$capture" ||
+        die "GNU Make assignment-value mutant does not reproduce the bypass in $name"
+}
+
+assert_safe_assignment_value() {
+    local name=$1
+    local assignment=$2
+    local capture="$tmpdir/$name.safe-assignment.capture"
+    local trace="$tmpdir/$name.safe-assignment.trace"
+
+    run_actual_make_case "$helper" "$capture" "$trace" '' \
+        "$assignment" -s capture
+    validate_actual_make_capture "$capture" ||
+        die "safe assignment value changes KCFLAGS in $name"
+}
+
 assert_actual_make_include_rejects_arguments() {
     local name=$1
     shift
@@ -809,6 +848,19 @@ for assignment in "${computed_assignment_values[@]}"; do
         'command-line assignment names must not use GNU Make expansion syntax' \
         "$assignment"
 done
+safe_assignment_values=(
+    'KBUILD_CPPFLAGS=-DNAME=VALUE'
+    'KBUILD_CPPFLAGS+=-DSECOND=VALUE'
+    'V=1'
+)
+for assignment in "${safe_assignment_values[@]}"; do
+    assignment_name=${assignment%%=*}
+    assignment_name=${assignment_name//[^A-Za-z0-9]/_}
+    assert_helper_preserves_make_arguments \
+        "safe_argument_${assignment_name}" "$assignment"
+    assert_safe_assignment_value \
+        "safe_argument_${assignment_name}" "$assignment"
+done
 reserved_assignment_values=(
     'KCFLAGS=-O3'
     'KCFLAGS+=-O3'
@@ -886,6 +938,10 @@ expanded_assignment_mutant="$tmpdir/expanded-assignment-mutant"
 sed '/^[[:space:]]*reject_expanded_assignment_name$/d' \
     "$canonical_helper" >"$expanded_assignment_mutant"
 chmod 0755 "$expanded_assignment_mutant"
+assignment_value_mutant="$tmpdir/assignment-value-mutant"
+sed '/^[[:space:]]*reject_expanded_assignment_value$/d' \
+    "$canonical_helper" >"$assignment_value_mutant"
+chmod 0755 "$assignment_value_mutant"
 
 post_terminator_capture="$tmpdir/post-terminator.capture"
 post_terminator_trace="$tmpdir/post-terminator.trace"
@@ -1007,6 +1063,18 @@ assert_expanded_assignment_mutant_bypass \
 assert_expanded_assignment_mutant_bypass \
     expanded_assignment_after_terminator_mutant \
     -s -- 'KC$()FLAGS=-O3' capture
+assert_actual_make_rejects_arguments expanded_assignment_value_before_terminator \
+    'command-line assignment values must not use GNU Make expansion syntax' \
+    'KBUILD_CPPFLAGS=$(eval override KCFLAGS=-O3)' -s capture
+assert_assignment_value_mutant_bypass \
+    expanded_assignment_value_before_terminator_mutant \
+    'KBUILD_CPPFLAGS=$(eval override KCFLAGS=-O3)' -s capture
+assert_actual_make_rejects_arguments expanded_assignment_value_after_terminator \
+    'command-line assignment values must not use GNU Make expansion syntax' \
+    -s -- 'KBUILD_CPPFLAGS=$(eval override KCFLAGS=-O3)' capture
+assert_assignment_value_mutant_bypass \
+    expanded_assignment_value_after_terminator_mutant \
+    -s -- 'KBUILD_CPPFLAGS=$(eval override KCFLAGS=-O3)' capture
 post_terminator_kbuild_mutant="$tmpdir/post-terminator-kbuild-mutant"
 cp "$commandline_mutant" "$post_terminator_kbuild_mutant"
 chmod 0755 "$post_terminator_kbuild_mutant"
