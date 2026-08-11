@@ -3,7 +3,7 @@
 pkgbase=radeon-unified-dkms
 pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev' 'radeon-rs482-policy')
 pkgver=0.8.1
-pkgrel=1
+pkgrel=2
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/linux-radeon-gororoba'
 license=('GPL-2.0-only')
@@ -13,7 +13,7 @@ makedepends=('git')
 _prod_pkgdesc='Production Radeon DKMS module from the profiled source checkpoint'
 _dev_pkgdesc='Development Radeon DKMS module with runtime-off diagnostic profiles'
 _common_provides=("radeon-unified=${pkgver}-${pkgrel}"
-                  'radeon-rs480-safe-regs=0.2-10'
+                  'radeon-rs480-safe-regs=0.2-11'
                   'radeon-palm-gate=1.0')
 _legacy_conflicts=('radeon-rs480-safe-regs-dkms'
                    'radeon-rs480-safe-regs-dkms-git'
@@ -74,8 +74,8 @@ sha256sums=(  'SKIP'
   '2133f7e0926032a91d8c55211a4dad9cdf16d188e2bab24c2b70f68d464c24b0'
   'e1c5344e4e3a6bc01001c986de79a49a912f31a2a2001e5e005c1d77315677db'
   '3df9a9426f0128213be295e60eccf5dc466e16fbb667bfebb0746cb2a59056bc'
-  'd6ecbf83ba5b33cba9282b6c0521d76ff456e9ff3828b3502cd8086fdb800aa1'
-  'ca5107cd0ba64f6639ed15fc81a4a9d4ea91cce25a9604712b820b2d617b0a7a'
+  'c38890a4cec81b5f4c8406988b92188f460fd70a2ed3e3307b9f7597a2b1df04'
+  'a2eccbfe7c10334553d07ff52cb6937c89b97b2129ef1d177dfaa1681e769128'
   '20d97ed32613e1166e79c2d13bab06c439f44252df95d7c7f67ad96a63a6b9bf'
   '90d360b2f755ccb8a0f6b1877eee150f5f7ace1b064343de4a1f6b098d82cb09'
   'dd7dcb0c9a286c16505d22a61ce9a682919bab90785cc79a6f0cfecfb135db67'
@@ -83,7 +83,7 @@ sha256sums=(  'SKIP'
   'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
   '7aeb7fff0b01696120ce182765df84b6f5edb6657d374c30efb85c4c86a4a9f2'
   '643aa779fb01de7f1d95dd6ec06f3422b940b7a1dcbdbc60e3e7246fb722d510'
-  '42a1da0ac3578507138a4b9546a607551aa73c4ac364407a78b72ee21e3da6ea'
+  '5f8846e144a1dcd91e357e729089de8f732a428b4fab6e5e0e57a9256f1baac4'
   'b9804f15603da32c4e6254466a1b24975d7c67fbb1194c72f7b6995da005201e'
   '538d6d5764362d624fba1bc2e5512576dec705e7ac7c37f4232b4675c7cf1781'
   '0a8baaab108c29e95f69354497be4b3ae4c1e484daa6a4a7e37ee41e21f95cdb'
