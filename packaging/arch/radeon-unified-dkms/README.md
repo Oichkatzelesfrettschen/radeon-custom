@@ -42,6 +42,17 @@ assignment operators, and every other package-controlled assignment. This
 boundary prevents an inherited `KBUILD_CPPFLAGS` value from changing the
 package `KCFLAGS` contract through Kbuild variable expansion.
 
+## Package QA
+
+The three archives retain an `x86_64` package identity because the release
+contract binds them to the x86_64 CachyOS kernel-build roots and the RS482
+target. They contain DKMS source and board policy rather than prebuilt ELF
+objects. `namcap` therefore cannot infer the required `dkms` dependency from
+the `dkms.conf` payload or the required `radeon-unified` capability from the
+board-policy option file. `scripts/check_radeon_package_qa.py` proves those
+payload relationships and accepts only those two semantic blind spots plus the
+intentional no-ELF classification. It rejects every other warning or error.
+
 The production package installs only the package-owned production policy. The
 development package also installs `profile_dev=off`, the three canonical
 runtime templates, and `/usr/bin/radeon-profile-dev`. The selector supports:
@@ -75,9 +86,12 @@ bash scripts/verify_radeon_unified_dkms_sources.sh \
   makepkg -fC --noconfirm
 )
 
-for package in \
-  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-0.8.1-4-x86_64.pkg.tar.zst \
-  packaging/arch/radeon-unified-dkms/radeon-unified-dkms-dev-0.8.1-4-x86_64.pkg.tar.zst
+package_dir=packaging/arch/radeon-unified-dkms
+prod_package="$package_dir/radeon-unified-dkms-0.8.2-1-x86_64.pkg.tar.zst"
+dev_package="$package_dir/radeon-unified-dkms-dev-0.8.2-1-x86_64.pkg.tar.zst"
+policy_package="$package_dir/radeon-rs482-policy-0.8.2-1-x86_64.pkg.tar.zst"
+
+for package in "$prod_package" "$dev_package"
 do
   bash scripts/verify_radeon_unified_dkms_package.sh \
     --source-repository "$RADEON_UNIFIED_SOURCE_REPOSITORY" \
@@ -85,6 +99,11 @@ do
   RADEON_UNIFIED_SOURCE_REPOSITORY="$RADEON_UNIFIED_SOURCE_REPOSITORY" \
     bash scripts/test_radeon_dkms_package_verifier.sh "$package"
 done
+
+python3 scripts/check_radeon_package_qa.py \
+  --package "$prod_package" \
+  --package "$dev_package" \
+  --package "$policy_package"
 ```
 
 ## Target validation
