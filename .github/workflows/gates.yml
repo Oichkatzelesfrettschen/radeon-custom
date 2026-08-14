@@ -89,8 +89,7 @@ jobs:
         run: sh scripts/check_radeon_packaged_source_compiles.sh --self-test
 
       - name: Packaged development-source build calibration
-        run: sh scripts/check_radeon_packaged_source_compiles.sh \
-          --self-test --profile all-dev
+        run: sh scripts/check_radeon_packaged_source_compiles.sh --self-test --profile all-dev
 
       - name: Base-delta closure calibration
         run: python3 scripts/check_base_delta_map_closure.py --self-test
