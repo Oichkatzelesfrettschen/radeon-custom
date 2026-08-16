@@ -333,7 +333,7 @@ compile_log="$WORK/compile.log"
 # shellcheck disable=SC2086
 compile_status=0
 build_jobs=$(nproc 2>/dev/null || echo 1)
-( cd "$WORK/radeon" && "$DKMSDIR/radeon-dkms-make" "$@" -j"$build_jobs" -C "$KB" M="$PWD" $objs ) \
+( cd "$WORK/radeon" && "$DKMSDIR/radeon-dkms-make" "$@" -j"$build_jobs" -l"$build_jobs" -C "$KB" M="$PWD" $objs ) \
   >"$compile_log" 2>&1 || compile_status=$?
 cat "$compile_log"
 if [ "$compile_status" -ne 0 ]; then

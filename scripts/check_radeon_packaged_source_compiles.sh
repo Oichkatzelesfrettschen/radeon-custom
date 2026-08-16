@@ -289,7 +289,7 @@ build_jobs=$(nproc 2>/dev/null || echo 1)
     cd "$source_root/radeon"
     "$source_root/radeon-dkms-make" "$@" \
         RADEON_BUILD_PROFILE="$expected_module_profile" \
-        -j"$build_jobs" -C "$kernel_build_root" M="$PWD" modules
+        -j"$build_jobs" -l"$build_jobs" -C "$kernel_build_root" M="$PWD" modules
 ) >"$build_log" 2>&1 || build_status=$?
 cat "$build_log"
 [ "$build_status" -eq 0 ] ||
