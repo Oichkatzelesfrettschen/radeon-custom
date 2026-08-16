@@ -43,5 +43,5 @@ Responses report results, decisions, evidence, and remaining uncertainty in
 mechanism-first form: changed mechanism, evidence used, validation run, checks
 not run and why, risks or unresolved falsifiers. Chained reasoning appears when
 it explains the next action or a validation requirement; the rest of the
-deliberation lives in thoughtspace. Responses are plain ASCII mechanism prose
+deliberation lives in thoughtspace. Responses are emoji-free mechanism prose
 under durable names.

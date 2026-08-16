@@ -64,7 +64,7 @@ nearest principle.
 - Local absolute paths, private host FQDNs, per-user toolchains, raw IP
   literals, and worktree names are workspace-local facts and live outside the
   tree.
-- Checked-in text is plain ASCII.
+- Checked-in text is emoji-free.
 
 ### Root cause and evidence
 
@@ -477,7 +477,7 @@ load-bearing, and state the checks run plainly.
 Build invocations, tool output, host names, and validation checklists live in
 the PR description. A body that reads like a worklog with nested bullets means
 the commits were not granular enough: split them or compress to the aggregate
-mechanism. Commit prose is plain ASCII mechanism text with no `WHY`/`WHAT`/`HOW`
+mechanism. Commit prose is emoji-free mechanism text with no `WHY`/`WHAT`/`HOW`
 scaffolding headers.
 
 An appended `(#NNN)` on the subject moves to a trailer that carries the PR
