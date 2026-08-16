@@ -116,6 +116,16 @@ commit equals source_commit.
 
 ## Target validation
 
+0.8.4-1 advances the source pin to linux-radeon-gororoba ca6bad0 (the
+one-shot RBBM/CP_STAT paired status reader radeon_rs480_cp_status and
+the parallel Kbuild module build; profiled-source tag object
+e3b2dd16b3b1). The pinned source compiles as prod against 7.1.8-1-cachyos
+via check_radeon_pinned_source_compiles.sh. Target install, reboot,
+loaded-module verification of the observer node, and the attended
+CP_STAT-observed cell are pending; the 0.8.3-1 record below is the
+latest completed target validation, and the 0.8.3 tuple re-run it lists
+as pending completed CARRIER_DELIVERED on the loaded validator.
+
 0.8.3-1 advances the source pin to linux-radeon-gororoba 74cc62c (the
 ATOM/COMBIOS bounds-hardening series and the FLOAT_2 XY01
 synthesized-lane width validator; profiled-source tag object

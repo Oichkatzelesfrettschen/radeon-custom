@@ -179,11 +179,12 @@ fi
 
 build_log="$work/build.log"
 build_status=0
+build_jobs=$(nproc 2>/dev/null || echo 1)
 (
     cd "$radeon_tree"
     KCFLAGS="-I$work/include/trace" \
         "$build_helper" "$@" RADEON_BUILD_PROFILE="$resolved_profile" \
-        -C "$kernel_build_root" M="$PWD" modules
+        -j"$build_jobs" -C "$kernel_build_root" M="$PWD" modules
 ) >"$build_log" 2>&1 || build_status=$?
 cat "$build_log"
 [ "$build_status" -eq 0 ] ||
