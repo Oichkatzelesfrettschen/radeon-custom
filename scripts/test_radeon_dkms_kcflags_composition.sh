@@ -36,7 +36,7 @@ assert_pkgbuild_identity() {
 }
 
 assert_pkgbuild_identity "$package_dir/PKGBUILD" \
-    radeon-unified-dkms 0.8.4 1
+    radeon-unified-dkms 0.8.5 1
 assert_pkgbuild_identity \
     "$package_dir/PKGBUILD.radeon-rs480-safe-regs-0.2" \
     radeon-rs480-safe-regs-dkms 0.2 12
