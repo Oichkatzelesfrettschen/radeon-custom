@@ -106,7 +106,25 @@ python3 scripts/check_radeon_package_qa.py \
   --package "$policy_package"
 ```
 
+## Versioning
+
+A source-pin advance or any packaged-content change bumps the minor
+version (pkgver) and resets pkgrel to 1; a packaging-only rebuild of
+identical content bumps pkgrel. Each pkgver carries a matching signed
+profiled-source tag radeon-unified-<pkgver>-profiled-source whose peeled
+commit equals source_commit.
+
 ## Target validation
+
+0.8.3-1 advances the source pin to linux-radeon-gororoba 74cc62c (the
+ATOM/COMBIOS bounds-hardening series and the FLOAT_2 XY01
+synthesized-lane width validator; profiled-source tag object
+c6160832bf9d). The pinned source compiles as prod against
+7.1.8-1-cachyos via check_radeon_pinned_source_compiles.sh. Target
+install, reboot, loaded-module verification, and the attended one-shot
+tuple re-run through the loaded validator are pending; the record below
+remains the latest completed target validation.
+
 
 The 0.8.1-4 production archive has SHA256
 `5712a92f9937aad6f1e11525944648ef3376347c6ace65553c13a85fc7eaa362`. The
