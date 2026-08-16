@@ -129,7 +129,7 @@ def verify_tag_signature(repository: Path, tag: str, allowed_signers: Path) -> N
     ]
     if not principals:
         raise PinError(f"{tag} verification reported no signing principal")
-    expected = allowed_signers.read_text(encoding="ascii").splitlines()
+    expected = allowed_signers.read_text(encoding="utf-8").splitlines()
     allowed = {
         line.split()[0] for line in expected if line and not line.startswith("#")
     }
@@ -170,7 +170,7 @@ def load_legacy_identity(path: Path) -> dict[str, object]:
     if not path.is_file() or path.is_symlink():
         raise PinError("legacy identity is not a regular file")
     try:
-        identity = tomllib.loads(path.read_text(encoding="ascii"))
+        identity = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
         raise PinError(f"cannot read legacy identity: {error}") from error
     keys = set(identity)
@@ -270,9 +270,9 @@ def verify_migration_manifest(
 ) -> None:
     raw_manifest = read_blob(repository, f"{commit}:{manifest_path}")
     try:
-        lines = raw_manifest.decode("ascii").splitlines()
+        lines = raw_manifest.decode("utf-8").splitlines()
     except UnicodeDecodeError as error:
-        raise PinError("migration manifest is not ASCII") from error
+        raise PinError("migration manifest is not UTF-8 text") from error
     if lines[:2] != [
         "# manifest-schema: gororoba-source-tree-v1",
         "path\tmode\tsize\tsha256",
@@ -335,7 +335,7 @@ def verify_migration_manifest(
 
 def load_identity(path: Path) -> dict[str, object]:
     try:
-        identity = tomllib.loads(path.read_text(encoding="ascii"))
+        identity = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
         raise PinError(f"cannot read source identity: {error}") from error
     missing = REQUIRED_KEYS - identity.keys()
@@ -385,7 +385,7 @@ def load_identity(path: Path) -> dict[str, object]:
 
 def require_pkgbuild_match(pkgbuild: Path, identity: dict[str, object]) -> None:
     try:
-        text = pkgbuild.read_text(encoding="ascii")
+        text = pkgbuild.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         raise PinError(f"cannot read PKGBUILD: {error}") from error
     bindings = {
@@ -496,7 +496,7 @@ def verify(
         upstream = tomllib.loads(
             read_blob(
                 repository, f"{commit}:{identity['upstream_base_path']}"
-            ).decode("ascii")
+            ).decode("utf-8")
         )
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise PinError(f"pinned upstream declaration is invalid: {error}") from error
@@ -523,7 +523,7 @@ def verify(
         migration_input = tomllib.loads(
             read_blob(
                 repository, f"{equivalence_commit}:MIGRATION_INPUT.toml"
-            ).decode("ascii")
+            ).decode("utf-8")
         )
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise PinError(f"pinned MIGRATION_INPUT.toml is invalid: {error}") from error
@@ -583,14 +583,14 @@ def run_self_test() -> None:
         legacy_copy.parent.mkdir(parents=True)
         legacy_blob.parent.mkdir(parents=True)
         legacy_text = 'PACKAGE_NAME="fixture"\n'
-        legacy_copy.write_text(legacy_text, encoding="ascii")
-        legacy_blob.write_text(legacy_text, encoding="ascii")
+        legacy_copy.write_text(legacy_text, encoding="utf-8")
+        legacy_blob.write_text(legacy_text, encoding="utf-8")
         driver_text = "obj-m += radeon.o\n"
-        (driver / "Makefile").write_text(driver_text, encoding="ascii")
-        (driver / ".gitignore").write_text("*.o\n", encoding="ascii")
+        (driver / "Makefile").write_text(driver_text, encoding="utf-8")
+        (driver / ".gitignore").write_text("*.o\n", encoding="utf-8")
         feature_policy_text = 'schema = 1\nprofile = "prod"\n'
         (policy / "build-features.toml").write_text(
-            feature_policy_text, encoding="ascii"
+            feature_policy_text, encoding="utf-8"
         )
         upstream_commit = "1" * 40
         upstream_subtree = "2" * 40
@@ -603,10 +603,10 @@ def run_self_test() -> None:
                     "",
                 ]
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
         manifest_path = manifest / "M24.manifest.tsv"
-        driver_digest = hashlib.sha256(driver_text.encode("ascii")).hexdigest()
+        driver_digest = hashlib.sha256(driver_text.encode("utf-8")).hexdigest()
         manifest_text = "\n".join(
             [
                 "# manifest-schema: gororoba-source-tree-v1",
@@ -615,8 +615,8 @@ def run_self_test() -> None:
                 "",
             ]
         )
-        manifest_path.write_text(manifest_text, encoding="ascii")
-        manifest_digest = hashlib.sha256(manifest_text.encode("ascii")).hexdigest()
+        manifest_path.write_text(manifest_text, encoding="utf-8")
+        manifest_digest = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
         packaging_commit = "3" * 40
         (repository / "MIGRATION_INPUT.toml").write_text(
             "\n".join(
@@ -627,7 +627,7 @@ def run_self_test() -> None:
                     "",
                 ]
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
         subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
         subprocess.run(
@@ -643,7 +643,7 @@ def run_self_test() -> None:
             check=True,
         )
         tag_object = git(repository, "rev-parse", "fixture-tag^{tag}")
-        (repository / "profile-ready").write_text("yes\n", encoding="ascii")
+        (repository / "profile-ready").write_text("yes\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
         subprocess.run(
             ["git", "-C", str(repository), "commit", "-qm", "profile source"],
@@ -652,7 +652,7 @@ def run_self_test() -> None:
         commit = git(repository, "rev-parse", "HEAD")
         legacy_identity_path = repository / "legacy-dkms-patch-order.toml"
         legacy_blob_path = "packaging/arch/radeon-unified-dkms/dkms.conf"
-        legacy_digest = hashlib.sha256(legacy_text.encode("ascii")).hexdigest()
+        legacy_digest = hashlib.sha256(legacy_text.encode("utf-8")).hexdigest()
         legacy_identity_path.write_text(
             "\n".join(
                 [
@@ -664,7 +664,7 @@ def run_self_test() -> None:
                     "",
                 ]
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
         # The signature assertion needs a signed known-good tag, and an
         # ephemeral key supplies one without the release key: git records the
@@ -741,18 +741,18 @@ def run_self_test() -> None:
         # The allowlist names the trusted fixture key alone, so the untrusted
         # tag fails on signer identity rather than on signature validity.
         keytype, keydata = (
-            Path(f"{signing_key}.pub").read_text(encoding="ascii").split()[:2]
+            Path(f"{signing_key}.pub").read_text(encoding="utf-8").split()[:2]
         )
         allowed_signers = repository / DEFAULT_ALLOWED_SIGNERS
         allowed_signers.write_text(
             f"fixture-signer@example.invalid {keytype} {keydata}\n",
-            encoding="ascii",
+            encoding="utf-8",
         )
         repository_tree = git(repository, "rev-parse", "HEAD^{tree}")
         tree = git(repository, "rev-parse", "HEAD:drivers/gpu/drm/radeon")
         policy_tree = git(repository, "rev-parse", "HEAD:policy")
         feature_policy_digest = hashlib.sha256(
-            feature_policy_text.encode("ascii")
+            feature_policy_text.encode("utf-8")
         ).hexdigest()
         identity_path = repository / "identity.toml"
         identity_path.write_text(
@@ -791,11 +791,11 @@ def run_self_test() -> None:
                     "",
                 ]
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
         verify_legacy_identity(legacy_identity_path, repository, legacy_copy)
         print("legacy identity known-good accepted: matching sidecar and copy")
-        legacy_base_text = legacy_identity_path.read_text(encoding="ascii")
+        legacy_base_text = legacy_identity_path.read_text(encoding="utf-8")
         legacy_bad_cases = {
             "a mutated legacy identity SHA": (
                 f'sha256 = "{legacy_digest}"',
@@ -815,7 +815,7 @@ def run_self_test() -> None:
         for description, (original, replacement) in legacy_bad_cases.items():
             bad_legacy_identity.write_text(
                 legacy_base_text.replace(original, replacement),
-                encoding="ascii",
+                encoding="utf-8",
             )
             try:
                 verify_legacy_identity(bad_legacy_identity, repository, legacy_copy)
@@ -888,10 +888,10 @@ def run_self_test() -> None:
         }
         bad_count = 0
         for description, (original, replacement) in field_substitutions.items():
-            bad_text = identity_path.read_text(encoding="ascii").replace(
+            bad_text = identity_path.read_text(encoding="utf-8").replace(
                 original, replacement
             )
-            bad_path.write_text(bad_text, encoding="ascii")
+            bad_path.write_text(bad_text, encoding="utf-8")
             try:
                 verify(bad_path, repository)
             except PinError:
@@ -915,7 +915,7 @@ def run_self_test() -> None:
         }
         for description, (tag_name, object_id) in substitutions.items():
             bad_text = (
-                identity_path.read_text(encoding="ascii")
+                identity_path.read_text(encoding="utf-8")
                 .replace(
                     'profiled_source_tag = "profiled-fixture-tag"',
                     f'profiled_source_tag = "{tag_name}"',
@@ -925,7 +925,7 @@ def run_self_test() -> None:
                     f'profiled_source_tag_object = "{object_id}"',
                 )
             )
-            bad_path.write_text(bad_text, encoding="ascii")
+            bad_path.write_text(bad_text, encoding="utf-8")
             try:
                 verify(bad_path, repository)
             except PinError:

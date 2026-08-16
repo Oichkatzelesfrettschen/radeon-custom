@@ -536,7 +536,7 @@ def workflow_action_sequence(repository: Path, workflow: Path) -> tuple[str, ...
         step_inputs.clear()
 
     for line_number, line in enumerate(
-        workflow.read_text(encoding="ascii").splitlines(),
+        workflow.read_text(encoding="utf-8").splitlines(),
         1,
     ):
         stripped = line.lstrip(" ")
@@ -794,7 +794,7 @@ def write_fixture(repository: Path) -> None:
         )
         path = repository / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def expect_rejection(name: str, mutation: Callable[[Path], None]) -> None:
@@ -822,7 +822,7 @@ def run_self_test() -> None:
         replacement: str | None,
     ) -> None:
         path = repository / ".github/workflows/gates.yml"
-        lines = path.read_text(encoding="ascii").splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
         steps_index = lines.index("    steps:")
         for line_index in range(steps_index + 1, len(lines)):
             if lines[line_index].startswith("      - uses: actions/checkout@"):
@@ -830,7 +830,7 @@ def run_self_test() -> None:
                     del lines[line_index]
                 else:
                     lines[line_index] = replacement
-                path.write_text("\n".join(lines) + "\n", encoding="ascii")
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
                 return
         raise ActionPinError("self-test fixture has no checkout step action")
 
@@ -848,15 +848,15 @@ def run_self_test() -> None:
 
     def stale_label(repository: Path) -> None:
         path = repository / ".github/workflows/target-kernel.yml"
-        content = path.read_text(encoding="ascii")
-        path.write_text(content.replace("# v8.0.1", "# v4", 1), encoding="ascii")
+        content = path.read_text(encoding="utf-8")
+        path.write_text(content.replace("# v8.0.1", "# v4", 1), encoding="utf-8")
 
     def missing_use(repository: Path) -> None:
         rewrite_first_step_action(repository, None)
 
     def unexpected_workflow(repository: Path) -> None:
         path = repository / ".github/workflows/unreviewed.yml"
-        path.write_text("name: unreviewed\n", encoding="ascii")
+        path.write_text("name: unreviewed\n", encoding="utf-8")
 
     def rewrite_download_input(
         repository: Path,
@@ -866,7 +866,7 @@ def run_self_test() -> None:
         duplicate: bool = False,
     ) -> None:
         path = repository / ".github/workflows/target-kernel.yml"
-        lines = path.read_text(encoding="ascii").splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
         prefix = f"          {input_name}:"
         matching = [
             line_index
@@ -884,7 +884,7 @@ def run_self_test() -> None:
             del lines[line_index]
         else:
             lines[line_index] = f"          {input_name}: {replacement}"
-        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def missing_raw_download(repository: Path) -> None:
         rewrite_download_input(repository, "skip-decompress", None)
@@ -909,7 +909,7 @@ def run_self_test() -> None:
     def anchored_flow_alias(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/upload-artifact"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - &hidden {name: Hidden action, uses: "
                 f"actions/upload-artifact@{approved.revision}}}\n"
@@ -919,7 +919,7 @@ def run_self_test() -> None:
     def flow_mapping(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/upload-artifact"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - {name: Hidden action, uses: "
                 f"actions/upload-artifact@{approved.revision}}}\n"
@@ -928,7 +928,7 @@ def run_self_test() -> None:
     def quoted_uses_key(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/upload-artifact"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - name: Hidden action\n"
                 f"        \"uses\": actions/upload-artifact@{approved.revision}\n"
@@ -937,7 +937,7 @@ def run_self_test() -> None:
     def escaped_quoted_key(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/upload-artifact"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - name: Hidden action\n"
                 f"        \"\\x75ses\": actions/upload-artifact@{approved.revision}\n"
@@ -946,7 +946,7 @@ def run_self_test() -> None:
     def tagged_flow_mapping(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/upload-artifact"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - !!map {name: Hidden action, \"\\x75ses\": "
                 f"actions/upload-artifact@{approved.revision}}}\n"
@@ -955,7 +955,7 @@ def run_self_test() -> None:
     def encoded_flow_job(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/upload-artifact"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "  hidden: {runs-on: ubuntu-latest, steps: "
                 "[{name: Hidden action, \"\\x75ses\":"
@@ -964,7 +964,7 @@ def run_self_test() -> None:
 
     def comment_forged_block_scalar(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - name: Hidden action # scanner: |\n"
                 "        uses: attacker/action@v1\n"
@@ -973,7 +973,7 @@ def run_self_test() -> None:
     def sequence_explicit_key(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/upload-artifact"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - ? uses\n"
                 f"        : actions/upload-artifact@{approved.revision}\n"
@@ -981,7 +981,7 @@ def run_self_test() -> None:
 
     def compact_flow_step_sequence(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "  hidden:\n"
                 "    runs-on: ubuntu-latest\n"
@@ -990,7 +990,7 @@ def run_self_test() -> None:
 
     def verbatim_string_tag(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - !<tag:yaml.org,2002:str> "
                 "\"\\x75ses\": actions/checkout@v4\n"
@@ -999,7 +999,7 @@ def run_self_test() -> None:
     def local_tagged_flow_mapping(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/checkout"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - !foo {name: Hidden, \"\\x75ses\": "
                 f"actions/checkout@{approved.revision}}}\n"
@@ -1008,7 +1008,7 @@ def run_self_test() -> None:
     def local_tagged_quoted_key(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/checkout"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - !foo \"\\x75ses\": "
                 f"actions/checkout@{approved.revision}\n"
@@ -1017,7 +1017,7 @@ def run_self_test() -> None:
     def bare_tagged_quoted_key(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/checkout"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - ! \"\\x75ses\": "
                 f"actions/checkout@{approved.revision}\n"
@@ -1027,7 +1027,7 @@ def run_self_test() -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/checkout"]
         rewrite_first_step_action(repository, None)
-        content = path.read_text(encoding="ascii")
+        content = path.read_text(encoding="utf-8")
         path.write_text(
             content.replace(
                 "    steps:\n",
@@ -1038,7 +1038,7 @@ def run_self_test() -> None:
                 "    steps:\n",
                 1,
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
 
     def non_action_mapping_substitution(repository: Path) -> None:
@@ -1046,7 +1046,7 @@ def run_self_test() -> None:
 
     def reusable_workflow_job(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "  reusable-workflow:\n"
                 "    uses: octo-org/example/.github/workflows/gate.yml@main\n"
@@ -1054,7 +1054,7 @@ def run_self_test() -> None:
 
     def indentationless_step_action(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "  hidden-indentless:\n"
                 "    runs-on: ubuntu-latest\n"
@@ -1064,12 +1064,12 @@ def run_self_test() -> None:
 
     def duplicate_root_key(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write("name: duplicate-name\n")
 
     def duplicate_job_identifier(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "  verify:\n"
                 "    runs-on: ubuntu-latest\n"
@@ -1079,7 +1079,7 @@ def run_self_test() -> None:
 
     def duplicate_job_property(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        content = path.read_text(encoding="ascii")
+        content = path.read_text(encoding="utf-8")
         path.write_text(
             content.replace(
                 "    runs-on: ubuntu-latest\n",
@@ -1087,12 +1087,12 @@ def run_self_test() -> None:
                 "    runs-on: ubuntu-24.04\n",
                 1,
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
 
     def duplicate_step_property(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        content = path.read_text(encoding="ascii")
+        content = path.read_text(encoding="utf-8")
         path.write_text(
             content.replace(
                 "      - name: Non-action uses mapping\n",
@@ -1100,12 +1100,12 @@ def run_self_test() -> None:
                 "        name: Duplicate step name\n",
                 1,
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
 
     def multiline_step_action(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 '      - uses: "attacker/action@\\\n'
                 '          v1"\n'
@@ -1113,7 +1113,7 @@ def run_self_test() -> None:
 
     def single_quoted_multiline_step_action(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - uses: 'attacker/action@\n"
                 "          v1'\n"
@@ -1121,7 +1121,7 @@ def run_self_test() -> None:
 
     def literal_block_scalar_step_action(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - uses: |\n"
                 "          attacker/action@v1\n"
@@ -1129,7 +1129,7 @@ def run_self_test() -> None:
 
     def folded_block_scalar_step_action(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - uses: >-\n"
                 "          attacker/action@v1\n"
@@ -1137,14 +1137,14 @@ def run_self_test() -> None:
 
     def dynamic_step_action(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - uses: ${{ 'attacker/action@v1' }}\n"
             )
 
     def yaml_merge_key(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "  hidden-merge:\n"
                 "    runs-on: ubuntu-latest\n"
@@ -1153,13 +1153,13 @@ def run_self_test() -> None:
 
     def unterminated_multiline_scalar(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write('      - name: "unterminated scalar\n')
 
     def detached_step_mapping(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
         approved = APPROVED_ACTIONS["actions/checkout"]
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      -\n"
                 "        name: Detached action mapping\n"
@@ -1169,7 +1169,7 @@ def run_self_test() -> None:
 
     def sequence_block_scalar_sibling_action(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
-        with path.open("a", encoding="ascii") as workflow:
+        with path.open("a", encoding="utf-8") as workflow:
             workflow.write(
                 "      - name: |\n"
                 "          Hidden action name\n"

@@ -198,7 +198,7 @@ def verify_target_workflow(repository: Path) -> None:
         workflow.is_file() and not workflow.is_symlink(),
         "target workflow is absent or indirect",
     )
-    lines = workflow.read_text(encoding="ascii").splitlines()
+    lines = workflow.read_text(encoding="utf-8").splitlines()
     job_lines, step_lines = target_job(lines)
     blocks = workflow_step_blocks(step_lines)
     resolver_position = exact_step_position(blocks, RESOLVER_STEP_LINES)
@@ -245,9 +245,9 @@ Mutation = Callable[[Path], None]
 
 
 def replace_once(path: Path, old: str, new: str) -> None:
-    text = path.read_text(encoding="ascii")
+    text = path.read_text(encoding="utf-8")
     require(text.count(old) == 1, "self-test mutation anchor is not unique")
-    path.write_text(text.replace(old, new, 1), encoding="ascii")
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
 def step_text(lines: tuple[str, ...]) -> str:
@@ -287,12 +287,12 @@ def run_self_test(repository: Path) -> None:
         replace_once(path, resolver_text, "")
 
     def move_resolver_after_download(path: Path) -> None:
-        text = path.read_text(encoding="ascii")
+        text = path.read_text(encoding="utf-8")
         require(text.count(resolver_text) == 1, "resolver step anchor is not unique")
         text = text.replace(resolver_text, "", 1)
         admission_index = text.index(admission_text)
         text = text[:admission_index] + resolver_text + text[admission_index:]
-        path.write_text(text, encoding="ascii")
+        path.write_text(text, encoding="utf-8")
 
     def local_archive_hash(path: Path) -> None:
         replacement = "\n".join(
@@ -350,7 +350,7 @@ def run_self_test(repository: Path) -> None:
         )
 
     def move_binding_to_sibling(path: Path, condition: str) -> None:
-        text = path.read_text(encoding="ascii")
+        text = path.read_text(encoding="utf-8")
         for binding_step in (
             resolver_text,
             download_text,
@@ -399,7 +399,7 @@ def run_self_test(repository: Path) -> None:
             + admission_text
             + upload_text
         )
-        path.write_text(text, encoding="ascii")
+        path.write_text(text, encoding="utf-8")
 
     def disabled_binding_sibling(path: Path) -> None:
         move_binding_to_sibling(path, "github.event_name != 'workflow_run'")

@@ -48,16 +48,16 @@ UNOWNED_ARTIFACT_PATHS = (
 )
 
 
-def read_ascii(path: Path) -> str:
+def read_utf8(path: Path) -> str:
     try:
-        return path.read_text(encoding="ascii")
+        return path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         raise ProfileError(f"cannot read {path}: {error}") from error
 
 
 def read_toml(path: Path) -> dict[str, object]:
     try:
-        return tomllib.loads(read_ascii(path))
+        return tomllib.loads(read_utf8(path))
     except tomllib.TOMLDecodeError as error:
         raise ProfileError(f"invalid TOML in {path}: {error}") from error
 
@@ -162,7 +162,7 @@ def shell_scalar(text: str, name: str) -> str:
 
 def macro_value(path: Path, macro: str) -> str:
     pattern = re.compile(rf'^#define {re.escape(macro)} "([^"]+)"$', re.MULTILINE)
-    match = pattern.search(read_ascii(path))
+    match = pattern.search(read_utf8(path))
     if match is None:
         raise ProfileError(f"{path.name} omits {macro}")
     return match.group(1)
@@ -170,7 +170,7 @@ def macro_value(path: Path, macro: str) -> str:
 
 def option_values(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
-    for number, line in enumerate(read_ascii(path).splitlines(), start=1):
+    for number, line in enumerate(read_utf8(path).splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -188,7 +188,7 @@ def option_values(path: Path) -> dict[str, str]:
 
 
 def require_make_profile(path: Path, expected: str) -> None:
-    text = read_ascii(path)
+    text = read_utf8(path)
     assignments = re.findall(r"RADEON_BUILD_PROFILE=([^ ]+)", text)
     if assignments != [expected]:
         raise ProfileError(
@@ -201,7 +201,7 @@ def require_make_profile(path: Path, expected: str) -> None:
 
 
 def require_package_version(path: Path, expected: str) -> None:
-    text = read_ascii(path)
+    text = read_utf8(path)
     versions = re.findall(r'^PACKAGE_VERSION="([^"]+)"$', text, re.MULTILINE)
     if len(versions) != 1:
         raise ProfileError(
@@ -223,7 +223,7 @@ def require_nonzero_git_object(value: object, field: str) -> None:
 
 def verify(package_dir: Path, prod_config: Path | None = None) -> None:
     pkgbuild_path = package_dir / "PKGBUILD"
-    pkgbuild = read_ascii(pkgbuild_path)
+    pkgbuild = read_utf8(pkgbuild_path)
     identity = read_toml(package_dir / "source-identity.toml")
     pkgver = shell_scalar(pkgbuild, "pkgver")
     pkgrel = shell_integer(pkgbuild, "pkgrel")
@@ -384,7 +384,7 @@ def verify_invalid_production_fixture(
 
 def run_self_test(package_dir: Path, fixture: Path) -> None:
     verify(package_dir)
-    pkgver = shell_scalar(read_ascii(package_dir / "PKGBUILD"), "pkgver")
+    pkgver = shell_scalar(read_utf8(package_dir / "PKGBUILD"), "pkgver")
     verify_invalid_production_fixture(package_dir, fixture)
 
     with tempfile.TemporaryDirectory(prefix="radeon-package-fixture.") as temp:
@@ -410,7 +410,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
 
         external_fixture = fixture_root / "external-generated.conf"
         external_fixture.write_text(
-            'PACKAGE_VERSION="0.3"\n', encoding="ascii"
+            'PACKAGE_VERSION="0.3"\n', encoding="utf-8"
         )
         symlink_fixture = fixture_root / "symlink.conf"
         symlink_fixture.symlink_to(external_fixture)
@@ -426,7 +426,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
         unrelated_fixture.write_text(
             'PACKAGE_VERSION="0.3"\n'
             'MAKE[0]="make RADEON_BUILD_PROFILE=prod modules"\n',
-            encoding="ascii",
+            encoding="utf-8",
         )
         expect_profile_error(
             "unrelated malformed production fixture",
@@ -437,7 +437,7 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
         )
 
     hazard_dir = package_dir.parent / "rs480-reset-hazard-stack"
-    verify_hazard_stack(read_ascii(hazard_dir / "PKGBUILD"))
+    verify_hazard_stack(read_utf8(hazard_dir / "PKGBUILD"))
     verify_hazard_stack(
         "depends=('radeon-unified>=0.8-1' "
         "'sp5100-tco-ioapic-dkms>=0.4-4')\n"
@@ -478,11 +478,11 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
         for name in UNOWNED_ARTIFACT_PATHS:
             artifact_path = profile_source / name
             artifact_path.parent.mkdir(parents=True, exist_ok=True)
-            artifact_path.write_text(artifact_payload, encoding="ascii")
+            artifact_path.write_text(artifact_payload, encoding="utf-8")
 
         external_generated = Path(temp) / "external-generated.conf"
         external_generated.write_text(
-            'PACKAGE_VERSION="0.3"\n', encoding="ascii"
+            'PACKAGE_VERSION="0.3"\n', encoding="utf-8"
         )
 
         source_directory_link = Path(temp) / "source-directory-link"
@@ -590,10 +590,10 @@ def run_self_test(package_dir: Path, fixture: Path) -> None:
             )
 
         def replace_once(path: Path, old: str, new: str) -> None:
-            text = read_ascii(path)
+            text = read_utf8(path)
             if text.count(old) != 1:
                 raise ProfileError(f"self-test cannot mutate {path.name}")
-            path.write_text(text.replace(old, new), encoding="ascii")
+            path.write_text(text.replace(old, new), encoding="utf-8")
 
         def expect_rejection(label: str, expected_text: str) -> None:
             try:
@@ -706,7 +706,7 @@ def main() -> int:
         else:
             verify(package_dir)
             verify_hazard_stack(
-                read_ascii(
+                read_utf8(
                     package_dir.parent
                     / "rs480-reset-hazard-stack/PKGBUILD"
                 )

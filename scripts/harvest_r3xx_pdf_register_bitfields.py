@@ -72,7 +72,7 @@ OUT_INDEX = os.path.join(HERE, os.pardir, "docs",
 
 SOURCE_TAG = "R3xx_3D_Registers.pdf"
 # pdftotext renders the header separator as U+00B7 and the page footer
-# copyright mark as U+00A9; both stay as escapes so this file is pure ASCII.
+# copyright mark as U+00A9; the escapes name each code point the regex matches.
 MIDDLE_DOT = "\u00b7"
 COPYRIGHT_SIGN = "\u00a9"
 
