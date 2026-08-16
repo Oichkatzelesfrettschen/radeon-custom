@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check project-authored prose for dash constructions.
+"""Check project-authored prose for dash constructions and emoji.
 
 AGENTS.md states that a dash marks a clause the sentence structure states more
 precisely on its own, so the construct leaves project-authored Markdown,
@@ -33,9 +33,24 @@ from pathlib import Path
 DASH = re.compile(r"(?:(?<=\s)|^)--(?=\s|$)")
 
 # AGENTS.md forbids the em dash, the en dash, and the ASCII `--` stand-in alike,
-# so the gate recognizes all three. The two code points are built by ordinal
-# because this file is checked-in text and stays plain ASCII.
+# so the gate recognizes all three. The two code points are built by ordinal so
+# the gate stays clean against its own scan.
 UNICODE_DASH = re.compile(f"[{chr(0x2013)}{chr(0x2014)}]")
+
+# AGENTS.md states that checked-in text is emoji-free, so an emoji is a finding
+# wherever the dash rule reads. The ranges cover the pictographic planes, the
+# Miscellaneous Symbols and Dingbats blocks, and the variation selector that
+# gives a text symbol emoji presentation. Mathematical operators, arrows,
+# box-drawing, Greek letters, the degree and micro signs, and accented names
+# carry meaning and sit outside every range, so they pass.
+EMOJI = re.compile(
+    "["
+    f"{chr(0x2600)}-{chr(0x27BF)}"
+    f"{chr(0x2B00)}-{chr(0x2BFF)}"
+    f"{chr(0xFE0F)}"
+    f"{chr(0x1F000)}-{chr(0x1FAFF)}"
+    "]"
+)
 
 # POSIX end-of-options separator: the token that stops option parsing. These are
 # code, and they appear in every careful shell script in this tree.
@@ -121,6 +136,9 @@ def findings(root: Path, paths: list[Path]) -> list[tuple[Path, int, str]]:
         except (UnicodeDecodeError, OSError):
             continue
         for lineno, line in prose_lines(path, text):
+            if EMOJI.search(line):
+                out.append((path.relative_to(root), lineno, line.strip()))
+                continue
             if UNICODE_DASH.search(line):
                 out.append((path.relative_to(root), lineno, line.strip()))
                 continue
@@ -140,6 +158,25 @@ GOOD_FIXTURES = [
     ("good_table.md", "| Gate | Status |\n| --- | --- |\n| apply | clean |\n"),
     ("good_eoo.sh", "#!/bin/sh\ncd -- \"$(dirname -- \"$0\")\" || exit 1\nset -- LLVM=1\n"),
     ("good_code.sh", "#!/bin/sh\nprintf '%s\\n' -- \"$x\"\ngrep -- \"$pat\" file\n"),
+    (
+        "good_utf8_symbols.md",
+        "The reader holds at 30"
+        + chr(0x00B0)
+        + "C while "
+        + chr(0x0394)
+        + "t "
+        + chr(0x2264)
+        + " 5 "
+        + chr(0x00B5)
+        + "s.\n\nState "
+        + chr(0x2192)
+        + " idle.\n\n"
+        + chr(0x250C)
+        + chr(0x2500)
+        + chr(0x2510)
+        + "\n",
+    ),
+    ("good_accented_name.md", "Reviewed by Bj" + chr(0x00F6) + "rn.\n"),
 ]
 
 # The dash tokens are composed rather than written, so this gate stays clean
@@ -149,6 +186,8 @@ _EN = chr(0x2013)
 _EM = chr(0x2014)
 
 BAD_FIXTURES = [
+    ("bad_emoji.md", "The gate passes " + chr(0x2705) + " on every profile.\n"),
+    ("bad_emoji_pictograph.md", "Reset storm " + chr(0x1F525) + " on the first draw.\n"),
     ("bad_prose.md", f"The reader hard-returns {_D} it never touches MMIO.\n"),
     ("bad_trailing.md", f"Two arming domains exist {_D}\nand the third differs.\n"),
     ("bad_comment.sh", f"#!/bin/sh\n# a zero-context insert {_D} whose target drifts\ntrue\n"),

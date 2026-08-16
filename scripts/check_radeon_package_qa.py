@@ -53,17 +53,17 @@ def require(condition: bool, message: str) -> None:
         raise PackageQaError(message)
 
 
-def read_ascii(path: Path) -> str:
-    """Read one regular, non-symlink ASCII source file."""
+def read_utf8(path: Path) -> str:
+    """Read one regular, non-symlink UTF-8 source file."""
 
     require(
         path.is_file() and not path.is_symlink(),
         f"file is absent or indirect: {path}",
     )
     try:
-        return path.read_text(encoding="ascii")
+        return path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
-        raise PackageQaError(f"cannot read ASCII file {path}: {error}") from error
+        raise PackageQaError(f"cannot read UTF-8 file {path}: {error}") from error
 
 
 def package_scalar(package_dir: Path, key: str) -> str:
@@ -71,7 +71,7 @@ def package_scalar(package_dir: Path, key: str) -> str:
 
     matches = [
         match.group("value")
-        for match in PKGBUILD_SCALAR.finditer(read_ascii(package_dir / "PKGBUILD"))
+        for match in PKGBUILD_SCALAR.finditer(read_utf8(package_dir / "PKGBUILD"))
         if match.group("key") == key
     ]
     require(len(matches) == 1, f"PKGBUILD has no unique {key} scalar")
@@ -95,7 +95,7 @@ def archive_command(archive: Path, *arguments: str) -> bytes:
 
 
 def archive_member(archive: Path, member: str) -> str:
-    """Return one archive member as ASCII text."""
+    """Return one archive member as UTF-8 text."""
 
     try:
         result = subprocess.run(
@@ -110,18 +110,18 @@ def archive_member(archive: Path, member: str) -> str:
         f"archive omits readable member {member}: {archive}",
     )
     try:
-        return result.stdout.decode("ascii")
+        return result.stdout.decode("utf-8")
     except UnicodeDecodeError as error:
-        raise PackageQaError(f"archive member is not ASCII: {member}") from error
+        raise PackageQaError(f"archive member is not UTF-8 text: {member}") from error
 
 
 def archive_members(archive: Path) -> set[str]:
     """Return the normalized nonempty member set of one package archive."""
 
     try:
-        lines = archive_command(archive, "-tf").decode("ascii").splitlines()
+        lines = archive_command(archive, "-tf").decode("utf-8").splitlines()
     except UnicodeDecodeError as error:
-        raise PackageQaError(f"archive member name is not ASCII: {archive}") from error
+        raise PackageQaError(f"archive member name is not UTF-8 text: {archive}") from error
     members = {line.removeprefix("./") for line in lines if line != "./"}
     require(
         len(members) == len(lines) - int("./" in lines),
@@ -340,7 +340,7 @@ def verify(package_dir: Path, supplied: list[Path]) -> None:
             check=False,
             capture_output=True,
             text=True,
-            encoding="ascii",
+            encoding="utf-8",
             errors="strict",
             env=environment,
         )
@@ -376,19 +376,19 @@ def write_fixture_archive(
         depends = ["bash", "dkms"]
         dkms = root / "usr/src/radeon-unified-0.0/dkms.conf"
         dkms.parent.mkdir(parents=True)
-        dkms.write_text('PACKAGE_NAME="radeon-unified"\n', encoding="ascii")
+        dkms.write_text('PACKAGE_NAME="radeon-unified"\n', encoding="utf-8")
     else:
         depends = [f"radeon-unified={version}"]
         policy = root / "etc/modprobe.d/radeon-re.conf"
         policy.parent.mkdir(parents=True)
-        policy.write_text("options radeon lockup_timeout=0\n", encoding="ascii")
+        policy.write_text("options radeon lockup_timeout=0\n", encoding="utf-8")
     pkginfo = [
         f"pkgname = {package_name}",
         f"pkgver = {version}",
         f"arch = {arch}",
         *(f"depend = {dependency}" for dependency in depends),
     ]
-    (root / ".PKGINFO").write_text("\n".join(pkginfo) + "\n", encoding="ascii")
+    (root / ".PKGINFO").write_text("\n".join(pkginfo) + "\n", encoding="utf-8")
     archive = directory / f"{package_name}-{version}-{ARCHITECTURE}{PACKAGE_SUFFIX}"
     try:
         result = subprocess.run(
@@ -493,10 +493,10 @@ def run_self_test() -> None:
         extracted = bad_policy_root / "radeon-rs482-policy"
         pkginfo = extracted / ".PKGINFO"
         pkginfo.write_text(
-            pkginfo.read_text(encoding="ascii").replace(
+            pkginfo.read_text(encoding="utf-8").replace(
                 "depend = radeon-unified=0.0-1", "depend = radeon-unified=0.0-2"
             ),
-            encoding="ascii",
+            encoding="utf-8",
         )
         bad_policy.unlink()
         try:

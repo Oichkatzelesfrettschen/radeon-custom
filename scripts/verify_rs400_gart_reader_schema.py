@@ -327,7 +327,7 @@ def verify_dma_round_trips() -> None:
 
 
 def verify_source(path: Path) -> None:
-    source = path.read_text(encoding="ascii")
+    source = path.read_text(encoding="utf-8")
     formats = tsv_formats(source)
     if not formats:
         fail("no TSV output calls found")
