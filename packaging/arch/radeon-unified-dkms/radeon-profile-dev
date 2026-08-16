@@ -4,7 +4,7 @@
 set -eu
 
 program=${0##*/}
-source_root=/usr/src/radeon-unified-0.8.2
+source_root=/usr/src/radeon-unified-0.8.3
 manifest="${source_root}/radeon-build-profile.toml"
 identity="${source_root}/source-identity.toml"
 profile_root=/usr/share/radeon-unified/profiles
