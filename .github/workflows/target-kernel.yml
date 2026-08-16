@@ -144,7 +144,7 @@ jobs:
           target_evidence="${RUNNER_TEMP}/radeon-target-evidence"
           sha256sum "$package_path" >"$target_evidence/production-package.sha256"
           mkdir -p "$HOME/.cache/gororoba-ci"
-          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+          sh scripts/with_build_slot.sh \
             timeout 20m sh scripts/check_radeon_packaged_source_compiles.sh \
               --package "$package_path" \
               --kernel-build-root "/lib/modules/$(uname -r)/build" \

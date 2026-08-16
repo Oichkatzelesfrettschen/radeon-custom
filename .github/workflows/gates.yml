@@ -201,12 +201,12 @@ jobs:
         run: |
           : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
           mkdir -p "$HOME/.cache/gororoba-ci"
-          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+          sh scripts/with_build_slot.sh \
             timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
               --source-repository "$SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
               --profile prod
-          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+          sh scripts/with_build_slot.sh \
             timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
               --source-repository "$SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
@@ -281,7 +281,7 @@ jobs:
             else
               package_path=$DEV_PACKAGE_PATH
             fi
-            flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+            sh scripts/with_build_slot.sh \
               timeout 15m sh scripts/check_radeon_packaged_source_compiles.sh \
                 --package "$package_path" \
                 --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
@@ -345,7 +345,7 @@ jobs:
           # verdict could read.
           work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/treeA.XXXXXX")
           trap 'rm -rf "$work"' EXIT
-          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+          sh scripts/with_build_slot.sh \
             sh scripts/materialize_legacy_radeon_tree.sh \
               --dkms-conf migration/input/legacy-dkms-patch-order.conf \
               --manifest "$work/treeA.tsv"
@@ -438,7 +438,7 @@ jobs:
           cmp "$work/upstream.tsv" docs/upstream-radeon-v6.18-manifest.tsv
           echo "upstream radeon subtree matches the recorded v6.18 manifest"
 
-          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+          sh scripts/with_build_slot.sh \
             sh scripts/materialize_legacy_radeon_base.sh \
               --upstream "$UPSTREAM_RADEON_TREE" \
               --out "$work/base-tree" \
@@ -458,7 +458,7 @@ jobs:
             --map docs/base-delta-map.tsv \
             --base-manifest docs/legacy-base-source-manifest.tsv
 
-          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+          sh scripts/with_build_slot.sh \
             sh scripts/normalize_legacy_source_tree.sh \
               --upstream "$UPSTREAM_RADEON_TREE" \
               --manifest "$work/final.tsv" \
@@ -565,7 +565,7 @@ jobs:
           trap 'rm -rf "$work"' EXIT
 
           mkdir -p "$HOME/.cache/gororoba-ci"
-          flock "$HOME/.cache/gororoba-ci/radeon-build.lock" \
+          sh scripts/with_build_slot.sh \
             timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
               --source-repository "$SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT" \
