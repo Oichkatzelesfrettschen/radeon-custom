@@ -116,6 +116,19 @@ commit equals source_commit.
 
 ## Target validation
 
+0.8.5-1 advances the source pin to linux-radeon-gororoba cc91fbc (the
+paired-status census radeon_rs480_paired_status_census conformed to
+transport ABI minor 1: gate-before-token -EBUSY, completed-bounded
+published length, between-record signal and duration aborts,
+partial_disarmed status, truthful BB CP_FIRST, nonseekable transport;
+profiled-source tag object 68644aff9da7). The one-shot observer
+function is byte-identical to the 0.8.4 pin, so an experiment plan
+naming this package covers both the observed one-shot cell and the
+census calibrations in one boot. The pinned source compiles as prod
+against 7.1.8-1-cachyos via check_radeon_pinned_source_compiles.sh.
+Target install, reboot, loaded-module verification of both nodes, and
+the attended cells are pending.
+
 0.8.4-1 advances the source pin to linux-radeon-gororoba ca6bad0 (the
 one-shot RBBM/CP_STAT paired status reader radeon_rs480_cp_status and
 the parallel Kbuild module build; profiled-source tag object
