@@ -116,6 +116,41 @@ commit equals source_commit.
 
 ## Target validation
 
+0.8.7-1 advances the source pin to linux-radeon-gororoba e2528ea (the
+VAP census force gate narrowed to FORCE_VAP, the sampled register's own
+clock domain: 0x2140 is a VAP-domain register, TCL, CBA, and GA sit
+downstream of VAP and feed no part of an MMIO status read, and 0x2140
+returned 0x00000100 through the plain candidate_vap path on RS482 boots
+6f1b215c and 61b17f6a while SCLK_CNTL2 read 0x00000000, so the
+downstream force set leaves the sampling precondition on two-boot
+evidence; transport rs482-vap-status-census/1 ABI minor 1, which
+retires the combined force bit and reports the sample-domain gate and
+the two whole-mask observations separately.  It also carries the
+mutate-dev node radeon_rs480_pll_write_probe, disarmed at index -1,
+which clears SCLK_CNTL FORCE_VIP and reads it back to establish whether
+WREG32_PLL lands on this device; profiled-source tag object
+c47e6aac316d).  The paired-status census and one-shot observer
+functions are byte-identical to the 0.8.6 pin.  The pinned source
+compiles as prod, probe-dev, and mutate-dev against 7.1.8-1-cachyos in
+the source repository's module-build gates.  Target install, reboot,
+loaded-module verification, and the attended VAP census cell under the
+minor 1 contract are pending.
+
+0.8.6-1 advances the source pin to linux-radeon-gororoba e03c1d2 (the
+VAP_CNTL_STATUS census radeon_rs480_vap_status_census: a mutate-dev
+binary node capturing 0x2140 inside one verified forced-clock lease
+of SCLK snapshot, 3D force-mask write, forced-readback verification,
+settle, bounded reads, CNTL2-first restore, and restored-readback
+verification, held under rdev->pm.mutex and the hardware transaction
+lock, armed by the exact VAPC token; transport
+rs482-vap-status-census/1; profiled-source tag object 0f8d537fbafd).
+The paired-status census and one-shot observer functions are
+byte-identical to the 0.8.5 pin. The pinned source compiles as prod,
+probe-dev, and mutate-dev against 7.1.8-1-cachyos in the source
+repository's module-build gates. Target install, reboot,
+loaded-module verification, and the attended VAP census cells are
+pending.
+
 0.8.5-1 advances the source pin to linux-radeon-gororoba cc91fbc (the
 paired-status census radeon_rs480_paired_status_census conformed to
 transport ABI minor 1: gate-before-token -EBUSY, completed-bounded
