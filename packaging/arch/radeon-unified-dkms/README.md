@@ -116,6 +116,21 @@ commit equals source_commit.
 
 ## Target validation
 
+0.8.6-1 advances the source pin to linux-radeon-gororoba e03c1d2 (the
+VAP_CNTL_STATUS census radeon_rs480_vap_status_census: a mutate-dev
+binary node capturing 0x2140 inside one verified forced-clock lease
+of SCLK snapshot, 3D force-mask write, forced-readback verification,
+settle, bounded reads, CNTL2-first restore, and restored-readback
+verification, held under rdev->pm.mutex and the hardware transaction
+lock, armed by the exact VAPC token; transport
+rs482-vap-status-census/1; profiled-source tag object 0f8d537fbafd).
+The paired-status census and one-shot observer functions are
+byte-identical to the 0.8.5 pin. The pinned source compiles as prod,
+probe-dev, and mutate-dev against 7.1.8-1-cachyos in the source
+repository's module-build gates. Target install, reboot,
+loaded-module verification, and the attended VAP census cells are
+pending.
+
 0.8.5-1 advances the source pin to linux-radeon-gororoba cc91fbc (the
 paired-status census radeon_rs480_paired_status_census conformed to
 transport ABI minor 1: gate-before-token -EBUSY, completed-bounded
