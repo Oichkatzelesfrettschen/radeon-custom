@@ -116,6 +116,19 @@ commit equals source_commit.
 
 ## Target validation
 
+0.8.8-1 advances the source pin to linux-radeon-gororoba 2e70498 (the
+VAP burst census radeon_rs480_vap_status_burst_census, transport
+rs482-vap-burst-census/1: back-to-back 0x2140 reads under the verified
+FORCE_VAP forced-clock lease with one anchor timestamp per 256-word
+block, own VAPB arm token, mutate-dev registration; every other node
+is byte-identical to the 0.8.7 pin, and the shared policy denominators
+advance to 23 features, 26 parameters, 37 debugfs files; profiled-
+source tag object 21cff0d5c9b8).  The pinned source compiles as prod,
+probe-dev, and mutate-dev against 7.1.8-1-cachyos in the source
+repository's module-build gates.  Target install, reboot,
+loaded-module verification, and the disarmed-floor read of the burst
+node are pending.
+
 0.8.7-1 advances the source pin to linux-radeon-gororoba e2528ea (the
 VAP census force gate narrowed to FORCE_VAP, the sampled register's own
 clock domain: 0x2140 is a VAP-domain register, TCL, CBA, and GA sit
@@ -132,9 +145,12 @@ WREG32_PLL lands on this device; profiled-source tag object
 c47e6aac316d).  The paired-status census and one-shot observer
 functions are byte-identical to the 0.8.6 pin.  The pinned source
 compiles as prod, probe-dev, and mutate-dev against 7.1.8-1-cachyos in
-the source repository's module-build gates.  Target install, reboot,
-loaded-module verification, and the attended VAP census cell under the
-minor 1 contract are pending.
+the source repository's module-build gates.  Validated on target: the
+package installed and booted on the RS482 host (boot 75950e1f), the
+loaded module verified, the disarmed floor held, complete 256- and
+4096-record VAP censuses acquired under the minor 1 contract, and the
+FORCE_VIP write-path probe observed WREG32_PLL landing with exact
+restoration.
 
 0.8.6-1 advances the source pin to linux-radeon-gororoba e03c1d2 (the
 VAP_CNTL_STATUS census radeon_rs480_vap_status_census: a mutate-dev
