@@ -124,6 +124,12 @@ jobs:
       - name: Package authority documentation
         run: python3 scripts/check_radeon_package_authority_docs.py
 
+      - name: Package historical-input ownership calibration
+        run: python3 scripts/check_package_historical_input_ownership.py --self-test
+
+      - name: Package historical-input ownership
+        run: python3 scripts/check_package_historical_input_ownership.py
+
       - name: Display oracle lint calibration
         run: sh scripts/check_display_oracle_usage.sh --self-test
 
