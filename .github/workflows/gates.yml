@@ -488,7 +488,10 @@ jobs:
 
       - name: Upload package and lifecycle evidence
         if: always()
-        continue-on-error: true
+        # The package archive is the target workflow's immutable input. A pull
+        # request treats quota failure as an optional review artifact, while a
+        # push to main makes transport failure fail the protected gate.
+        continue-on-error: ${{ github.event_name != 'push' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: radeon-unified-${{ github.sha }}-${{ github.run_id }}
