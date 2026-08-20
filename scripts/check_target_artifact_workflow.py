@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Terascale Functionalists
-"""Verify the target workflow artifact-digest binding."""
+"""Verify the gate producer and target consumer artifact binding."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from pathlib import Path
 from check_github_action_pins import ActionPinError, verify_repository
 
 
+GATES_WORKFLOW = Path(".github/workflows/gates.yml")
 TARGET_WORKFLOW = Path(".github/workflows/target-kernel.yml")
 STEP_START = re.compile(r"^      - (?:name|uses):")
 JOB_START = re.compile(r"^  (?P<name>[A-Za-z_][A-Za-z0-9_-]*):$")
@@ -96,6 +97,18 @@ TARGET_JOB_ACTION_LINES = (
     UPLOAD_STEP_LINES[2],
 )
 
+GATE_PACKAGE_UPLOAD_STEP_LINES = (
+    "      - name: Upload package and lifecycle evidence",
+    "        if: always()",
+    "        continue-on-error: ${{ github.event_name != 'push' }}",
+    "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+    "        with:",
+    "          name: radeon-unified-${{ github.sha }}-${{ github.run_id }}",
+    "          path: ${{ runner.temp }}/radeon-package-artifacts",
+    "          retention-days: 30",
+    "          if-no-files-found: warn",
+)
+
 API_COMMAND_LINES = RESOLVER_STEP_LINES[6:10]
 
 
@@ -125,6 +138,44 @@ def workflow_step_blocks(lines: list[str]) -> list[tuple[str, ...]]:
     require(bool(starts), "target workflow has no canonical steps")
     starts.append(len(lines))
     return [tuple(lines[start:end]) for start, end in pairwise(starts)]
+
+
+def exact_named_step(
+    lines: list[str],
+    expected_lines: tuple[str, ...],
+    workflow_name: str,
+) -> None:
+    step_header = expected_lines[0]
+    starts = [
+        line_index
+        for line_index, line in enumerate(lines)
+        if line.rstrip() == step_header
+    ]
+    require(
+        len(starts) == 1,
+        f"{workflow_name} does not contain exactly one step: {step_header}",
+    )
+    start = starts[0]
+    end = len(lines)
+    for line_index in range(start + 1, len(lines)):
+        line = lines[line_index]
+        if STEP_START.match(line) is not None or JOB_START.fullmatch(line) is not None:
+            end = line_index
+            break
+    require(
+        canonical_step_lines(tuple(lines[start:end])) == expected_lines,
+        f"{workflow_name} step differs from its binding contract: {step_header}",
+    )
+
+
+def verify_gate_producer(repository: Path) -> None:
+    workflow = repository / GATES_WORKFLOW
+    require(
+        workflow.is_file() and not workflow.is_symlink(),
+        "gate workflow is absent or indirect",
+    )
+    lines = workflow.read_text(encoding="utf-8").splitlines()
+    exact_named_step(lines, GATE_PACKAGE_UPLOAD_STEP_LINES, "gate workflow")
 
 
 def target_job(repository_lines: list[str]) -> tuple[list[str], list[str]]:
@@ -192,6 +243,8 @@ def verify_target_workflow(repository: Path) -> None:
         raise TargetWorkflowError(
             f"action-pin contract fails first: {error}"
         ) from error
+
+    verify_gate_producer(repository)
 
     workflow = repository / TARGET_WORKFLOW
     require(
@@ -273,9 +326,28 @@ def expect_rejection(repository: Path, name: str, mutation: Mutation) -> None:
         raise TargetWorkflowError(f"self-test accepted known-bad fixture: {name}")
 
 
+def expect_gate_rejection(
+    repository: Path,
+    name: str,
+    mutation: Mutation,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="radeon-gate-workflow-") as root:
+        fixture = Path(root)
+        shutil.copytree(repository / ".github", fixture / ".github")
+        mutation(fixture / GATES_WORKFLOW)
+        try:
+            verify_target_workflow(fixture)
+        except TargetWorkflowError:
+            print(f"PASS known-bad: {name}")
+            return
+        raise TargetWorkflowError(f"self-test accepted known-bad fixture: {name}")
+
+
 def run_self_test(repository: Path) -> None:
     verify_target_workflow(repository)
-    print("PASS known-good: API digest binds the downloaded artifact admission")
+    print(
+        "PASS known-good: protected-main producer binds the target artifact admission"
+    )
 
     resolver_text = step_text(RESOLVER_STEP_LINES)
     download_text = step_text(DOWNLOAD_STEP_LINES)
@@ -407,6 +479,27 @@ def run_self_test(repository: Path) -> None:
     def alternate_binding_sibling(path: Path) -> None:
         move_binding_to_sibling(path, "github.event_name == 'workflow_run'")
 
+    def nonfatal_main_transport(path: Path) -> None:
+        replace_once(
+            path,
+            "        continue-on-error: ${{ github.event_name != 'push' }}",
+            "        continue-on-error: true",
+        )
+
+    def missing_transport_condition(path: Path) -> None:
+        replace_once(
+            path,
+            "        continue-on-error: ${{ github.event_name != 'push' }}\n",
+            "",
+        )
+
+    def inverted_transport_condition(path: Path) -> None:
+        replace_once(
+            path,
+            "        continue-on-error: ${{ github.event_name != 'push' }}",
+            "        continue-on-error: ${{ github.event_name == 'push' }}",
+        )
+
     mutations = (
         ("omitted API resolver", omit_resolver),
         ("resolver moved after download", move_resolver_after_download),
@@ -424,8 +517,15 @@ def run_self_test(repository: Path) -> None:
     )
     for name, mutation in mutations:
         expect_rejection(repository, name, mutation)
+    gate_mutations = (
+        ("nonfatal protected-main transport", nonfatal_main_transport),
+        ("missing protected-main transport condition", missing_transport_condition),
+        ("inverted protected-main transport condition", inverted_transport_condition),
+    )
+    for name, mutation in gate_mutations:
+        expect_gate_rejection(repository, name, mutation)
     print(
-        "Target artifact workflow calibration: 1 known-good and 13 known-bad fixtures"
+        "Target artifact workflow calibration: 1 known-good and 16 known-bad fixtures"
     )
 
 
