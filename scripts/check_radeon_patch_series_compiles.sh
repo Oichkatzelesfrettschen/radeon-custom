@@ -63,7 +63,7 @@ done
 # under test resolves it through the same git-root discovery path.
 make_fixture_repo() {
   fx=$1 dkms_body=$2 patch_target=$3
-  mkdir -p "$fx/packaging/arch/radeon-unified-dkms" "$fx/patches/rs480" "$fx/sources"
+  mkdir -p "$fx/migration/input" "$fx/patches/rs480" "$fx/sources"
   ( cd "$fx" && git init -q . && git config user.email c@e && git config user.name c )
   mkdir -p "$fx/stage/radeon"
   printf 'int radeon_probe(void) { return 0; }\n' > "$fx/stage/radeon/foo.c"
@@ -72,7 +72,7 @@ make_fixture_repo() {
   # extracts it into a radeon/ directory it creates, so the fixture archives
   # the contents rather than the directory.
   ( cd "$fx/stage/radeon" && tar -cJf "$fx/sources/radeon-unified-0.3-source.tar.xz" . )
-  printf '%s\n' "$dkms_body" > "$fx/packaging/arch/radeon-unified-dkms/dkms.conf"
+  printf '%s\n' "$dkms_body" > "$fx/migration/input/legacy-dkms-patch-order.conf"
   if [ -n "$patch_target" ]; then
     {
       printf -- '--- a/radeon/%s\n' "$patch_target"
@@ -260,7 +260,7 @@ repo_root=$(git rev-parse --show-toplevel) || { echo "not inside a git repo" >&2
 RAD="$repo_root"
 DKMSDIR="$RAD/packaging/arch/radeon-unified-dkms"
 BASE="$RAD/sources/radeon-unified-0.3-source.tar.xz"
-[ -n "$dkms_conf" ] || dkms_conf="$DKMSDIR/dkms.conf"
+[ -n "$dkms_conf" ] || dkms_conf="$RAD/migration/input/legacy-dkms-patch-order.conf"
 [ -f "$BASE" ] || { echo "missing base tarball: $BASE" >&2; exit 2; }
 [ -f "$dkms_conf" ] || { echo "missing dkms.conf: $dkms_conf" >&2; exit 2; }
 

@@ -7,7 +7,7 @@ LOG_PREFIX="[radeon-rs480-safe-regs pre-build]"
 say() { printf '%s %s\n' "$LOG_PREFIX" "$*"; }
 
 KERNELVER="${1:-${kernelver:-$(uname -r)}}"
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 RADEON_DIR="${SCRIPT_DIR}/radeon"
 TRACE_HEADER="${RADEON_DIR}/radeon_trace.h"
 KERNEL_BUILD_ROOT="${R300_RS480_KERNEL_BUILD_ROOT:-/lib/modules/${KERNELVER}/build}"

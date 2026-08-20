@@ -1,5 +1,7 @@
 Subject: [PATCH] rs480: gart-snoop + F3x40 AtomicRMW reporter, rebased and build-verified
 
+Refuted by: steinmarder-r300:src/re/r300/findings/resolved/canonical/2026-06-21-rs482-global-gart-snoop-gart-binding-outcome.md
+
 Build-verified rebase of the host-UMA GART snoop experiment (originally
 0023-rs480-gart-snoop-and-atomic-rmw-experiment.patch) against the DEPLOYED
 radeon-unified-0.3 source on cachyos-vostro1000, with the AtomicRMWEn register

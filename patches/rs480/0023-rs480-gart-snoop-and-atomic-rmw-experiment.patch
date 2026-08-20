@@ -1,5 +1,7 @@
 Subject: [PATCH 0023] rs480: gated GART-snoop enable and K8 AtomicRMW MCA report node
 
+Refuted by: steinmarder-r300:src/re/r300/findings/resolved/canonical/2026-06-21-rs482-global-gart-snoop-gart-binding-outcome.md
+
 Scope the 7.5 host-UMA atomic experiment as a source-only, default-disarmed DKMS
 node.  Two module parameters, both off by default, and one debugfs status node.
 
@@ -119,7 +121,7 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
 @@ -250,7 +260,65 @@ void rs400_gart_fini(struct radeon_device *rdev)
  	radeon_gart_table_ram_free(rdev);
  }
- 
+
 +/* K8 NPT Family 0Fh northbridge Function 3 (device 0x18, function 3), MCA NB
 + * Control register at config offset 0x40, AtomicRMWEn bit 11 (BKDG 32559 sec
 + * 4.6.4.1).  The MCA NB Configuration register at 0x44 is a different register
@@ -181,4 +183,3 @@ diff --git a/radeon/rs400.c b/radeon/rs400.c
  uint64_t rs400_gart_get_page_entry(uint64_t addr, uint32_t flags)
  {
  	uint32_t entry;
- 

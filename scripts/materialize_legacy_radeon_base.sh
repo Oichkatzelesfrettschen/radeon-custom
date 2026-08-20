@@ -69,7 +69,7 @@ if [ -n "$out_dir" ]; then
     echo "destination is not empty: $out_dir" >&2
     exit 2
   fi
-  mkdir -p "$out_dir"; NORM=$(CDPATH= cd -- "$out_dir" && pwd -P)
+  mkdir -p "$out_dir"; NORM=$(CDPATH='' cd -- "$out_dir" && pwd -P)
 else
   NORM="$WORK/normalized"; mkdir -p "$NORM"
 fi
