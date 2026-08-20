@@ -210,7 +210,8 @@ no-selection sentinel: `radeon_rs480_force_clock_index`,
 `radeon_rs480_gated_read_index`, `radeon_rs480_hazard_index`, and
 `radeon_rs480_vertex_index`. The guard reads
 `idx < 0 || idx >= ARRAY_SIZE(...)`, so an index of `0` selects the first entry
-and performs the read; only a negative value is inert.
+and performs the read. Every in-range nonnegative value selects an entry;
+negative and out-of-range values return before the register access.
 
 The reset-mask selector resolves to a mask rather than to nothing.
 `RS480_RESET_MASK_BASELINE` is `0`, so `rs480_reset_mask=0` selects the baseline

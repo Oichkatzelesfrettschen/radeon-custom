@@ -104,10 +104,15 @@ def verify_tag_signature(repository: Path, tag: str, allowed_signers: Path) -> N
     allowed_signers = allowed_signers.resolve()
     result = subprocess.run(
         [
-            "git", "-C", str(repository),
-            "-c", "gpg.format=ssh",
-            "-c", f"gpg.ssh.allowedSignersFile={allowed_signers}",
-            "verify-tag", tag,
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "gpg.format=ssh",
+            "-c",
+            f"gpg.ssh.allowedSignersFile={allowed_signers}",
+            "verify-tag",
+            tag,
         ],
         check=False,
         stdout=subprocess.PIPE,
@@ -177,9 +182,7 @@ def load_legacy_identity(path: Path) -> dict[str, object]:
     missing = LEGACY_REQUIRED_KEYS - keys
     unknown = keys - LEGACY_REQUIRED_KEYS
     if missing:
-        raise PinError(
-            f"legacy identity omits: {', '.join(sorted(missing))}"
-        )
+        raise PinError(f"legacy identity omits: {', '.join(sorted(missing))}")
     if unknown:
         raise PinError(
             f"legacy identity has unknown keys: {', '.join(sorted(unknown))}"
@@ -199,7 +202,9 @@ def load_legacy_identity(path: Path) -> dict[str, object]:
         path_value.startswith("/")
         or "\\" in path_value
         or "\x00" in path_value
-        or any(ord(character) < 0x20 or ord(character) == 0x7F for character in path_value)
+        or any(
+            ord(character) < 0x20 or ord(character) == 0x7F for character in path_value
+        )
     ):
         raise PinError("legacy identity path must be repository-relative")
     components = path_value.split("/")
@@ -249,7 +254,9 @@ def verify_legacy_identity(
     try:
         copy_bytes = checked_in_copy.read_bytes()
     except OSError as error:
-        raise PinError(f"cannot read legacy identity checked-in copy: {error}") from error
+        raise PinError(
+            f"cannot read legacy identity checked-in copy: {error}"
+        ) from error
     blob_bytes = read_blob(repository, revision_path)
     expected_digest = str(identity["sha256"])
     copy_digest = hashlib.sha256(copy_bytes).hexdigest()
@@ -305,7 +312,9 @@ def verify_migration_manifest(
             if member.isdir():
                 continue
             if not member.isfile():
-                raise PinError(f"driver archive contains a non-file entry: {member.name}")
+                raise PinError(
+                    f"driver archive contains a non-file entry: {member.name}"
+                )
             stream = archive.extractfile(member)
             if stream is None:
                 raise PinError(f"cannot read driver archive entry: {member.name}")
@@ -343,7 +352,9 @@ def load_identity(path: Path) -> dict[str, object]:
     if missing:
         raise PinError(f"source identity omits: {', '.join(sorted(missing))}")
     if unknown:
-        raise PinError(f"source identity has unknown keys: {', '.join(sorted(unknown))}")
+        raise PinError(
+            f"source identity has unknown keys: {', '.join(sorted(unknown))}"
+        )
     if identity["schema"] != 2:
         raise PinError("source identity schema must be 2")
     if identity["constructor"] != "profiled-source":
@@ -398,6 +409,9 @@ def require_pkgbuild_match(pkgbuild: Path, identity: dict[str, object]) -> None:
         "_source_upstream_base": "upstream_commit",
         "_profiled_source_tag": "profiled_source_tag",
         "_profiled_source_tag_object": "profiled_source_tag_object",
+        "_equivalence_tag": "equivalence_tag",
+        "_equivalence_tag_object": "equivalence_tag_object",
+        "_equivalence_commit": "equivalence_commit",
     }
     for shell_name, identity_name in bindings.items():
         pattern = rf"^{re.escape(shell_name)}='([^']+)'$"
@@ -456,16 +470,23 @@ def verify(
         raise PinError("profiled_source_commit disagrees with source_commit")
     if git(repository, "cat-file", "-t", profiled_tag_object) != "tag":
         raise PinError("profiled_source_tag_object is not an annotated tag object")
-    if git(repository, "rev-parse", f"refs/tags/{profiled_tag}^{{tag}}") != profiled_tag_object:
+    if (
+        git(repository, "rev-parse", f"refs/tags/{profiled_tag}^{{tag}}")
+        != profiled_tag_object
+    ):
         raise PinError("profiled source tag object does not match the named tag")
     if git(repository, "rev-parse", f"refs/tags/{profiled_tag}^{{}}") != commit:
         raise PinError("profiled source tag does not peel to source_commit")
-    require_signature_block(repository, profiled_tag_object, "profiled_source_tag_object")
+    require_signature_block(
+        repository, profiled_tag_object, "profiled_source_tag_object"
+    )
     verify_tag_signature(repository, profiled_tag, allowed_signers)
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{tag}}") != tag_object:
         raise PinError("equivalence tag object does not match the named tag")
     if git(repository, "rev-parse", f"refs/tags/{tag}^{{}}") != equivalence_commit:
         raise PinError("equivalence tag does not peel to equivalence_commit")
+    require_signature_block(repository, tag_object, "equivalence_tag_object")
+    verify_tag_signature(repository, tag, allowed_signers)
     # The workflow run that proved equivalence expires from the forge while the
     # objects it proved stay reachable, so the driver tree carries the claim
     # and the run number stays explanatory.
@@ -473,11 +494,15 @@ def verify(
         git(repository, "rev-parse", f"{equivalence_commit}:{subtree}")
         != identity["equivalence_driver_tree"]
     ):
-        raise PinError("equivalence driver subtree does not match equivalence_driver_tree")
+        raise PinError(
+            "equivalence driver subtree does not match equivalence_driver_tree"
+        )
     try:
         git(repository, "merge-base", "--is-ancestor", equivalence_commit, commit)
     except PinError as error:
-        raise PinError("source_commit does not descend from equivalence_commit") from error
+        raise PinError(
+            "source_commit does not descend from equivalence_commit"
+        ) from error
     if git(repository, "rev-parse", f"{commit}:{subtree}") != identity["driver_tree"]:
         raise PinError("driver subtree does not match driver_tree")
     if (
@@ -494,9 +519,9 @@ def verify(
 
     try:
         upstream = tomllib.loads(
-            read_blob(
-                repository, f"{commit}:{identity['upstream_base_path']}"
-            ).decode("utf-8")
+            read_blob(repository, f"{commit}:{identity['upstream_base_path']}").decode(
+                "utf-8"
+            )
         )
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise PinError(f"pinned upstream declaration is invalid: {error}") from error
@@ -514,16 +539,14 @@ def verify(
         )
 
     manifest_path = str(identity["migration_manifest"])
-    manifest_digest = digest_blob(
-        repository, f"{equivalence_commit}:{manifest_path}"
-    )
+    manifest_digest = digest_blob(repository, f"{equivalence_commit}:{manifest_path}")
     if manifest_digest != identity["migration_manifest_sha256"]:
         raise PinError("migration manifest digest does not match the pinned source")
     try:
         migration_input = tomllib.loads(
-            read_blob(
-                repository, f"{equivalence_commit}:MIGRATION_INPUT.toml"
-            ).decode("utf-8")
+            read_blob(repository, f"{equivalence_commit}:MIGRATION_INPUT.toml").decode(
+                "utf-8"
+            )
         )
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise PinError(f"pinned MIGRATION_INPUT.toml is invalid: {error}") from error
@@ -537,9 +560,7 @@ def verify(
             raise PinError(
                 f"MIGRATION_INPUT.toml {input_name} disagrees with source identity"
             )
-    verify_migration_manifest(
-        repository, equivalence_commit, subtree, manifest_path
-    )
+    verify_migration_manifest(repository, equivalence_commit, subtree, manifest_path)
     if legacy_identity is not None:
         if legacy_repository is None or legacy_copy is None:
             raise PinError("legacy identity mode is incomplete")
@@ -639,10 +660,20 @@ def run_self_test() -> None:
             repository, "rev-parse", "HEAD:drivers/gpu/drm/radeon"
         )
         subprocess.run(
-            ["git", "-C", str(repository), "tag", "-am", "fixture", "fixture-tag"],
+            [
+                "git",
+                "-C",
+                str(repository),
+                "tag",
+                "-am",
+                "unsigned equivalence",
+                "unsigned-equivalence-fixture-tag",
+            ],
             check=True,
         )
-        tag_object = git(repository, "rev-parse", "fixture-tag^{tag}")
+        unsigned_equivalence_tag_object = git(
+            repository, "rev-parse", "unsigned-equivalence-fixture-tag^{tag}"
+        )
         (repository / "profile-ready").write_text("yes\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
         subprocess.run(
@@ -672,28 +703,66 @@ def run_self_test() -> None:
         # same bytes the checker reads.
         signing_key = repository / "fixture-signing-key"
         subprocess.run(
-            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C",
-             "pin fixture", "-f", str(signing_key)],
+            [
+                "ssh-keygen",
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                "pin fixture",
+                "-f",
+                str(signing_key),
+            ],
             check=True,
         )
         subprocess.run(
             [
-                "git", "-C", str(repository),
-                "-c", "gpg.format=ssh",
-                "-c", f"user.signingkey={signing_key}.pub",
-                "tag", "-sm", "profiled fixture", "profiled-fixture-tag",
+                "git",
+                "-C",
+                str(repository),
+                "-c",
+                "gpg.format=ssh",
+                "-c",
+                f"user.signingkey={signing_key}.pub",
+                "tag",
+                "-sm",
+                "equivalence fixture",
+                "fixture-tag",
+                equivalence_commit,
             ],
             check=True,
         )
-        profiled_tag_object = git(
-            repository, "rev-parse", "profiled-fixture-tag^{tag}"
+        tag_object = git(repository, "rev-parse", "fixture-tag^{tag}")
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository),
+                "-c",
+                "gpg.format=ssh",
+                "-c",
+                f"user.signingkey={signing_key}.pub",
+                "tag",
+                "-sm",
+                "profiled fixture",
+                "profiled-fixture-tag",
+            ],
+            check=True,
         )
+        profiled_tag_object = git(repository, "rev-parse", "profiled-fixture-tag^{tag}")
         # The unsigned twin names the same commit, so a pin naming it fails on
         # the missing signature alone rather than on tag identity or peel.
         subprocess.run(
             [
-                "git", "-C", str(repository),
-                "tag", "-am", "unsigned twin", "unsigned-profiled-fixture-tag",
+                "git",
+                "-C",
+                str(repository),
+                "tag",
+                "-am",
+                "unsigned twin",
+                "unsigned-profiled-fixture-tag",
             ],
             check=True,
         )
@@ -706,16 +775,53 @@ def run_self_test() -> None:
         # distinguishes the two tags.
         untrusted_key = repository / "fixture-untrusted-key"
         subprocess.run(
-            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C",
-             "pin fixture untrusted", "-f", str(untrusted_key)],
+            [
+                "ssh-keygen",
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                "pin fixture untrusted",
+                "-f",
+                str(untrusted_key),
+            ],
             check=True,
         )
         subprocess.run(
             [
-                "git", "-C", str(repository),
-                "-c", "gpg.format=ssh",
-                "-c", f"user.signingkey={untrusted_key}.pub",
-                "tag", "-sm", "untrusted signer", "untrusted-profiled-fixture-tag",
+                "git",
+                "-C",
+                str(repository),
+                "-c",
+                "gpg.format=ssh",
+                "-c",
+                f"user.signingkey={untrusted_key}.pub",
+                "tag",
+                "-sm",
+                "untrusted equivalence signer",
+                "untrusted-equivalence-fixture-tag",
+                equivalence_commit,
+            ],
+            check=True,
+        )
+        untrusted_equivalence_tag_object = git(
+            repository, "rev-parse", "untrusted-equivalence-fixture-tag^{tag}"
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository),
+                "-c",
+                "gpg.format=ssh",
+                "-c",
+                f"user.signingkey={untrusted_key}.pub",
+                "tag",
+                "-sm",
+                "untrusted signer",
+                "untrusted-profiled-fixture-tag",
             ],
             check=True,
         )
@@ -727,10 +833,17 @@ def run_self_test() -> None:
         # not.
         subprocess.run(
             [
-                "git", "-C", str(repository),
-                "-c", "gpg.format=ssh",
-                "-c", f"user.signingkey={signing_key}.pub",
-                "tag", "-sm", "wrong peel", "wrong-peel-profiled-fixture-tag",
+                "git",
+                "-C",
+                str(repository),
+                "-c",
+                "gpg.format=ssh",
+                "-c",
+                f"user.signingkey={signing_key}.pub",
+                "tag",
+                "-sm",
+                "wrong peel",
+                "wrong-peel-profiled-fixture-tag",
                 equivalence_commit,
             ],
             check=True,
@@ -779,11 +892,10 @@ def run_self_test() -> None:
                     f'equivalence_tag_object = "{tag_object}"',
                     f'equivalence_commit = "{equivalence_commit}"',
                     f'migration_input_commit = "{packaging_commit}"',
-                    'migration_manifest = '
+                    "migration_manifest = "
                     '"migration/expected-prefixes/mechanism/M24.manifest.tsv"',
                     f'migration_manifest_sha256 = "{manifest_digest}"',
-                    "generated_output_proof_sha256 = "
-                    f'"{"0" * 64}"',
+                    f'generated_output_proof_sha256 = "{"0" * 64}"',
                     "equivalence_workflow_run = 1",
                     "equivalence_workflow_retrievable = false",
                     f'equivalence_driver_tree = "{equivalence_driver_tree}"',
@@ -793,6 +905,25 @@ def run_self_test() -> None:
             ),
             encoding="utf-8",
         )
+        pkgbuild_path = repository / "PKGBUILD"
+        pkgbuild_text = "\n".join(
+            [
+                "_source_repository='fixture/source'",
+                f"_source_commit='{commit}'",
+                f"_source_repository_tree='{repository_tree}'",
+                f"_source_driver_tree='{tree}'",
+                f"_source_feature_policy_tree='{policy_tree}'",
+                f"_source_feature_policy_sha256='{feature_policy_digest}'",
+                f"_source_upstream_base='{upstream_commit}'",
+                "_profiled_source_tag='profiled-fixture-tag'",
+                f"_profiled_source_tag_object='{profiled_tag_object}'",
+                "_equivalence_tag='fixture-tag'",
+                f"_equivalence_tag_object='{tag_object}'",
+                f"_equivalence_commit='{equivalence_commit}'",
+                "",
+            ]
+        )
+        pkgbuild_path.write_text(pkgbuild_text, encoding="utf-8")
         verify_legacy_identity(legacy_identity_path, repository, legacy_copy)
         print("legacy identity known-good accepted: matching sidecar and copy")
         legacy_base_text = legacy_identity_path.read_text(encoding="utf-8")
@@ -834,10 +965,7 @@ def run_self_test() -> None:
             verify_legacy_identity(legacy_identity_path, repository, legacy_copy)
         except PinError:
             legacy_bad_count += 1
-            print(
-                "legacy identity known-bad rejected: "
-                "a non-GitHub origin provider"
-            )
+            print("legacy identity known-bad rejected: a non-GitHub origin provider")
         else:
             raise PinError("self-test accepts a non-GitHub origin provider")
         finally:
@@ -869,8 +997,11 @@ def run_self_test() -> None:
             raise PinError("self-test accepts a drifted checked-in copy")
         finally:
             legacy_copy.write_bytes(original_copy)
-        verify(identity_path, repository)
-        print("self-test known-good accepted: trusted signer over the pinned commit")
+        verify(identity_path, repository, pkgbuild_path)
+        print(
+            "self-test known-good accepted: trusted signers over the "
+            "equivalence and profiled source commits"
+        )
         bad_path = repository / "bad.toml"
         # Each known-bad identity breaks exactly one property: the pinned tree,
         # the tag object, the signature block, the signing key, or the peel.
@@ -894,6 +1025,32 @@ def run_self_test() -> None:
             bad_path.write_text(bad_text, encoding="utf-8")
             try:
                 verify(bad_path, repository)
+            except PinError:
+                bad_count += 1
+                print(f"self-test known-bad rejected: {description}")
+            else:
+                raise PinError(f"self-test accepts {description}")
+        pkgbuild_substitutions = {
+            "a PKGBUILD equivalence tag mismatch": (
+                "_equivalence_tag='fixture-tag'",
+                "_equivalence_tag='other-tag'",
+            ),
+            "a PKGBUILD equivalence tag object mismatch": (
+                f"_equivalence_tag_object='{tag_object}'",
+                f"_equivalence_tag_object='{'0' * 40}'",
+            ),
+            "a PKGBUILD equivalence commit mismatch": (
+                f"_equivalence_commit='{equivalence_commit}'",
+                f"_equivalence_commit='{'0' * 40}'",
+            ),
+        }
+        bad_pkgbuild_path = repository / "PKGBUILD.bad"
+        for description, (original, replacement) in pkgbuild_substitutions.items():
+            bad_pkgbuild_path.write_text(
+                pkgbuild_text.replace(original, replacement), encoding="utf-8"
+            )
+            try:
+                verify(identity_path, repository, bad_pkgbuild_path)
             except PinError:
                 bad_count += 1
                 print(f"self-test known-bad rejected: {description}")
@@ -923,6 +1080,36 @@ def run_self_test() -> None:
                 .replace(
                     f'profiled_source_tag_object = "{profiled_tag_object}"',
                     f'profiled_source_tag_object = "{object_id}"',
+                )
+            )
+            bad_path.write_text(bad_text, encoding="utf-8")
+            try:
+                verify(bad_path, repository)
+            except PinError:
+                bad_count += 1
+                print(f"self-test known-bad rejected: {description}")
+            else:
+                raise PinError(f"self-test accepts {description}")
+        equivalence_substitutions = {
+            "an unsigned equivalence tag": (
+                "unsigned-equivalence-fixture-tag",
+                unsigned_equivalence_tag_object,
+            ),
+            "an equivalence tag signed by an untrusted key": (
+                "untrusted-equivalence-fixture-tag",
+                untrusted_equivalence_tag_object,
+            ),
+        }
+        for description, (tag_name, object_id) in equivalence_substitutions.items():
+            bad_text = (
+                identity_path.read_text(encoding="utf-8")
+                .replace(
+                    'equivalence_tag = "fixture-tag"',
+                    f'equivalence_tag = "{tag_name}"',
+                )
+                .replace(
+                    f'equivalence_tag_object = "{tag_object}"',
+                    f'equivalence_tag_object = "{object_id}"',
                 )
             )
             bad_path.write_text(bad_text, encoding="utf-8")

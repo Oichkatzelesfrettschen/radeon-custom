@@ -112,6 +112,18 @@ jobs:
       - name: Target artifact workflow binding
         run: python3 scripts/check_target_artifact_workflow.py
 
+      - name: Hazardous runner ownership calibration
+        run: python3 scripts/check_hazardous_runner_ownership.py --self-test
+
+      - name: Hazardous runner ownership
+        run: python3 scripts/check_hazardous_runner_ownership.py
+
+      - name: Package authority documentation calibration
+        run: python3 scripts/check_radeon_package_authority_docs.py --self-test
+
+      - name: Package authority documentation
+        run: python3 scripts/check_radeon_package_authority_docs.py
+
       - name: Display oracle lint calibration
         run: sh scripts/check_display_oracle_usage.sh --self-test
 
@@ -486,17 +498,41 @@ jobs:
           }
           echo "normalized oracles reproduce: 212 base, 213 final, reg_srcs/rs480 apart"
 
-      - name: Upload package and lifecycle evidence
+      - name: Stage the target package artifact
+        run: |
+          set -euo pipefail
+          target_transport="$PACKAGE_WORK/target-transport"
+          [ ! -e "$target_transport" ]
+          mkdir -p "$target_transport"
+          install -m 0644 "$PROD_PACKAGE_PATH" "$target_transport/"
+          target_entries=$(find "$target_transport" -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n')
+          [ "$target_entries" = "$(basename "$PROD_PACKAGE_PATH")" ] || {
+            echo "target transport does not contain exactly the production package" >&2
+            printf '%s\n' "$target_entries" >&2
+            exit 1
+          }
+
+      - name: Upload target package artifact
         if: always() && github.event_name == 'push'
-        # The package archive is the target workflow's immutable input. The
-        # upload condition selects protected-main transport. Pull requests
-        # complete package verification on the runner.
+        # The package archive is the target workflow's immutable input.
+        # Protected-main pushes own transport; pull requests retain no archive.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: radeon-unified-${{ github.sha }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/radeon-package-artifacts
+          path: ${{ runner.temp }}/radeon-package-artifacts/target-transport
           retention-days: 7
-          if-no-files-found: warn
+          if-no-files-found: error
+
+      - name: Upload lifecycle review evidence
+        if: always() && github.event_name == 'push'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: radeon-lifecycle-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/radeon-package-artifacts/lifecycle-evidence-*
+          retention-days: 7
+          if-no-files-found: ignore
 
   # radeon_gem.c carries a LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) split,
   # and both runners run 7.x, so every other compile job takes the 7.x side and

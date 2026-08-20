@@ -119,15 +119,32 @@ TARGET_JOB_ACTION_LINES = (
     UPLOAD_STEP_LINES[2],
 )
 
+GATE_TARGET_STAGE_STEP_LINES = (
+    "      - name: Stage the target package artifact",
+    "        run: |",
+    "          set -euo pipefail",
+    '          target_transport="$PACKAGE_WORK/target-transport"',
+    '          [ ! -e "$target_transport" ]',
+    '          mkdir -p "$target_transport"',
+    '          install -m 0644 "$PROD_PACKAGE_PATH" "$target_transport/"',
+    '          target_entries=$(find "$target_transport" -mindepth 1 -maxdepth 1 \\',
+    "            -type f -printf '%f\\n')",
+    '          [ "$target_entries" = "$(basename "$PROD_PACKAGE_PATH")" ] || {',
+    '            echo "target transport does not contain exactly the production package" >&2',
+    "            printf '%s\\n' \"$target_entries\" >&2",
+    "            exit 1",
+    "          }",
+)
+
 GATE_PACKAGE_UPLOAD_STEP_LINES = (
-    "      - name: Upload package and lifecycle evidence",
+    "      - name: Upload target package artifact",
     "        if: always() && github.event_name == 'push'",
     "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
     "        with:",
     "          name: radeon-unified-${{ github.sha }}-${{ github.run_id }}",
-    "          path: ${{ runner.temp }}/radeon-package-artifacts",
+    "          path: ${{ runner.temp }}/radeon-package-artifacts/target-transport",
     "          retention-days: 7",
-    "          if-no-files-found: warn",
+    "          if-no-files-found: error",
 )
 
 GATE_TRANSITION_UPLOAD_STEP_LINES = (
@@ -201,6 +218,25 @@ def exact_named_step(
     )
 
 
+def named_job(lines: list[str], job_name: str, workflow_name: str) -> list[str]:
+    matches = [
+        (line_index, match.group("name"))
+        for line_index, line in enumerate(lines)
+        if (match := JOB_START.fullmatch(line)) is not None
+    ]
+    starts = [line_index for line_index, name in matches if name == job_name]
+    require(
+        len(starts) == 1,
+        f"{workflow_name} does not contain exactly one {job_name} job",
+    )
+    start = starts[0]
+    end = next(
+        (line_index for line_index, _name in matches if line_index > start),
+        len(lines),
+    )
+    return lines[start:end]
+
+
 def verify_gate_producer(repository: Path) -> None:
     workflow = repository / GATES_WORKFLOW
     require(
@@ -208,8 +244,21 @@ def verify_gate_producer(repository: Path) -> None:
         "gate workflow is absent or indirect",
     )
     lines = workflow.read_text(encoding="utf-8").splitlines()
-    exact_named_step(lines, GATE_TRANSITION_UPLOAD_STEP_LINES, "gate workflow")
-    exact_named_step(lines, GATE_PACKAGE_UPLOAD_STEP_LINES, "gate workflow")
+    package_job = named_job(lines, "package", "gate workflow")
+    steps_markers = [
+        line_index
+        for line_index, line in enumerate(package_job)
+        if line == "    steps:"
+    ]
+    require(len(steps_markers) == 1, "gate package job steps sequence is not unique")
+    blocks = workflow_step_blocks(package_job[steps_markers[0] + 1 :])
+    exact_step_position(blocks, GATE_TRANSITION_UPLOAD_STEP_LINES)
+    stage_position = exact_step_position(blocks, GATE_TARGET_STAGE_STEP_LINES)
+    upload_position = exact_step_position(blocks, GATE_PACKAGE_UPLOAD_STEP_LINES)
+    require(
+        upload_position == stage_position + 1,
+        "target package staging does not immediately precede protected transport",
+    )
 
 
 def target_job(repository_lines: list[str]) -> tuple[list[str], list[str]]:
@@ -492,7 +541,6 @@ def run_self_test(repository: Path) -> None:
             )
         ) + "\n"
         replace_once(path, compile_text, noop_step)
-
     def duplicate_resolver(path: Path) -> None:
         replace_once(path, resolver_text, resolver_text + resolver_text)
 
@@ -565,35 +613,87 @@ def run_self_test(repository: Path) -> None:
     def alternate_binding_sibling(path: Path) -> None:
         move_binding_to_sibling(path, "github.event_name == 'workflow_run'")
 
-    def package_transport_on_pull_requests(path: Path) -> None:
+    def nonfatal_main_transport(path: Path) -> None:
         replace_once(
             path,
+            "      - name: Upload target package artifact\n"
             "        if: always() && github.event_name == 'push'",
-            "        if: always()",
+            "      - name: Upload target package artifact\n"
+            "        if: always() && github.event_name == 'push'\n"
+            "        continue-on-error: true",
         )
 
     def missing_transport_condition(path: Path) -> None:
         replace_once(
             path,
+            "      - name: Upload target package artifact\n"
             "        if: always() && github.event_name == 'push'\n",
-            "",
+            "      - name: Upload target package artifact\n",
         )
 
     def inverted_transport_condition(path: Path) -> None:
         replace_once(
             path,
+            "      - name: Upload target package artifact\n"
             "        if: always() && github.event_name == 'push'",
-            "        if: always() && github.event_name != 'push'",
+            "      - name: Upload target package artifact\n"
+            "        if: always() && github.event_name == 'pull_request'",
         )
 
     def long_package_retention(path: Path) -> None:
         replace_once(
-            path, "          retention-days: 7", "          retention-days: 30"
+            path,
+            "          path: ${{ runner.temp }}/radeon-package-artifacts/target-transport\n"
+            "          retention-days: 7",
+            "          path: ${{ runner.temp }}/radeon-package-artifacts/target-transport\n"
+            "          retention-days: 30",
         )
 
     def long_transition_retention(path: Path) -> None:
         replace_once(
-            path, "          retention-days: 1", "          retention-days: 30"
+            path,
+            "          path: ${{ env.PACKAGE_WORK }}/transition-matrix-logs\n"
+            "          if-no-files-found: ignore\n"
+            "          retention-days: 1",
+            "          path: ${{ env.PACKAGE_WORK }}/transition-matrix-logs\n"
+            "          if-no-files-found: ignore\n"
+            "          retention-days: 30",
+        )
+
+    def empty_target_transport(path: Path) -> None:
+        replace_once(
+            path,
+            '          install -m 0644 "$PROD_PACKAGE_PATH" "$target_transport/"',
+            "          : production package omitted",
+        )
+
+    def broad_target_transport(path: Path) -> None:
+        replace_once(
+            path,
+            "          path: ${{ runner.temp }}/radeon-package-artifacts/target-transport",
+            "          path: ${{ runner.temp }}/radeon-package-artifacts",
+        )
+
+    def upload_before_staging(path: Path) -> None:
+        text = path.read_text(encoding="utf-8")
+        stage_header = GATE_TARGET_STAGE_STEP_LINES[0]
+        upload_header = GATE_PACKAGE_UPLOAD_STEP_LINES[0]
+        next_header = "      - name: Upload lifecycle review evidence"
+        require(text.count(stage_header) == 1, "stage step anchor is not unique")
+        require(text.count(upload_header) == 1, "upload step anchor is not unique")
+        require(text.count(next_header) == 1, "next step anchor is not unique")
+        stage_start = text.index(stage_header)
+        upload_start = text.index(upload_header)
+        next_start = text.index(next_header)
+        require(
+            stage_start < upload_start < next_start,
+            "gate producer steps are not in their fixture order",
+        )
+        stage_block = text[stage_start:upload_start]
+        upload_block = text[upload_start:next_start]
+        path.write_text(
+            text[:stage_start] + upload_block + stage_block + text[next_start:],
+            encoding="utf-8",
         )
 
     mutations = (
@@ -605,29 +705,33 @@ def run_self_test(repository: Path) -> None:
         ("different workflow run", wrong_run),
         ("different artifact name", wrong_artifact_name),
         ("alternate admission digest source", alternate_admission_source),
-        ("long target evidence retention", long_target_retention),
-        ("missing target evidence retention", missing_target_retention),
-        ("target evidence upload before compile", upload_before_target_compile),
-        ("target compile producer replaced by no-op", replace_compile_producer_with_noop),
         ("duplicate resolver", duplicate_resolver),
         ("missing API token binding", omit_token_binding),
         ("disabled target job", disable_target_job),
         ("binding moved to disabled sibling job", disabled_binding_sibling),
         ("binding moved to alternate job", alternate_binding_sibling),
+        ("long target evidence retention", long_target_retention),
+        ("missing target evidence retention", missing_target_retention),
+        ("target evidence upload before compile", upload_before_target_compile),
+        ("target compile producer replaced by no-op", replace_compile_producer_with_noop),
     )
     for name, mutation in mutations:
         expect_rejection(repository, name, mutation)
     gate_mutations = (
-        ("package transport on pull requests", package_transport_on_pull_requests),
+        ("nonfatal protected-main transport", nonfatal_main_transport),
         ("missing protected-main transport condition", missing_transport_condition),
         ("inverted protected-main transport condition", inverted_transport_condition),
+        ("empty target transport", empty_target_transport),
+        ("broad target transport namespace", broad_target_transport),
+        ("target upload before staging", upload_before_staging),
         ("long package transport retention", long_package_retention),
         ("long transition log retention", long_transition_retention),
     )
     for name, mutation in gate_mutations:
         expect_gate_rejection(repository, name, mutation)
     print(
-        "Target artifact workflow calibration: 1 known-good and 22 known-bad fixtures"
+        "Target artifact workflow calibration: "
+        f"1 known-good and {len(mutations) + len(gate_mutations)} known-bad fixtures"
     )
 
 

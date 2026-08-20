@@ -58,7 +58,9 @@ COLUMNS = [
 TOP_LEVEL = re.compile(
     r"^\+(?:[A-Za-z_][\w \t*]*?)\b(?P<name>[A-Za-z_]\w*)\s*(?:\(|\[|=|\{)"
 )
-MODULE_PARAM = re.compile(r"^\+module_param_named\((?P<name>\w+)")
+MODULE_PARAM = re.compile(
+    r"^\+module_param(?:_named)?\((?P<name>\w+)"
+)
 DEBUGFS_NODE = re.compile(r'^\+.*debugfs_create_file\("(?P<name>[^"]+)"')
 HUNK = re.compile(r"^@@ ")
 FILE_HEADER = re.compile(r"^\+\+\+ b/(?P<path>\S+)")
@@ -178,15 +180,19 @@ def self_test() -> int:
         "--- a/radeon/rs400.c\n+++ b/radeon/rs400.c\n@@ -1,3 +1,8 @@\n"
         " int keep;\n+static int rs480_probe_count;\n"
         "+module_param_named(rs480_probe, rs480_probe_count, int, 0444);\n"
+        "+module_param(rs480_reset_mask, uint, 0644);\n"
         '+\tdebugfs_create_file("rs480_probe", 0444, root, rdev, &fops);\n'
         "+int rs480_read_probe(void)\n+{\n-int drop;\n int tail;\n"
     )
     e = patch_effects(good)
     check("file header parsed", e["files"] == ["radeon/rs400.c"])
     check("hunk counted", e["hunks"] == 1)
-    check("added and removed counted", (e["added"], e["removed"]) == (5, 1))
+    check("added and removed counted", (e["added"], e["removed"]) == (6, 1))
     check("new symbol found", "rs480_read_probe" in e["symbols"])
-    check("module parameter found", e["params"] == ["rs480_probe"])
+    check(
+        "named and bare module parameters found",
+        e["params"] == ["rs480_probe", "rs480_reset_mask"],
+    )
     check("debugfs node found", e["nodes"] == ["rs480_probe"])
 
     with tempfile.TemporaryDirectory() as td:
