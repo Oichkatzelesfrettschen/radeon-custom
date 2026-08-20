@@ -1,7 +1,7 @@
 schema = 1
 package_name = "radeon-unified-dkms"
 package_version = "0.8.9"
-package_release = 1
+package_release = 2
 source_repository = "Oichkatzelesfrettschen/linux-radeon-gororoba"
 source_commit = "164167950d0f749468474536dd76045fddedc8b7"
 repository_tree = "0dff8538e0dc550092fe14cf0f9edd8a38370b59"

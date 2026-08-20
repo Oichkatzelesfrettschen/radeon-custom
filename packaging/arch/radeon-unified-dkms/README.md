@@ -87,9 +87,11 @@ bash scripts/verify_radeon_unified_dkms_sources.sh \
 )
 
 package_dir=packaging/arch/radeon-unified-dkms
-prod_package="$package_dir/radeon-unified-dkms-0.8.2-1-x86_64.pkg.tar.zst"
-dev_package="$package_dir/radeon-unified-dkms-dev-0.8.2-1-x86_64.pkg.tar.zst"
-policy_package="$package_dir/radeon-rs482-policy-0.8.2-1-x86_64.pkg.tar.zst"
+source "$package_dir/PKGBUILD"
+package_version="${pkgver}-${pkgrel}"
+prod_package="$package_dir/radeon-unified-dkms-${package_version}-x86_64.pkg.tar.zst"
+dev_package="$package_dir/radeon-unified-dkms-dev-${package_version}-x86_64.pkg.tar.zst"
+policy_package="$package_dir/radeon-rs482-policy-${package_version}-x86_64.pkg.tar.zst"
 
 for package in "$prod_package" "$dev_package"
 do
@@ -114,128 +116,11 @@ identical content bumps pkgrel. Each pkgver carries a matching signed
 profiled-source tag radeon-unified-<pkgver>-profiled-source whose peeled
 commit equals source_commit.
 
-## Target validation
+## Qualification authority
 
-0.8.9-1 advances the source pin to linux-radeon-gororoba 1641679 (the
-RS480 cache CTLSTAT one-shot readers radeon_rs480_rb3d_cache_arm for
-0x4E4C and radeon_rs480_zb_cache_arm for 0x4F18: each consumes its own
-exact token by cmpxchg before the hardware lock, the read refuses while
-RBBM_STATUS GUI_ACTIVE stands, and a module-instance cohort latch admits
-one cache register per load, so the two registers debut on separate
-boots by construction.  The passive rb3d candidate snapshot retires and
-0x4F18 leaves the zb snapshot list, so neither register is reachable
-without a token; the shared policy denominators advance to 24 features,
-28 parameters, 38 debugfs files; profiled-source tag object
-3bf1c5b3cc4b).  The pinned source compiles as prod, probe-dev, and
-mutate-dev against 7.1.8-1-cachyos in the source repository's
-module-build gates.  Target install, reboot, loaded-module
-verification, and the first armed 0x4E4C read under its named color
-workload control are pending.
-
-0.8.8-1 advanced the source pin to linux-radeon-gororoba 2e70498 (the
-VAP burst census radeon_rs480_vap_status_burst_census, transport
-rs482-vap-burst-census/1: back-to-back 0x2140 reads under the verified
-FORCE_VAP forced-clock lease with one anchor timestamp per 256-word
-block, own VAPB arm token, mutate-dev registration; every other node
-is byte-identical to the 0.8.7 pin, and the shared policy denominators
-advance to 23 features, 26 parameters, 37 debugfs files; profiled-
-source tag object 21cff0d5c9b8).  Target validation completed: the dev
-and policy packages installed in one pacman transaction, the host
-rebooted to boot 039f3528, the loaded module verified at srcversion
-F191B0B0349A3B1BA2B3DF3, and the disarmed-floor read of the burst node
-returned partial_disarmed with the arm parameter unchanged.  The
-replicated burst-grain fetch-width pair then ran eight burst-64 legs at
-16384 words per lease, every leg byte-exact.
-
-0.8.7-1 advances the source pin to linux-radeon-gororoba e2528ea (the
-VAP census force gate narrowed to FORCE_VAP, the sampled register's own
-clock domain: 0x2140 is a VAP-domain register, TCL, CBA, and GA sit
-downstream of VAP and feed no part of an MMIO status read, and 0x2140
-returned 0x00000100 through the plain candidate_vap path on RS482 boots
-6f1b215c and 61b17f6a while SCLK_CNTL2 read 0x00000000, so the
-downstream force set leaves the sampling precondition on two-boot
-evidence; transport rs482-vap-status-census/1 ABI minor 1, which
-retires the combined force bit and reports the sample-domain gate and
-the two whole-mask observations separately.  It also carries the
-mutate-dev node radeon_rs480_pll_write_probe, disarmed at index -1,
-which clears SCLK_CNTL FORCE_VIP and reads it back to establish whether
-WREG32_PLL lands on this device; profiled-source tag object
-c47e6aac316d).  The paired-status census and one-shot observer
-functions are byte-identical to the 0.8.6 pin.  The pinned source
-compiles as prod, probe-dev, and mutate-dev against 7.1.8-1-cachyos in
-the source repository's module-build gates.  Validated on target: the
-package installed and booted on the RS482 host (boot 75950e1f), the
-loaded module verified, the disarmed floor held, complete 256- and
-4096-record VAP censuses acquired under the minor 1 contract, and the
-FORCE_VIP write-path probe observed WREG32_PLL landing with exact
-restoration.
-
-0.8.6-1 advances the source pin to linux-radeon-gororoba e03c1d2 (the
-VAP_CNTL_STATUS census radeon_rs480_vap_status_census: a mutate-dev
-binary node capturing 0x2140 inside one verified forced-clock lease
-of SCLK snapshot, 3D force-mask write, forced-readback verification,
-settle, bounded reads, CNTL2-first restore, and restored-readback
-verification, held under rdev->pm.mutex and the hardware transaction
-lock, armed by the exact VAPC token; transport
-rs482-vap-status-census/1; profiled-source tag object 0f8d537fbafd).
-The paired-status census and one-shot observer functions are
-byte-identical to the 0.8.5 pin. The pinned source compiles as prod,
-probe-dev, and mutate-dev against 7.1.8-1-cachyos in the source
-repository's module-build gates. Target install, reboot,
-loaded-module verification, and the attended VAP census cells are
-pending.
-
-0.8.5-1 advances the source pin to linux-radeon-gororoba cc91fbc (the
-paired-status census radeon_rs480_paired_status_census conformed to
-transport ABI minor 1: gate-before-token -EBUSY, completed-bounded
-published length, between-record signal and duration aborts,
-partial_disarmed status, truthful BB CP_FIRST, nonseekable transport;
-profiled-source tag object 68644aff9da7). The one-shot observer
-function is byte-identical to the 0.8.4 pin, so an experiment plan
-naming this package covers both the observed one-shot cell and the
-census calibrations in one boot. The pinned source compiles as prod
-against 7.1.8-1-cachyos via check_radeon_pinned_source_compiles.sh.
-Target install, reboot, loaded-module verification of both nodes, and
-the attended cells are pending.
-
-0.8.4-1 advances the source pin to linux-radeon-gororoba ca6bad0 (the
-one-shot RBBM/CP_STAT paired status reader radeon_rs480_cp_status and
-the parallel Kbuild module build; profiled-source tag object
-e3b2dd16b3b1). The pinned source compiles as prod against 7.1.8-1-cachyos
-via check_radeon_pinned_source_compiles.sh. Target install, reboot,
-loaded-module verification of the observer node, and the attended
-CP_STAT-observed cell are pending; the 0.8.3-1 record below is the
-latest completed target validation, and the 0.8.3 tuple re-run it lists
-as pending completed CARRIER_DELIVERED on the loaded validator.
-
-0.8.3-1 advances the source pin to linux-radeon-gororoba 74cc62c (the
-ATOM/COMBIOS bounds-hardening series and the FLOAT_2 XY01
-synthesized-lane width validator; profiled-source tag object
-c6160832bf9d). The pinned source compiles as prod against
-7.1.8-1-cachyos via check_radeon_pinned_source_compiles.sh. Target
-install, reboot, loaded-module verification, and the attended one-shot
-tuple re-run through the loaded validator are pending; the record below
-remains the latest completed target validation.
-
-
-The 0.8.1-4 production archive has SHA256
-`5712a92f9937aad6f1e11525944648ef3376347c6ace65553c13a85fc7eaa362`. The
-development archive has SHA256
-`28951fdb004cdd35b00cbd70ff2f6705673d666916120b0399fbfd13cdb7ed13`. The
-RS482 policy archive has SHA256
-`451b411b81cb96e82ef66d67bef37ca4636d78d71473ade76bc7daf96f69ba13`.
-
-The production and policy archives install through one pacman transaction and
-rebuild `radeon-unified` for `7.1.3-2-cachyos` and
-`6.18.38-2-cachyos-lts`. A normal reboot on the RS482 target reaches boot ID
-`3b33587b-f825-4698-82a0-2ad40b20b7f7`. The loaded Radeon module reports
-srcversion `E07FCCC3BAFFB29C7CFD36B`, kernel logs record successful ring and
-indirect buffer tests, 512 MiB GART initialization, and Radeon modesetting,
-and the runtime keeps `lockup_timeout=0` and `no_wb=1`.
-
-This result validates package installation, DKMS generation, initramfs refresh,
-and ordinary boot modesetting on the target. It does not establish workload
-performance, conformance, reset recovery, or safety of a hazardous operation.
+Root `README.md` owns the package qualification ledger and the active package
+identity. This package README owns build and verification mechanics and carries
+no independent promotion record.
 
 The package verifier checks metadata, root ownership, member types and modes,
 the complete archive namespace, every installed Radeon byte, the selected

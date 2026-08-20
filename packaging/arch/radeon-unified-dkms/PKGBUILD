@@ -3,7 +3,7 @@
 pkgbase=radeon-unified-dkms
 pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev' 'radeon-rs482-policy')
 pkgver=0.8.9
-pkgrel=1
+pkgrel=2
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/linux-radeon-gororoba'
 license=('GPL-2.0-only')
@@ -74,8 +74,8 @@ sha256sums=('SKIP'
             '2133f7e0926032a91d8c55211a4dad9cdf16d188e2bab24c2b70f68d464c24b0'
             '823bf5fa08303a580df5b15e19a8c0714472c2002f34559ac10f15f76304e40e'
             'ad069e905cab0f8498248485a6194355d3890803b7b7e30340e232b14fc16a3c'
-            '4a278eff937fc7a3e4a6148faf73aed9766f265c6dc146299b719c14e986faf3'
-            'cd8a191513ae72180da018d00a86bf2587585d19482fdcc1055dbf3c12d590f5'
+            '5c4fe4d45123911cd637cdce5635d6011be96c6e8d48ee12c19523b675d7c2c7'
+            '847ba53ab3d5a298b863bb08112ec604829b76d52504c57349370d38944c0a64'
             '9ff410113e0f411504fee3dd68dc3022f4b4de52f61ec894a5580d82b9343d12'
             'bdb83567faff5c19e70839fa59ca9621f32a42608a6f73c279ffc2f8ae295f7d'
             'dd7dcb0c9a286c16505d22a61ce9a682919bab90785cc79a6f0cfecfb135db67'
@@ -130,9 +130,9 @@ prepare() {
     "refs/tags/${_profiled_source_tag}^{}")
   [[ ${actual} == "${_source_commit}" ]] ||
     { printf 'profiled source tag peel mismatch: %s\n' "${actual}" >&2; return 1; }
-  # The package-owned allowlist decides which signer the tag must carry, and
-  # the explicit -c overrides keep the verdict independent of any build-host
-  # git configuration.
+  # The package-owned allowlist decides which signer both authority tags must
+  # carry. The explicit -c overrides keep the verdict independent of any
+  # build-host git configuration.
   git -C "${srcdir}/radeon-source" \
     -c gpg.format=ssh \
     -c gpg.ssh.allowedSignersFile="${srcdir}/radeon-source-tag-allowed-signers" \
@@ -146,6 +146,11 @@ prepare() {
     "refs/tags/${_equivalence_tag}^{}")
   [[ ${actual} == "${_equivalence_commit}" ]] ||
     { printf 'equivalence tag peel mismatch: %s\n' "${actual}" >&2; return 1; }
+  git -C "${srcdir}/radeon-source" \
+    -c gpg.format=ssh \
+    -c gpg.ssh.allowedSignersFile="${srcdir}/radeon-source-tag-allowed-signers" \
+    verify-tag "${_equivalence_tag}" ||
+    { printf 'equivalence tag does not verify against the release signers\n' >&2; return 1; }
   git -C "${srcdir}/radeon-source" merge-base --is-ancestor \
     "${_equivalence_commit}" "${_source_commit}" ||
     { printf 'source commit does not descend from equivalence tag\n' >&2; return 1; }

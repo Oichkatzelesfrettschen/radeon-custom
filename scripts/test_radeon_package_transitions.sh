@@ -5,10 +5,11 @@
 # production install, production-to-development replacement, development
 # profile selection, the production admission refusal while a development
 # override survives, override cleanup at development removal, and foreign
-# override retention. Without --with-kernel the chroot carries no DKMS
-# kernel target, the hooks no-op, and every assertion is about package,
-# source-tree, and modprobe identity; --with-kernel adds a real kernel and
-# asserts the built module's profile, vermagic, and DKMS state per row.
+# override retention. Without --with-kernel the chroot carries no DKMS kernel
+# target and same-name /dev/null links suppress the stock DKMS hooks. Every
+# assertion in that lane covers package, source-tree, and modprobe identity.
+# --with-kernel retains the stock hooks and asserts the built module's profile,
+# vermagic, and DKMS state per row.
 # --temp-root selects an existing writable directory for the disposable root.
 # Without it, RUNNER_TEMP, TMPDIR, or /var/tmp supplies the temporary parent.
 set -euo pipefail
@@ -26,6 +27,33 @@ validate_temp_root() {
     local candidate=$1
 
     [[ -d $candidate && ! -L $candidate && -w $candidate ]]
+}
+
+dkms_hooks=(
+    70-dkms-install.hook
+    70-dkms-upgrade.hook
+    71-dkms-remove.hook
+)
+
+install_dkms_hook_suppression() {
+    local fixture_root=$1
+    local dkms_hook
+
+    install -d "$fixture_root/etc/pacman.d/hooks"
+    for dkms_hook in "${dkms_hooks[@]}"; do
+        ln -s /dev/null "$fixture_root/etc/pacman.d/hooks/$dkms_hook"
+    done
+}
+
+verify_dkms_hook_suppression() {
+    local fixture_root=$1
+    local dkms_hook
+
+    for dkms_hook in "${dkms_hooks[@]}"; do
+        [[ -L $fixture_root/etc/pacman.d/hooks/$dkms_hook ]] || return 1
+        [[ $(readlink "$fixture_root/etc/pacman.d/hooks/$dkms_hook") == /dev/null ]] ||
+            return 1
+    done
 }
 
 write_fixture_pacman_config() {
@@ -60,7 +88,7 @@ write_fixture_pacman_config() {
 }
 
 run_self_test() {
-    local expected_config filtered_config raw_config tmpdir
+    local expected_config filtered_config hook_fixture raw_config tmpdir
 
     tmpdir=$(mktemp -d "${TMPDIR:-/var/tmp}/radeon-package-transitions-self-test.XXXXXX")
     trap 'rm -rf -- "$tmpdir"' RETURN
@@ -128,8 +156,17 @@ run_self_test() {
         write_fixture_pacman_config /fixture-root >/dev/null; then
         die "fixture repository filter accepts duplicate extra repositories"
     fi
+    hook_fixture="$tmpdir/hook-fixture"
+    install_dkms_hook_suppression "$hook_fixture"
+    verify_dkms_hook_suppression "$hook_fixture" ||
+        die "hook suppression verifier rejects the known-good links"
+    ln -sfn /tmp/not-dev-null \
+        "$hook_fixture/etc/pacman.d/hooks/70-dkms-upgrade.hook"
+    if verify_dkms_hook_suppression "$hook_fixture"; then
+        die "hook suppression verifier accepts a wrong link target"
+    fi
     printf '%s\n' \
-        'radeon package transition calibration: 2 known-good and 6 known-bad cases'
+        'radeon package transition calibration: 3 known-good and 7 known-bad cases'
 }
 
 prod_package=
@@ -358,13 +395,9 @@ if [[ $with_kernel -eq 0 ]]; then
     # Package-only rows carry no kernel target, so the stock DKMS install,
     # upgrade, and removal hooks have no verdict role. The --with-kernel lane
     # retains those hooks and asserts their real module outputs.
-    install -d "$root/etc/pacman.d/hooks"
-    for dkms_hook in \
-        70-dkms-install.hook \
-        70-dkms-upgrade.hook \
-        71-dkms-remove.hook; do
-        ln -s /dev/null "$root/etc/pacman.d/hooks/$dkms_hook"
-    done
+    install_dkms_hook_suppression "$root"
+    verify_dkms_hook_suppression "$root" ||
+        die "stock DKMS hook suppression is incomplete"
 fi
 if [[ $with_kernel -eq 1 ]]; then
     # pacstrap installs the kernel without a bootloader flow, so no

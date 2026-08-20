@@ -139,6 +139,8 @@ if [ "$self_test" -eq 1 ]; then
   TMP=$(mktemp -d)
   trap 'rm -rf "$TMP"' EXIT INT TERM
   fails=0
+  known_bad=0
+  known_good=0
   echo "patch-series gate calibration:"
 
   # Known-bad: dkms.conf carries no parseable PATCH[] entry, so nothing applies.
@@ -146,8 +148,12 @@ if [ "$self_test" -eq 1 ]; then
     'PACKAGE_NAME="radeon-unified"
 # PATCH[0]="0001-fixture.patch"' \
     "foo.c"
-  expect_exit 2 "unparseable PATCH[] array" "$TMP/no_patch_entries" \
-    --require-compile || fails=$((fails + 1))
+  if expect_exit 2 "unparseable PATCH[] array" "$TMP/no_patch_entries" \
+      --require-compile; then
+    known_bad=$((known_bad + 1))
+  else
+    fails=$((fails + 1))
+  fi
 
   # Known-bad: the series applies, and it touches no C translation unit, so the
   # compile step would have run against an empty object list.
@@ -155,8 +161,12 @@ if [ "$self_test" -eq 1 ]; then
     'PACKAGE_NAME="radeon-unified"
 PATCH[0]="0001-fixture.patch"' \
     "notes.txt"
-  expect_exit 2 "series touching no C translation unit" "$TMP/no_touched_units" \
-    --require-compile || fails=$((fails + 1))
+  if expect_exit 2 "series touching no C translation unit" "$TMP/no_touched_units" \
+      --require-compile; then
+    known_bad=$((known_bad + 1))
+  else
+    fails=$((fails + 1))
+  fi
 
   # Known-good shape: a series that applies and touches a C unit clears both
   # parse guards and reaches the compile stage.
@@ -164,25 +174,43 @@ PATCH[0]="0001-fixture.patch"' \
     'PACKAGE_NAME="radeon-unified"
 PATCH[0]="0001-fixture.patch"' \
     "foo.c"
-  expect_not_exit 2 "series touching a C translation unit" "$TMP/well_formed" \
-    --require-compile || fails=$((fails + 1))
+  if expect_not_exit 2 "series touching a C translation unit" "$TMP/well_formed" \
+      --require-compile; then
+    known_good=$((known_good + 1))
+  else
+    fails=$((fails + 1))
+  fi
 
   # Build-root resolution. Each case names a way the root can be wrong, and the
   # gate distinguishes them: an option carrying no value is a usage error, an
   # absent root is a missing prerequisite the strict mode refuses to skip, and a
   # directory lacking the Kbuild surface is an invalid root rather than an
   # absent one.
-  expect_exit 2 "--kernel-build-root without an argument" "$TMP/well_formed" \
-    --require-compile --kernel-build-root || fails=$((fails + 1))
+  if expect_exit 2 "--kernel-build-root without an argument" "$TMP/well_formed" \
+      --require-compile --kernel-build-root; then
+    known_bad=$((known_bad + 1))
+  else
+    fails=$((fails + 1))
+  fi
 
-  expect_exit 5 "explicit nonexistent root under --require-compile" "$TMP/well_formed" \
-    --require-compile --kernel-build-root "$TMP/absent" || fails=$((fails + 1))
+  if expect_exit 5 "explicit nonexistent root under --require-compile" \
+      "$TMP/well_formed" --require-compile \
+      --kernel-build-root "$TMP/absent"; then
+    known_bad=$((known_bad + 1))
+  else
+    fails=$((fails + 1))
+  fi
 
   # A directory that exists and carries none of the Kbuild surface. The gate
   # reports the first missing file rather than entering make.
   mkdir -p "$TMP/stub_root"
-  expect_exit 2 "existing directory missing the prepared-kernel surface" "$TMP/well_formed" \
-    --require-compile --kernel-build-root "$TMP/stub_root" || fails=$((fails + 1))
+  if expect_exit 2 "existing directory missing the prepared-kernel surface" \
+      "$TMP/well_formed" --require-compile \
+      --kernel-build-root "$TMP/stub_root"; then
+    known_bad=$((known_bad + 1))
+  else
+    fails=$((fails + 1))
+  fi
 
   # The environment path resolves the same way the option does, and without
   # --require-compile an absent root reports NOT RUN and exits 0 so the apply
@@ -193,6 +221,7 @@ PATCH[0]="0001-fixture.patch"' \
     >"$TMP/well_formed/env.log" 2>&1 || got=$?
   if [ "$got" -eq 0 ] && grep -q '^NOT RUN: ' "$TMP/well_formed/env.log"; then
     echo "  ok: absent environment root without strict mode reports NOT RUN and exits 0"
+    known_good=$((known_good + 1))
   else
     echo "  CALIBRATION FAIL: absent environment root without strict mode" >&2
     sed 's/^/    /' "$TMP/well_formed/env.log" >&2
@@ -210,6 +239,8 @@ PATCH[0]="0001-fixture.patch"' \
      ! scan_compile_warnings "$TMP/bad.log" 2>/dev/null && \
      ! scan_compile_warnings "$TMP/bad-uppercase.log" 2>/dev/null; then
     echo "  ok: warning scan passes clean and allowlisted logs, fails on lowercase and uppercase warnings"
+    known_bad=$((known_bad + 1))
+    known_good=$((known_good + 2))
   else
     echo "  CALIBRATION FAIL: warning scan verdicts" >&2
     fails=$((fails + 1))
@@ -219,7 +250,7 @@ PATCH[0]="0001-fixture.patch"' \
     echo "patch-series gate calibration: FAIL ($fails)" >&2
     exit 1
   fi
-  echo "patch-series gate calibration: 6 known-bad rejected, 4 known-good cleared"
+  echo "patch-series gate calibration: $known_bad known-bad rejected, $known_good known-good cleared"
   exit 0
 fi
 

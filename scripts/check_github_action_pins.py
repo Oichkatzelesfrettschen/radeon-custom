@@ -48,6 +48,7 @@ EXPECTED_WORKFLOW_ACTIONS = {
         "actions/checkout",
         "actions/upload-artifact",
         "actions/upload-artifact",
+        "actions/upload-artifact",
         "actions/checkout",
     ),
     ".github/workflows/target-kernel.yml": (

@@ -1,14 +1,16 @@
 # Provenance and migration record
 
-This repository consolidates the Radeon DKMS work that was developed in the
+This document records the historical consolidation of Radeon DKMS work from the
 Steinmarder reverse-engineering trees. The originals remain part of the evidence
-and historical record; `radeon-custom` is the single active kernel build source.
+record. `linux-radeon-gororoba` owns the active kernel source, and
+`radeon-custom` owns the source pin, package, deployment policy, and retained
+migration inputs.
 
 ## Sources consolidated
 
 | `radeon-custom` path | Origin and disposition |
 | --- | --- |
-| `patches/`, `sources/`, `scripts/`, `packaging/`, `docs/` | `steinmarder/src/re/radeon/` unified-DKMS corpus; migrated into the active source tree |
+| `patches/`, `sources/`, `scripts/`, `packaging/`, `docs/` | `steinmarder/src/re/radeon/` unified-DKMS corpus; migrated into the retained package and provenance tree |
 | folded into the unified series | `steinmarder-r300:src/re/r300/PKGBUILDs/radeon-rs480-safe-regs-dkms/`; superseded package identity, retained as provenance |
 | folded into the unified series | historical `radeon-palm-gate-dkms` staging tree; superseded package identity, retained as provenance |
 
@@ -17,8 +19,9 @@ identities and conflicts with the old DKMS packages. They must not be treated as
 three independently maintained module sources.
 
 Upstream reference trees are consulted in place and are not vendored wholesale
-here. The active patch and package mechanism is determined by this repository's
-manifest, not by a copied reference tree.
+here. The signed source pin selects the active source repository commit. The
+historical patch manifests preserve reconstruction provenance and do not define
+the active package payload.
 
 ## Excluded from the migration
 
@@ -49,8 +52,9 @@ GPU recovery. The current evidence verdict is owned by
 
 ## Source-authority rules
 
-- This repository is authoritative for patch contents, ordering, packaging,
-  dependencies, and safe defaults.
+- `linux-radeon-gororoba` is authoritative for active kernel source.
+- This repository is authoritative for the signed source pin, historical patch
+  contents and order, packaging, dependencies, and safe defaults.
 - `steinmarder-r300` is authoritative for what executed on RS482 silicon and the
   verdict assigned to that run.
 - `mesa-26-gororoba` is authoritative for r300g/r3v userspace behavior.

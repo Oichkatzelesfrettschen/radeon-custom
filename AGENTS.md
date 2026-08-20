@@ -54,8 +54,9 @@ nearest principle.
 
 ### Boundary and paths
 
-- `radeon-custom` owns kernel code, package contents, patch order,
-  dependencies, and safe defaults. `steinmarder-r300` owns RS482 probes,
+- `linux-radeon-gororoba` owns active kernel code. `radeon-custom` owns the
+  signed source pin, package contents, historical patch order, dependencies,
+  and safe defaults. `steinmarder-r300` owns RS482 probes,
   evidence bundles, falsifiers, and hardware verdicts. `mesa-26-gororoba` owns
   r300g/r3v userspace behavior. Every file keeps its home repository; a
   kernel fix may cite sibling evidence, and the code lands here.
@@ -201,8 +202,9 @@ nearest principle.
 
 ## Project scope and priorities
 
-`radeon-custom` is the single active out-of-tree Radeon DRM/DKMS source for the
-RS480/RS482/RS485 and Palm/Wrestler safety and reverse-engineering lanes.
+`linux-radeon-gororoba` is the active out-of-tree Radeon DRM source.
+`radeon-custom` is the package and deployment authority for the RS480/RS482/RS485
+and Palm/Wrestler safety and reverse-engineering lanes.
 `README.md` carries the package layout, build commands, and status table.
 
 Priority order is fixed: host safety, containment, evidence fidelity,

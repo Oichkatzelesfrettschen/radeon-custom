@@ -29,15 +29,15 @@ module. It does not by itself prove those mechanisms worked on silicon.
 Each row preserves the qualification state of its package. The newest
 successfully deployed package row supersedes an older deployment authority
 statement. A newer recipe without installation evidence does not. Three
-version axes remain distinct: 0.8.1-4 is the active source pin, package
-recipe, and installed production deployment, 0.8.2-1 is a local-only
-allocator-debugfs package candidate, and 0.6-1 carries the latest retained
-parked device behavior verdict.
+version axes remain distinct. Version 0.8.9-2 is the active package recipe,
+version 0.8.8-1 carries the newest recorded target run pending a retained
+bundle join, and version 0.6-1 carries the retained parked-device behavior
+verdict.
 
 <!-- markdownlint-disable MD013 -->
 
-Rows naming 0.8.1-3 below describe the prior recipe and its qualification
-record. The 0.8.1-4 row is the current recipe record.
+Rows naming older revisions preserve their qualification records. The
+0.8.9-2 row is the current recipe record.
 
 | Property | Current status |
 | --- | --- |
@@ -49,6 +49,14 @@ record. The 0.8.1-4 row is the current recipe record.
 | Radeon DKMS package recipe 0.8.1-3 pins the signed `radeon-unified-0.8.1-profiled-source` checkpoint at source commit `ec5b88802441720b0b972b1b2a92e53171094f31` and driver tree `6fd8d3c6ec245c31f195ef86c15fadf5e206642d` | source pin verification, split package profile checks, package-input checksum verification, and source/profile self-tests pass at the packaging commit. Hosted gate run `31467145067` records production archive SHA256 `148dc5fccaa4c15b7f39dcbf23f70b49c049d36c492376aa75c39f85e4d21879` and development archive SHA256 `832f5a0e014ae514db65f8f318efb96ffd95c6b673df4aaec44636fed133a822`; both disposable DKMS lifecycles pass on `7.1.6-1-cachyos`. The transition gate passes the supplied production, development, and RS482 policy rows. Legacy rollback row 9 is not run because no legacy package is supplied, hazard-stack row 11 is not run because no hazard or watchdog packages are supplied, and kernel rows are not run because `--with-kernel` is omitted. The repository carries no 0.8.1-3 release signature, package installation record, loaded module identity, controlled workload, or silicon verdict. At that qualification point, version 0.8.1-3 is the active package recipe and target compile authority, while version 0.7-1 remains the loaded production authority |
 | Radeon DKMS package recipe 0.8.1-4 closes the inherited Kbuild environment and package-controlled Make assignment boundary | local source pin, profile, checksum, composition, package verifier, and pinned-source compile gates pass; GNU Make 4.4.1 and the CachyOS package `make` 4.4.1-3.1 are current on the build workstation and the RS482 target, so no package update or CMake migration is part of this change. The final archives have SHA256 values `5712a92f9937aad6f1e11525944648ef3376347c6ace65553c13a85fc7eaa362` for production, `28951fdb004cdd35b00cbd70ff2f6705673d666916120b0399fbfd13cdb7ed13` for development, and `451b411b81cb96e82ef66d67bef37ca4636d78d71473ade76bc7daf96f69ba13` for the RS482 policy. The production and policy archives install and rebuild DKMS for `7.1.3-2-cachyos` and `6.18.38-2-cachyos-lts`, then boot on the exact RS482 target with boot ID `3b33587b-f825-4698-82a0-2ad40b20b7f7`, loaded Radeon srcversion `E07FCCC3BAFFB29C7CFD36B`, successful ring and IB tests, initialized 512 MiB GART, and successful Radeon modesetting. The run keeps `lockup_timeout=0`, `no_wb=1`, and all hazard paths closed. This is an installed, hardware-run boot and modeset result. It does not establish performance, conformance, reset recovery, or hazardous-operation safety |
 | Radeon DKMS package candidate 0.8.2-1 pins the local signed `radeon-unified-0.8.2-profiled-source` checkpoint at source commit `6407ae6ee1bdd23d64c0657cced20d3a03226b06` and driver tree `6f3e3d2e4aec146aa6cd491416668ee096b94bb8` | the candidate contains the central primary-minor registration of `radeon_vram_mm` and `radeon_gtt_mm` required for the bounded allocator observation. Its source tag verifies locally against the package-owned release allowlist and source-static run `31450360220` succeeded at the pinned commit. Exact local production, development, and policy archives pass archive QA, source-export verification, both profile builds against the declared 6.18.38-2 and 7.1.4 kernel roots, two disposable DKMS lifecycles on the local 7.1.6 root, and the disposable package-transition matrix. These are local build checks only: the tag is not published, no archive or detached package signature is retained as release evidence, and no target installation, reboot, allocator event, allocation-pressure trial, workload, or silicon verdict is claimed. It remains a local build candidate until publication and the separate release gates complete. |
+| Radeon DKMS package recipe 0.8.3-1 pins `radeon-unified-0.8.3-profiled-source` at source commit `74cc62c478bd11778ae398d6d1e5f5f43a12fa7a` and driver tree `4d5217ea558320801dde0ef8ce2d8ffdb7a21ba9` | the pin carries the ATOM and COMBIOS bounds hardening and the FLOAT_2 XY01 synthesized-lane width validator. The production profile compiles against 7.1.8-1-cachyos. Target installation, reboot, loaded-module identity, and the attended tuple run are not run for this package record. |
+| Radeon DKMS package recipe 0.8.4-1 pins `radeon-unified-0.8.4-profiled-source` at source commit `ca6bad052ceb718ce0814c020f71f01c710dbe0e` and driver tree `cf89588ab90a763e30cd00b9cfcdf9b7291fe660` | the pin carries the one-shot `radeon_rs480_cp_status` RBBM and CP_STAT paired reader and the parallel Kbuild module build. The production profile compiles against 7.1.8-1-cachyos. Target installation, reboot, loaded-module identity, and the attended CP_STAT observation are not run. |
+| Radeon DKMS package recipe 0.8.5-1 pins `radeon-unified-0.8.5-profiled-source` at source commit `cc91fbcccfca4478e5f8f1b505a52da74c7af6fe` and driver tree `dc473f6f0010805a5a5ecb0ad9445417f43f72b8` | the pin carries ABI minor 1 of `radeon_rs480_paired_status_census`, including gate-before-token refusal, bounded published length, abort status, truthful BB CP_FIRST, and nonseekable transport. The production profile compiles against 7.1.8-1-cachyos. Target installation, reboot, loaded-module identity, and attended census cells are not run. |
+| Radeon DKMS package recipe 0.8.6-1 pins `radeon-unified-0.8.6-profiled-source` at source commit `e03c1d27ba93caae59165cc61726bdca479dc402` and driver tree `373a2e54129588df7b477519dd2f28370e4ecee5` | the pin carries the token-armed `radeon_rs480_vap_status_census` transport with one verified forced-clock lease, bounded reads, ordered restoration, and restored-readback verification. The production, probe-dev, and mutate-dev profiles compile against 7.1.8-1-cachyos. Target installation, reboot, loaded-module identity, and attended VAP census cells are not run. |
+| Radeon DKMS package 0.8.7-1 pins `radeon-unified-0.8.7-profiled-source` at source commit `e2528ea1a0a90f618e699fa62b4b925e06045233` and driver tree `d670e3e85d162ae1a183f37deb3bae2c0d644d9d` | the pin narrows the VAP census force gate to FORCE_VAP and carries the disarmed `radeon_rs480_pll_write_probe`. All three profiles compile against 7.1.8-1-cachyos. The historical package record reports boot `75950e1f`, complete VAP censuses, and exact FORCE_VIP restoration. This repository names no retained target bundle for that run, so the hardware claims remain unpromoted. |
+| Radeon DKMS package 0.8.8-1 pins `radeon-unified-0.8.8-profiled-source` at source commit `2e704981b744fba5cbece0d5857c214832738326` and driver tree `7996162539e0b1f314edcf77e8c01a5b54c0750c` | the pin carries `radeon_rs480_vap_status_burst_census` transport `rs482-vap-burst-census/1`. The historical package record reports boot `039f3528`, loaded srcversion `F191B0B0349A3B1BA2B3DF3`, a stable disarmed parameter, and eight byte-exact burst legs. This repository names no retained target bundle for that run, so the target record remains unpromoted pending the bundle join. |
+| Radeon DKMS package recipe 0.8.9-1 pins `radeon-unified-0.8.9-profiled-source` at source commit `164167950d0f749468474536dd76045fddedc8b7` and driver tree `a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f` | the pin carries separate one-shot token gates for RB3D cache register 0x4E4C and ZB cache register 0x4F18, a per-module cohort latch, GUI_ACTIVE refusal, and source-policy denominators of 24 features, 28 parameters, and 38 debugfs files. The production, probe-dev, and mutate-dev profiles compile against 7.1.8-1-cachyos. Target installation, reboot, loaded-module identity, and an armed cache read are not run. |
+| Radeon DKMS package recipe 0.8.9-2 is the active package authority at source commit `164167950d0f749468474536dd76045fddedc8b7`, driver tree `a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f`, and signed tag `radeon-unified-0.8.9-profiled-source` | this packaging revision verifies both signed source tags against the package allowlist, restricts target transport to one production archive, moves optional lifecycle evidence outside that transport, and refuses hazardous hardware runners from the package repository. Source and package checks establish offline identity and construction only. Target installation, reboot, loaded-module identity, cache reads, reset operations, and silicon verdicts are not run. |
 | Unified DKMS package 0.3-96 is the retained target-runtime baseline | installed and runtime-accepted on the RS482 target across a boot with matching module srcversion, `lockup_timeout=0`, and inert hazard interfaces, retained as steinmarder-r300 bundle `cachyos_vostro1000_rs482_radeon_unified_pkgrel96_runtime_20260730T233253Z`; hardware operation beyond debugfs inventory is not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
@@ -244,19 +252,12 @@ python3 scripts/resolve_workflow_artifact_digest.py --self-test
 python3 scripts/check_target_artifact_workflow.py
 ```
 
-Actions artifacts provide bounded workflow transport. Pull requests retain no
-package bundle. Protected-main package transport and target compile evidence
-retain seven days. Transition matrix logs retain one day. Signed GitHub release
-assets and the checked-in release attestation hashes own durable package
-identity. `check_target_artifact_workflow.py` verifies the complete three-upload
-retention denominator.
-
 Each verdict-producing gate calibrates against known-good and known-bad inputs
 before it is trusted to judge the tree. Run the calibration when changing a
 gate:
 
 ```bash
-# 5 known-bad inputs rejected, 2 known-good inputs cleared
+# 6 known-bad inputs rejected, 4 known-good inputs cleared
 sh scripts/check_radeon_patch_series_compiles.sh --self-test
 
 # Wrong tree and malformed source identities fail
@@ -293,7 +294,7 @@ python3 scripts/admit_target_gate_artifact.py --self-test
 # One paginated digest lookup passes, and 12 metadata classes fail
 python3 scripts/resolve_workflow_artifact_digest.py --self-test
 
-# One target workflow passes, and 22 producer, transport, and retention mutations fail
+# One target workflow passes, and 25 producer, digest, transport, and retention mutations fail
 python3 scripts/check_target_artifact_workflow.py --self-test
 ```
 

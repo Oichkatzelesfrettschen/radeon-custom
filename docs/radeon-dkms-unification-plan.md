@@ -1,10 +1,16 @@
 ---
-canonical: true
+canonical: false
+status: historical
 last_verified: 2026-05-28
 scope: radeon DKMS patchset, packaging adapters, CachyOS Vostro, Debian/XanMod x130e
 ---
 
-# Radeon DKMS Unification Plan
+# Historical Radeon DKMS Unification Plan
+
+This document preserves the retired patch-series transition design at its
+2026-05-28 verification boundary. Root `README.md` owns the active package
+architecture and qualification ledger. `linux-radeon-gororoba` owns the active
+kernel source.
 
 ## Current State
 

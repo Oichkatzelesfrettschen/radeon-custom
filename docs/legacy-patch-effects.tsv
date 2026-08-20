@@ -60,7 +60,7 @@ order	patch	patch_sha256	files_touched	hunks	lines_added	lines_removed	new_symbo
 57	0060-rs480-parked-gpu-sigbus-vram-mmap.patch	165f1cf6743a11851ca33261224a1ae1850bbac5986cbd8cafc02a741c6fd0df	radeon/radeon_gem.c,radeon/radeon_device.c	2	27	0	none	none	none
 58	0061-rs480-parked-gpu-debugfs-readers-hard-return.patch	3339e5d4149722a59da9764397dd3aa9077099decd68195ede4d39cb21cee21a	radeon/rs400.c	21	57	0	rs480_debugfs_refuse_if_parked	none	none
 59	0062-rs480-parked-gpu-module-unload-no-hardware.patch	f1c51b8dfbb6cbe9282510b91e5ab15b7ee8937a584b9608617b614118e8db11	radeon/radeon_kms.c,radeon/radeon_drv.c	2	25	1	none	none	none
-60	0063-rs480-parameterized-soft-reset-mask-candidates.patch	0ae780cf7e59b38e29fd96b80ebaf72fc3be5c5813ee99dccd48b4a293d8c0e4	radeon/r300.c	3	83	5	rs480_reset_mask_sel,struct,rs480_reset_mask,rs480_selected_reset_mask	none	none
+60	0063-rs480-parameterized-soft-reset-mask-candidates.patch	0ae780cf7e59b38e29fd96b80ebaf72fc3be5c5813ee99dccd48b4a293d8c0e4	radeon/r300.c	3	83	5	rs480_reset_mask_sel,struct,rs480_reset_mask,rs480_selected_reset_mask	rs480_reset_mask	none
 61	0064-rs480-soft-reset-mask-candidates-review-hardening.patch	9d65440c6170cd0b16aea6c6c4067f79bba02e3e4c569b792e0e8cb9a0a6516d	radeon/r300.c	5	53	33	none	none	none
 62	0065-rs480-soft-reset-mask-selector-races-and-mask-aware-idle.patch	f00c6465a459222ad0a985a3bb28e7ddf3cdaf3b53f628f5dccaad5500258c48	radeon/r300.c	4	15	11	none	none	none
 63	0066-rs480-atomic-one-shot-reset-mask-consume-cmpxchg.patch	418ccc742762b7e751cf3ee8d89a56ec7f31003e443b604c73963d22c323a148	radeon/r300.c	1	7	3	none	none	none
