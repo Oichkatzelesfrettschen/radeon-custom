@@ -293,7 +293,7 @@ python3 scripts/admit_target_gate_artifact.py --self-test
 # One paginated digest lookup passes, and 12 metadata classes fail
 python3 scripts/resolve_workflow_artifact_digest.py --self-test
 
-# One target workflow passes, and 21 transport and retention mutations fail
+# One target workflow passes, and 22 producer, transport, and retention mutations fail
 python3 scripts/check_target_artifact_workflow.py --self-test
 ```
 
