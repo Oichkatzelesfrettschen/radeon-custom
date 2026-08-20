@@ -87,7 +87,7 @@ UPLOAD_STEP_LINES = (
     "        with:",
     "          name: radeon-target-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}",
     "          path: ${{ runner.temp }}/radeon-target-evidence",
-    "          retention-days: 30",
+    "          retention-days: 7",
     "          if-no-files-found: warn",
 )
 
@@ -99,14 +99,25 @@ TARGET_JOB_ACTION_LINES = (
 
 GATE_PACKAGE_UPLOAD_STEP_LINES = (
     "      - name: Upload package and lifecycle evidence",
-    "        if: always()",
-    "        continue-on-error: ${{ github.event_name != 'push' }}",
+    "        if: always() && github.event_name == 'push'",
     "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
     "        with:",
     "          name: radeon-unified-${{ github.sha }}-${{ github.run_id }}",
     "          path: ${{ runner.temp }}/radeon-package-artifacts",
-    "          retention-days: 30",
+    "          retention-days: 7",
     "          if-no-files-found: warn",
+)
+
+GATE_TRANSITION_UPLOAD_STEP_LINES = (
+    "      - name: Upload transition matrix logs",
+    "        if: always()",
+    "        continue-on-error: true",
+    "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+    "        with:",
+    "          name: transition-matrix-logs-${{ github.run_id }}-${{ github.run_attempt }}",
+    "          path: ${{ env.PACKAGE_WORK }}/transition-matrix-logs",
+    "          if-no-files-found: ignore",
+    "          retention-days: 1",
 )
 
 API_COMMAND_LINES = RESOLVER_STEP_LINES[6:10]
@@ -175,6 +186,7 @@ def verify_gate_producer(repository: Path) -> None:
         "gate workflow is absent or indirect",
     )
     lines = workflow.read_text(encoding="utf-8").splitlines()
+    exact_named_step(lines, GATE_TRANSITION_UPLOAD_STEP_LINES, "gate workflow")
     exact_named_step(lines, GATE_PACKAGE_UPLOAD_STEP_LINES, "gate workflow")
 
 
@@ -257,6 +269,7 @@ def verify_target_workflow(repository: Path) -> None:
     resolver_position = exact_step_position(blocks, RESOLVER_STEP_LINES)
     download_position = exact_step_position(blocks, DOWNLOAD_STEP_LINES)
     admission_position = exact_step_position(blocks, ADMISSION_STEP_LINES)
+    exact_step_position(blocks, UPLOAD_STEP_LINES)
     require(
         download_position == resolver_position + 1,
         "artifact digest resolution does not immediately precede download",
@@ -407,6 +420,14 @@ def run_self_test(repository: Path) -> None:
             '            --expected-sha256 "$GATE_SHA"',
         )
 
+    def long_target_retention(path: Path) -> None:
+        replace_once(
+            path, "          retention-days: 7", "          retention-days: 30"
+        )
+
+    def missing_target_retention(path: Path) -> None:
+        replace_once(path, "          retention-days: 7\n", "")
+
     def duplicate_resolver(path: Path) -> None:
         replace_once(path, resolver_text, resolver_text + resolver_text)
 
@@ -479,25 +500,35 @@ def run_self_test(repository: Path) -> None:
     def alternate_binding_sibling(path: Path) -> None:
         move_binding_to_sibling(path, "github.event_name == 'workflow_run'")
 
-    def nonfatal_main_transport(path: Path) -> None:
+    def package_transport_on_pull_requests(path: Path) -> None:
         replace_once(
             path,
-            "        continue-on-error: ${{ github.event_name != 'push' }}",
-            "        continue-on-error: true",
+            "        if: always() && github.event_name == 'push'",
+            "        if: always()",
         )
 
     def missing_transport_condition(path: Path) -> None:
         replace_once(
             path,
-            "        continue-on-error: ${{ github.event_name != 'push' }}\n",
+            "        if: always() && github.event_name == 'push'\n",
             "",
         )
 
     def inverted_transport_condition(path: Path) -> None:
         replace_once(
             path,
-            "        continue-on-error: ${{ github.event_name != 'push' }}",
-            "        continue-on-error: ${{ github.event_name == 'push' }}",
+            "        if: always() && github.event_name == 'push'",
+            "        if: always() && github.event_name != 'push'",
+        )
+
+    def long_package_retention(path: Path) -> None:
+        replace_once(
+            path, "          retention-days: 7", "          retention-days: 30"
+        )
+
+    def long_transition_retention(path: Path) -> None:
+        replace_once(
+            path, "          retention-days: 1", "          retention-days: 30"
         )
 
     mutations = (
@@ -509,6 +540,8 @@ def run_self_test(repository: Path) -> None:
         ("different workflow run", wrong_run),
         ("different artifact name", wrong_artifact_name),
         ("alternate admission digest source", alternate_admission_source),
+        ("long target evidence retention", long_target_retention),
+        ("missing target evidence retention", missing_target_retention),
         ("duplicate resolver", duplicate_resolver),
         ("missing API token binding", omit_token_binding),
         ("disabled target job", disable_target_job),
@@ -518,14 +551,16 @@ def run_self_test(repository: Path) -> None:
     for name, mutation in mutations:
         expect_rejection(repository, name, mutation)
     gate_mutations = (
-        ("nonfatal protected-main transport", nonfatal_main_transport),
+        ("package transport on pull requests", package_transport_on_pull_requests),
         ("missing protected-main transport condition", missing_transport_condition),
         ("inverted protected-main transport condition", inverted_transport_condition),
+        ("long package transport retention", long_package_retention),
+        ("long transition log retention", long_transition_retention),
     )
     for name, mutation in gate_mutations:
         expect_gate_rejection(repository, name, mutation)
     print(
-        "Target artifact workflow calibration: 1 known-good and 16 known-bad fixtures"
+        "Target artifact workflow calibration: 1 known-good and 20 known-bad fixtures"
     )
 
 
