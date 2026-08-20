@@ -118,11 +118,12 @@ attribution of Fire 28 host survival to the 0060 gate remain open.
 
 ## Register evidence partition
 
-The package splits every register it reads into two tables with different
-evidence requirements. This partition is the reusable research artifact, because
-each row carries its own provenance rather than inheriting a blanket claim.
+The retained RS480 patch series splits every register reader into two tables
+with different evidence requirements. This partition is the reusable research
+artifact, because each row carries its own provenance rather than inheriting a
+blanket claim.
 
-`rs480-safe-regs.tsv` holds 82 rows. A row qualifies as safe when it has no
+`patches/rs480/SAFE_REGS.tsv` holds 82 rows. A row qualifies as safe when it has no
 documented write side-effect on read and a retained bundle shows the read
 completing.
 
@@ -158,14 +159,15 @@ Every source class names a retained bundle in the file header, including
 for the blind userspace readout, which recorded 116 of 116 reads done with zero
 quarantine and a stable `boot_id`.
 
-`rs480-candidate-regs.tsv` holds 30 rows that are explicitly not safe: 28 reached
+`patches/rs480/CANDIDATE_REGS.tsv` holds 30 rows that are explicitly not safe: 28 reached
 through BAR0 MMIO offsets with `RREG32()`, and 2 through the RS400/RS480 MC
 indirect index with `RREG32_MC()`. They are bounded candidates for one-at-a-time
 live read validation. The generator promotes 24 of them and skips 6 that sit in
 design-only attended cohorts, which is the mechanism that keeps an unvalidated
 candidate out of the safe path.
 
-Source: the two TSV files and their header legends;
+Source: `patches/rs480/SAFE_REGS.tsv`, `patches/rs480/CANDIDATE_REGS.tsv`, and
+their header legends;
 `scripts/generate_rs480_debugfs_fragments.py` computes the accepted and skipped
 split that `scripts/verify_radeon_unified_dkms_sources.sh` reports. Evidence
 class: retained hardware observation for every safe row, since each carries at
@@ -187,7 +189,7 @@ The decode stops at backing. A non-dummy row reports that the entry has backing;
 it does not report BO ownership, and closing that join needs a retained target
 capture.
 
-Source: `packaging/arch/radeon-unified-dkms/rs480-gart-page-table-readonly-debugfs.patch`
+Source: `patches/rs480/0072-rs480-gart-page-table-readonly-debugfs.patch`
 and `scripts/verify_rs400_gart_reader_schema.py`. Evidence class:
 source-verified, with the schema and DMA round trips checked by the verifier.
 Falsifier: a retained Vostro capture whose emitted rows disagree with the
@@ -260,10 +262,10 @@ bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 | Patch files held for the RS480 lane | 73 | `patches/rs480/*.patch` |
 | Patch files held for the Palm lane | 9 | `patches/palm/*.patch` |
 | Translation units the series touches | 13 | `check_radeon_patch_series_compiles.sh` |
-| Safe-register rows | 82 | `rs480-safe-regs.tsv` |
+| Safe-register rows | 82 | `patches/rs480/SAFE_REGS.tsv` |
 | Candidate rows accepted | 24 | `generate_rs480_debugfs_fragments.py` via the source verifier |
 | Candidate rows skipped, design-only attended | 6 | `generate_rs480_debugfs_fragments.py` via the source verifier |
-| Candidate rows held in total | 30 | `rs480-candidate-regs.tsv` |
+| Candidate rows held in total | 30 | `patches/rs480/CANDIDATE_REGS.tsv` |
 | Module parameters declared | 18 | `module_param` sites across the series |
 | GART reader output paths | 10 | `verify_rs400_gart_reader_schema.py` |
 | GART reader schema fields | 20 | `verify_rs400_gart_reader_schema.py` |

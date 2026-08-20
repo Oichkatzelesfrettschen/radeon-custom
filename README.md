@@ -250,6 +250,9 @@ python3 scripts/resolve_workflow_artifact_digest.py --self-test
 
 # The target workflow binds the API digest through raw artifact admission
 python3 scripts/check_target_artifact_workflow.py
+
+# Historical patches and register tables have one canonical repository home
+python3 scripts/check_package_historical_input_ownership.py
 ```
 
 Each verdict-producing gate calibrates against known-good and known-bad inputs
@@ -296,6 +299,9 @@ python3 scripts/resolve_workflow_artifact_digest.py --self-test
 
 # One target workflow passes, and 25 producer, digest, transport, and retention mutations fail
 python3 scripts/check_target_artifact_workflow.py --self-test
+
+# One canonical ownership fixture passes, and 7 mirror and reference mutations fail
+python3 scripts/check_package_historical_input_ownership.py --self-test
 ```
 
 Build the active Arch package from `packaging/arch/radeon-unified-dkms/` with
