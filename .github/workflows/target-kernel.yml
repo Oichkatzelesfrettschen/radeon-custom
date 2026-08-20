@@ -156,5 +156,5 @@ jobs:
         with:
           name: radeon-target-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}
           path: ${{ runner.temp }}/radeon-target-evidence
-          retention-days: 30
+          retention-days: 7
           if-no-files-found: warn

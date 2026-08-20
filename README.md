@@ -244,6 +244,13 @@ python3 scripts/resolve_workflow_artifact_digest.py --self-test
 python3 scripts/check_target_artifact_workflow.py
 ```
 
+Actions artifacts provide bounded workflow transport. Pull requests retain no
+package bundle. Protected-main package transport and target compile evidence
+retain seven days. Transition matrix logs retain one day. Signed GitHub release
+assets and the checked-in release attestation hashes own durable package
+identity. `check_target_artifact_workflow.py` verifies the complete three-upload
+retention denominator.
+
 Each verdict-producing gate calibrates against known-good and known-bad inputs
 before it is trusted to judge the tree. Run the calibration when changing a
 gate:
@@ -286,7 +293,7 @@ python3 scripts/admit_target_gate_artifact.py --self-test
 # One paginated digest lookup passes, and 12 metadata classes fail
 python3 scripts/resolve_workflow_artifact_digest.py --self-test
 
-# One target workflow passes, and 13 digest-binding mutations fail
+# One target workflow passes, and 20 transport and retention mutations fail
 python3 scripts/check_target_artifact_workflow.py --self-test
 ```
 

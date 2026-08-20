@@ -344,7 +344,7 @@ jobs:
           name: transition-matrix-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.PACKAGE_WORK }}/transition-matrix-logs
           if-no-files-found: ignore
-          retention-days: 30
+          retention-days: 1
 
       - name: Legacy tree manifest reproduces
         run: |
@@ -487,16 +487,15 @@ jobs:
           echo "normalized oracles reproduce: 212 base, 213 final, reg_srcs/rs480 apart"
 
       - name: Upload package and lifecycle evidence
-        if: always()
-        # The package archive is the target workflow's immutable input. A pull
-        # request treats quota failure as an optional review artifact, while a
-        # push to main makes transport failure fail the protected gate.
-        continue-on-error: ${{ github.event_name != 'push' }}
+        if: always() && github.event_name == 'push'
+        # The package archive is the target workflow's immutable input. The
+        # upload condition selects protected-main transport. Pull requests
+        # complete package verification on the runner.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: radeon-unified-${{ github.sha }}-${{ github.run_id }}
           path: ${{ runner.temp }}/radeon-package-artifacts
-          retention-days: 30
+          retention-days: 7
           if-no-files-found: warn
 
   # radeon_gem.c carries a LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) split,
