@@ -21,6 +21,9 @@ GATES_WORKFLOW = Path(".github/workflows/gates.yml")
 TARGET_WORKFLOW = Path(".github/workflows/target-kernel.yml")
 STEP_START = re.compile(r"^      - (?:name|uses):")
 JOB_START = re.compile(r"^  (?P<name>[A-Za-z_][A-Za-z0-9_-]*):$")
+TARGET_COMPILE_STEP_HEADER = (
+    "      - name: Gate-verified production package compiles on the target kernel"
+)
 
 TARGET_JOB_CONTROL_LINES = (
     "  target-kernel:",
@@ -248,6 +251,22 @@ def exact_step_position(
     return position
 
 
+def named_step_position(
+    blocks: list[tuple[str, ...]],
+    step_header: str,
+) -> int:
+    matching = [
+        position
+        for position, block in enumerate(blocks)
+        if block[0].rstrip() == step_header
+    ]
+    require(
+        len(matching) == 1,
+        f"target workflow does not contain exactly one step: {step_header}",
+    )
+    return matching[0]
+
+
 def verify_target_workflow(repository: Path) -> None:
     try:
         verify_repository(repository)
@@ -269,7 +288,8 @@ def verify_target_workflow(repository: Path) -> None:
     resolver_position = exact_step_position(blocks, RESOLVER_STEP_LINES)
     download_position = exact_step_position(blocks, DOWNLOAD_STEP_LINES)
     admission_position = exact_step_position(blocks, ADMISSION_STEP_LINES)
-    exact_step_position(blocks, UPLOAD_STEP_LINES)
+    compile_position = named_step_position(blocks, TARGET_COMPILE_STEP_HEADER)
+    upload_position = exact_step_position(blocks, UPLOAD_STEP_LINES)
     require(
         download_position == resolver_position + 1,
         "artifact digest resolution does not immediately precede download",
@@ -277,6 +297,10 @@ def verify_target_workflow(repository: Path) -> None:
     require(
         admission_position == download_position + 1,
         "artifact admission does not immediately follow download",
+    )
+    require(
+        upload_position == compile_position + 1,
+        "target evidence upload does not immediately follow its compile producer",
     )
 
     observed_action_lines = tuple(
@@ -428,6 +452,18 @@ def run_self_test(repository: Path) -> None:
     def missing_target_retention(path: Path) -> None:
         replace_once(path, "          retention-days: 7\n", "")
 
+    def upload_before_target_compile(path: Path) -> None:
+        text = path.read_text(encoding="utf-8")
+        require(text.count(upload_text) == 1, "target upload step anchor is not unique")
+        require(
+            text.count(TARGET_COMPILE_STEP_HEADER) == 1,
+            "target compile step anchor is not unique",
+        )
+        text = text.replace(upload_text, "", 1)
+        compile_index = text.index(TARGET_COMPILE_STEP_HEADER)
+        text = text[:compile_index] + upload_text + text[compile_index:]
+        path.write_text(text, encoding="utf-8")
+
     def duplicate_resolver(path: Path) -> None:
         replace_once(path, resolver_text, resolver_text + resolver_text)
 
@@ -542,6 +578,7 @@ def run_self_test(repository: Path) -> None:
         ("alternate admission digest source", alternate_admission_source),
         ("long target evidence retention", long_target_retention),
         ("missing target evidence retention", missing_target_retention),
+        ("target evidence upload before compile", upload_before_target_compile),
         ("duplicate resolver", duplicate_resolver),
         ("missing API token binding", omit_token_binding),
         ("disabled target job", disable_target_job),
@@ -560,7 +597,7 @@ def run_self_test(repository: Path) -> None:
     for name, mutation in gate_mutations:
         expect_gate_rejection(repository, name, mutation)
     print(
-        "Target artifact workflow calibration: 1 known-good and 20 known-bad fixtures"
+        "Target artifact workflow calibration: 1 known-good and 21 known-bad fixtures"
     )
 
 
