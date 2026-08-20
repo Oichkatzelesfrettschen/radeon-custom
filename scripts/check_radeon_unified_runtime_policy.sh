@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
 expected_conf="$repo_root/packaging/arch/radeon-unified-dkms/radeon-re.conf"
 experiment_allowlist="$repo_root/packaging/arch/radeon-unified-dkms/radeon-re-experiment-allowlist.conf"

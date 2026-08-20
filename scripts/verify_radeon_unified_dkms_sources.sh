@@ -49,6 +49,8 @@ bash "$repo_root/scripts/test_radeon_dkms_kcflags_composition.sh"
 # PKGBUILD consumes startdir and declares source and sha256sums when sourced.
 # shellcheck disable=SC2034
 startdir=$package_dir
+source=()
+sha256sums=()
 # shellcheck source=/dev/null
 source "$pkgbuild"
 

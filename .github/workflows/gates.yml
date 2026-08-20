@@ -85,6 +85,12 @@ jobs:
       - name: Pinned-source build calibration
         run: sh scripts/check_radeon_pinned_source_compiles.sh --self-test
 
+      - name: Job-private source export calibration
+        run: sh scripts/export_radeon_ci_source_snapshot.sh --self-test
+
+      - name: Shared build-root identity calibration
+        run: python3 scripts/check_shared_build_root_identity.py --self-test
+
       - name: Packaged-source build calibration
         run: sh scripts/check_radeon_packaged_source_compiles.sh --self-test
 
@@ -203,14 +209,44 @@ jobs:
           clean: true
           fetch-depth: 0
 
+      # The shared source checkout and kernel tree carry trusted inputs. The
+      # source becomes a job private detached checkout before repository code
+      # invokes package tooling. The kernel root stays shared and read-only, so
+      # a complete private identity snapshot proves that every compile leaves
+      # its files, modes, and symlink targets unchanged.
+      - name: Prepare isolated 7.1 source and build-root inputs
+        run: |
+          set -euo pipefail
+          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
+          : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
+          input_root="${RUNNER_TEMP}/radeon-build-inputs"
+          source_commit=$(python3 -c \
+            'import tomllib; print(tomllib.load(open("packaging/arch/radeon-unified-dkms/source-identity.toml", "rb"))["source_commit"])')
+          sh scripts/export_radeon_ci_source_snapshot.sh \
+            --source-repository "$SOURCE_REPOSITORY" \
+            --source-commit "$source_commit" \
+            --destination "$input_root/source"
+          python3 scripts/check_radeon_source_pin.py \
+            --identity packaging/arch/radeon-unified-dkms/source-identity.toml \
+            --repository "$input_root/source" \
+            --pkgbuild packaging/arch/radeon-unified-dkms/PKGBUILD
+          python3 scripts/check_shared_build_root_identity.py \
+            --root "$KERNEL_BUILD_ROOT_71" \
+            --write "$input_root/kernel-7.1.identity.tsv"
+          {
+            printf 'JOB_SOURCE_REPOSITORY=%s\n' "$input_root/source"
+            printf 'KERNEL_BUILD_ROOT_71_IDENTITY=%s\n' \
+              "$input_root/kernel-7.1.identity.tsv"
+          } >>"$GITHUB_ENV"
+
       - name: PKGBUILD sha256sums
         run: bash packaging/arch/radeon-unified-dkms/check_pkgbuild_sha256sums.sh
 
       - name: DKMS source pin and package inputs
         run: |
-          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
+          : "${JOB_SOURCE_REPOSITORY:?job-private source export is unset}"
           bash scripts/verify_radeon_unified_dkms_sources.sh \
-            --source-repository "$SOURCE_REPOSITORY"
+            --source-repository "$JOB_SOURCE_REPOSITORY"
 
       # One lock per physical host. Each repository serializes its own jobs,
       # and two runner services share this machine, so the lock is what keeps a
@@ -221,14 +257,20 @@ jobs:
           mkdir -p "$HOME/.cache/gororoba-ci"
           sh scripts/with_build_slot.sh \
             timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
-              --source-repository "$SOURCE_REPOSITORY" \
+              --source-repository "$JOB_SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
               --profile prod
           sh scripts/with_build_slot.sh \
             timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
-              --source-repository "$SOURCE_REPOSITORY" \
+              --source-repository "$JOB_SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
               --profile all-dev
+
+      - name: Verify shared 7.1 build-root identity after pinned builds
+        run: |
+          python3 scripts/check_shared_build_root_identity.py \
+            --root "$KERNEL_BUILD_ROOT_71" \
+            --verify "$KERNEL_BUILD_ROOT_71_IDENTITY"
 
       - name: Build and verify deterministic split packages
         run: |
@@ -239,7 +281,7 @@ jobs:
           cp -a packaging/arch/radeon-unified-dkms/. "$PACKAGE_WORK/package/"
           (
             cd "$PACKAGE_WORK/package"
-            RADEON_UNIFIED_SOURCE_URL="git+file://${SOURCE_REPOSITORY}" \
+            RADEON_UNIFIED_SOURCE_URL="git+file://${JOB_SOURCE_REPOSITORY}" \
               makepkg -fC --noconfirm
           )
           # shellcheck disable=SC2034
@@ -268,7 +310,7 @@ jobs:
               package_path=$dev_package
             fi
             verifier_output=$(bash scripts/verify_radeon_unified_dkms_package.sh \
-              --source-repository "$SOURCE_REPOSITORY" \
+              --source-repository "$JOB_SOURCE_REPOSITORY" \
               --package "$package_path")
             printf '%s\n' "$verifier_output"
             package_sha256=$(printf '%s\n' "$verifier_output" |
@@ -284,7 +326,7 @@ jobs:
               >>"$GITHUB_ENV"
             printf '%s_PACKAGE_SHA256=%s\n' "$upper_profile" "$package_sha256" \
               >>"$GITHUB_ENV"
-            RADEON_UNIFIED_SOURCE_REPOSITORY="$SOURCE_REPOSITORY" \
+            RADEON_UNIFIED_SOURCE_REPOSITORY="$JOB_SOURCE_REPOSITORY" \
               bash scripts/test_radeon_dkms_package_verifier.sh "$package_path"
           done
 
@@ -305,6 +347,12 @@ jobs:
                 --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
                 --profile "$profile"
           done
+
+      - name: Verify shared 7.1 build-root identity after package export builds
+        run: |
+          python3 scripts/check_shared_build_root_identity.py \
+            --root "$KERNEL_BUILD_ROOT_71" \
+            --verify "$KERNEL_BUILD_ROOT_71_IDENTITY"
 
       - name: Exercise both disposable DKMS lifecycles
         run: |
@@ -604,6 +652,30 @@ jobs:
 
           echo "retained compatibility tree: $release, LINUX_VERSION_CODE=$code, $tree_files files byte-verified"
 
+      - name: Prepare isolated 6.18 source and build-root inputs
+        run: |
+          set -euo pipefail
+          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
+          input_root="${RUNNER_TEMP}/radeon-compat-inputs"
+          source_commit=$(python3 -c \
+            'import tomllib; print(tomllib.load(open("packaging/arch/radeon-unified-dkms/source-identity.toml", "rb"))["source_commit"])')
+          sh scripts/export_radeon_ci_source_snapshot.sh \
+            --source-repository "$SOURCE_REPOSITORY" \
+            --source-commit "$source_commit" \
+            --destination "$input_root/source"
+          python3 scripts/check_radeon_source_pin.py \
+            --identity packaging/arch/radeon-unified-dkms/source-identity.toml \
+            --repository "$input_root/source" \
+            --pkgbuild packaging/arch/radeon-unified-dkms/PKGBUILD
+          python3 scripts/check_shared_build_root_identity.py \
+            --root "$KERNEL_BUILD_ROOT" \
+            --write "$input_root/kernel-6.18.identity.tsv"
+          {
+            printf 'JOB_SOURCE_REPOSITORY=%s\n' "$input_root/source"
+            printf 'KERNEL_BUILD_ROOT_IDENTITY=%s\n' \
+              "$input_root/kernel-6.18.identity.tsv"
+          } >>"$GITHUB_ENV"
+
       # The proof is the pair: the gate resolves a pre-7.0 root, and
       # radeon_gem.o reaches the compiler under it. Both sides of the split live
       # in radeon_gem.c, so a filename alone identifies no branch, while a
@@ -612,14 +684,14 @@ jobs:
       - name: Compile through the pre-7.0 compatibility branch
         run: |
           set -euo pipefail
-          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
+          : "${JOB_SOURCE_REPOSITORY:?job-private source export is unset}"
           work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/compat618.XXXXXX")
           trap 'rm -rf "$work"' EXIT
 
           mkdir -p "$HOME/.cache/gororoba-ci"
           sh scripts/with_build_slot.sh \
             timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
-              --source-repository "$SOURCE_REPOSITORY" \
+              --source-repository "$JOB_SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT" \
               --profile prod | tee "$work/compile.log"
 
@@ -629,3 +701,9 @@ jobs:
           }
 
           echo "pre-7.0 branch of radeon_gem.c compiled from the pinned source"
+
+      - name: Verify retained 6.18 build-root identity after compile
+        run: |
+          python3 scripts/check_shared_build_root_identity.py \
+            --root "$KERNEL_BUILD_ROOT" \
+            --verify "$KERNEL_BUILD_ROOT_IDENTITY"

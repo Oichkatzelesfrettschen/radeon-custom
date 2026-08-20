@@ -37,8 +37,8 @@ case "${1:-}" in
         ;;
 esac
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-RADEON_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+RADEON_ROOT=$(CDPATH='' cd -- "${SCRIPT_DIR}/.." && pwd)
 SOURCE_TARBALL="${RADEON_ROOT}/sources/radeon-rs480-cachyos-6.18-7.0-prepatched.tar.xz"
 OUTPUT_TARBALL="${RADEON_ROOT}/sources/radeon-unified-0.3-source.tar.xz"
 

@@ -65,7 +65,7 @@ if [ -n "$out_dir" ]; then
     exit 2
   fi
   mkdir -p "$out_dir"
-  WORK=$(CDPATH= cd -- "$out_dir" && pwd)
+  WORK=$(CDPATH='' cd -- "$out_dir" && pwd)
 else
   WORK=$(mktemp -d)
   trap 'rm -rf "$WORK"' EXIT INT TERM

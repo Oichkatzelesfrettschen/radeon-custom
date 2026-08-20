@@ -60,7 +60,7 @@ trap 'rm -rf "$WORK"' EXIT INT TERM
 # a second transformation never appears.
 if [ -n "$legacy_tree" ]; then
   [ -d "$legacy_tree" ] || { echo "not a directory: $legacy_tree" >&2; exit 2; }
-  LEG=$(CDPATH= cd -- "$legacy_tree" && pwd -P)
+  LEG=$(CDPATH='' cd -- "$legacy_tree" && pwd -P)
 else
   sh "$repo_root/scripts/materialize_legacy_radeon_tree.sh" --out "$WORK/legacy" \
     --manifest "$WORK/legacy.tsv" >/dev/null 2>&1 || {
@@ -74,7 +74,7 @@ if [ -n "$out_dir" ]; then
     echo "  a residual file would enter the normalized reference as source" >&2
     exit 2
   fi
-  mkdir -p "$out_dir"; NORM=$(CDPATH= cd -- "$out_dir" && pwd)
+  mkdir -p "$out_dir"; NORM=$(CDPATH='' cd -- "$out_dir" && pwd)
 else
   NORM="$WORK/normalized"; mkdir -p "$NORM"
 fi

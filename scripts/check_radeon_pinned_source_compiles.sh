@@ -153,8 +153,36 @@ kernel_release=$(cat "$kernel_build_root/include/config/kernel.release")
 # PKGBUILD owns the literal source commit checked by check_radeon_source_pin.py.
 # shellcheck disable=SC2034
 startdir=$package_dir
+_source_commit=
+_source_driver_tree=
+_source_feature_policy_sha256=
+_source_upstream_base=
 # shellcheck source=/dev/null
 . "$pkgbuild"
+
+for required_pkgbuild_value in \
+    _source_commit \
+    _source_driver_tree \
+    _source_feature_policy_sha256 \
+    _source_upstream_base
+do
+    case $required_pkgbuild_value in
+        _source_commit)
+            [ -n "$_source_commit" ] || die "PKGBUILD omits _source_commit"
+            ;;
+        _source_driver_tree)
+            [ -n "$_source_driver_tree" ] || die "PKGBUILD omits _source_driver_tree"
+            ;;
+        _source_feature_policy_sha256)
+            [ -n "$_source_feature_policy_sha256" ] ||
+                die "PKGBUILD omits _source_feature_policy_sha256"
+            ;;
+        _source_upstream_base)
+            [ -n "$_source_upstream_base" ] ||
+                die "PKGBUILD omits _source_upstream_base"
+            ;;
+    esac
+done
 
 work=$(make_work_dir)
 trap 'rm -rf "$work"' EXIT INT TERM

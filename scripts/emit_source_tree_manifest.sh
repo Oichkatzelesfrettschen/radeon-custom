@@ -42,7 +42,9 @@ usage: emit_source_tree_manifest.sh --tree DIR [--out FILE]
 EOF
 }
 
-tree=""; out=""; self_test=0
+tree=''
+out=''
+self_test=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --tree) tree=${2:?--tree needs a directory}; shift 2 ;;
@@ -118,18 +120,39 @@ if [ "$self_test" -eq 1 ]; then
   # Each mutation is a way a tree can drift while still looking plausible, and
   # the manifest exists to make each of them a textual difference.
   mutate() {
-    label=$1; shift
+    label=$1
+    mutation=$2
     M="$TMP/mutated"
     rm -rf "$M"; cp -a "$T" "$M"
-    ( cd "$M" && eval "$@" )
+    case "$mutation" in
+      content)
+        printf 'int probe(void) { return 1; }\n' > "$M/r300.c"
+        ;;
+      executable-bit)
+        chmod 644 "$M/mkregtable.sh"
+        ;;
+      symlink-target)
+        ln -sfn reg_srcs/r300 "$M/alias.c"
+        ;;
+      extra-path)
+        printf 'x\n' > "$M/extra.c"
+        ;;
+      missing-path)
+        rm "$M/reg_srcs/r300"
+        ;;
+      *)
+        echo "unknown calibration mutation: $mutation" >&2
+        exit 2
+        ;;
+    esac
     [ "$(emit "$M")" != "$base" ] && r=yes || r=no
     check "$label" "$r"
   }
-  mutate "changed content detected" "printf 'int probe(void) { return 1; }\n' > r300.c"
-  mutate "changed executable bit detected" "chmod 644 mkregtable.sh"
-  mutate "retargeted symlink detected" "ln -sfn reg_srcs/r300 alias.c"
-  mutate "unexpected path detected" "printf 'x\n' > extra.c"
-  mutate "missing path detected" "rm reg_srcs/r300"
+  mutate "changed content detected" content
+  mutate "changed executable bit detected" executable-bit
+  mutate "retargeted symlink detected" symlink-target
+  mutate "unexpected path detected" extra-path
+  mutate "missing path detected" missing-path
 
   # A patch backup is a construction artifact, so its presence leaves the
   # manifest unchanged rather than adding a row.
@@ -149,7 +172,7 @@ fi
 
 [ -n "$tree" ] || { usage >&2; exit 2; }
 [ -d "$tree" ] || { echo "not a directory: $tree" >&2; exit 2; }
-TREE=$(CDPATH= cd -- "$tree" && pwd -P)
+TREE=$(CDPATH='' cd -- "$tree" && pwd -P)
 
 if [ -n "$out" ]; then
   emit "$TREE" > "$out"
