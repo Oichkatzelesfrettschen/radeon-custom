@@ -28,8 +28,39 @@ validate_temp_root() {
     [[ -d $candidate && ! -L $candidate && -w $candidate ]]
 }
 
+write_fixture_pacman_config() {
+    local fixture_root=$1
+
+    [[ $fixture_root == /* && $fixture_root != *$'\n'* ]] || return 1
+    awk -v fixture_root="$fixture_root" '
+        /^(RootDir|DBPath|HookDir|GPGDir|LogFile) = / {
+            next
+        }
+        /^\[/ {
+            if (extra_count == 1 && $0 != "[extra]")
+                exit
+            if ($0 == "[options]")
+                options_count++
+            else if ($0 == "[core]")
+                core_count++
+            else if ($0 == "[extra]")
+                extra_count++
+        }
+        { print }
+        $0 == "[options]" {
+            print "HookDir = " fixture_root "/etc/pacman.d/hooks/"
+            print "GPGDir = " fixture_root "/etc/pacman.d/gnupg/"
+            print "LogFile = " fixture_root "/var/log/pacman.log"
+        }
+        END {
+            if (options_count != 1 || core_count != 1 || extra_count != 1)
+                exit 1
+        }
+    '
+}
+
 run_self_test() {
-    local tmpdir
+    local expected_config filtered_config raw_config tmpdir
 
     tmpdir=$(mktemp -d "${TMPDIR:-/var/tmp}/radeon-package-transitions-self-test.XXXXXX")
     trap 'rm -rf -- "$tmpdir"' RETURN
@@ -50,7 +81,55 @@ run_self_test() {
     if validate_temp_root "$tmpdir/symlink"; then
         die "temporary root validator accepts a symbolic link"
     fi
-    printf 'radeon package transition temp-root calibration: PASS\n'
+
+    raw_config="$tmpdir/pacman.conf.raw"
+    filtered_config="$tmpdir/pacman.conf.filtered"
+    expected_config="$tmpdir/pacman.conf.expected"
+    printf '%s\n' \
+        '[options]' \
+        'RootDir = /' \
+        'DBPath = /var/lib/pacman/' \
+        'HookDir = /etc/pacman.d/hooks/' \
+        'GPGDir = /etc/pacman.d/gnupg/' \
+        'LogFile = /var/log/pacman.log' \
+        'Architecture = x86_64' \
+        '[cachyos]' \
+        'Server = https://packages.example.invalid/cachyos' \
+        '[core]' \
+        'Server = https://packages.example.invalid/core' \
+        '[extra]' \
+        'Server = https://packages.example.invalid/extra' \
+        '[blackarch]' \
+        'Server = https://packages.example.invalid/blackarch' \
+        >"$raw_config"
+    printf '%s\n' \
+        '[options]' \
+        'HookDir = /fixture-root/etc/pacman.d/hooks/' \
+        'GPGDir = /fixture-root/etc/pacman.d/gnupg/' \
+        'LogFile = /fixture-root/var/log/pacman.log' \
+        'Architecture = x86_64' \
+        '[cachyos]' \
+        'Server = https://packages.example.invalid/cachyos' \
+        '[core]' \
+        'Server = https://packages.example.invalid/core' \
+        '[extra]' \
+        'Server = https://packages.example.invalid/extra' \
+        >"$expected_config"
+    write_fixture_pacman_config /fixture-root \
+        <"$raw_config" >"$filtered_config" ||
+        die "fixture repository filter rejects its known-good calibration"
+    cmp "$filtered_config" "$expected_config" ||
+        die "fixture repository filter admits repositories after extra"
+    if printf '%s\n' '[options]' '[core]' |
+        write_fixture_pacman_config /fixture-root >/dev/null; then
+        die "fixture repository filter accepts a missing extra repository"
+    fi
+    if printf '%s\n' '[options]' '[core]' '[extra]' '[extra]' |
+        write_fixture_pacman_config /fixture-root >/dev/null; then
+        die "fixture repository filter accepts duplicate extra repositories"
+    fi
+    printf '%s\n' \
+        'radeon package transition calibration: 2 known-good and 6 known-bad cases'
 }
 
 prod_package=
@@ -153,6 +232,7 @@ fi
 [[ $(id -u) -eq 0 ]] || die "the disposable root requires root"
 command -v pacstrap >/dev/null 2>&1 || die "pacstrap is required"
 command -v arch-chroot >/dev/null 2>&1 || die "arch-chroot is required"
+command -v pacman-conf >/dev/null 2>&1 || die "pacman-conf is required"
 
 # Cleanup is part of the verdict: a chroot gpg-agent, a surviving mount, or
 # a root that resists deletion converts a passing matrix into a failure, so
@@ -222,6 +302,7 @@ cleanup() {
     [[ $matrix_status -eq 0 ]] || status=$matrix_status
     if [[ -n $log_dir ]]; then
         mkdir -p -- "$log_dir"
+        cp -- "$root"/pacstrap.log "$log_dir"/ 2>/dev/null || true
         cp -- "$root"/transition-packages/*.log "$log_dir"/ 2>/dev/null || true
     fi
     if [[ $keep_root -eq 1 ]]; then
@@ -246,12 +327,45 @@ fixture_packages=(base dkms kmod python)
 if [[ $with_kernel -eq 1 ]]; then
     fixture_packages+=(linux linux-headers)
 fi
-pacstrap -c -K "$root" "${fixture_packages[@]}" >/dev/null
-# The stock DKMS transaction hook exits hard when /usr/lib/modules is
-# absent. The empty directory gives the hook its mandatory root while still
-# presenting no kernel target, so DKMS autoinstall stays a no-op and the
-# matrix asserts package and configuration identity alone.
-install -d "$root/usr/lib/modules"
+# The fixture exercises Arch package transactions and uses no multilib or
+# third-party package. The resolved host configuration through extra preserves
+# CachyOS precedence while excluding unrelated repositories whose availability
+# carries no evidence for this matrix. Root-sensitive path directives leave so
+# pacstrap roots its database, hooks, keyring, and log inside the fixture.
+# pacstrap copies the matching host keyring because those keys authorize the
+# selected repositories.
+fixture_pacman_config="$root/radeon-package-transition-pacman.conf"
+install -d "$root/etc/pacman.d/hooks"
+pacman-conf | write_fixture_pacman_config "$root" \
+    >"$fixture_pacman_config" ||
+    die "host pacman configuration lacks one options, core, or extra section"
+fixture_repositories=$(sed -n 's/^\[\([^]]*\)\]$/\1/p' \
+    "$fixture_pacman_config" | grep -vx options | paste -sd, -)
+[[ -n $fixture_repositories ]] || die "fixture repository set is empty"
+log "fixture repositories: $fixture_repositories"
+pacstrap_log="$root/pacstrap.log"
+if ! pacstrap -C "$fixture_pacman_config" -c "$root" \
+    "${fixture_packages[@]}" >"$pacstrap_log" 2>&1; then
+    cat "$pacstrap_log" >&2
+    die "pacstrap cannot construct the fixture root"
+fi
+if grep -q 'error: command failed to execute correctly' "$pacstrap_log"; then
+    cat "$pacstrap_log" >&2
+    die "a pacstrap package scriptlet failed"
+fi
+if [[ $with_kernel -eq 0 ]]; then
+    # alpm-hooks(5) defines a same-name /dev/null link as hook suppression.
+    # Package-only rows carry no kernel target, so the stock DKMS install,
+    # upgrade, and removal hooks have no verdict role. The --with-kernel lane
+    # retains those hooks and asserts their real module outputs.
+    install -d "$root/etc/pacman.d/hooks"
+    for dkms_hook in \
+        70-dkms-install.hook \
+        70-dkms-upgrade.hook \
+        71-dkms-remove.hook; do
+        ln -s /dev/null "$root/etc/pacman.d/hooks/$dkms_hook"
+    done
+fi
 if [[ $with_kernel -eq 1 ]]; then
     # pacstrap installs the kernel without a bootloader flow, so no
     # mkinitcpio preset exists and the selector's initramfs refresh would
