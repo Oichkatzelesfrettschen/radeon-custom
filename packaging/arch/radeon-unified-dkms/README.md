@@ -116,18 +116,36 @@ commit equals source_commit.
 
 ## Target validation
 
-0.8.8-1 advances the source pin to linux-radeon-gororoba 2e70498 (the
+0.8.9-1 advances the source pin to linux-radeon-gororoba 1641679 (the
+RS480 cache CTLSTAT one-shot readers radeon_rs480_rb3d_cache_arm for
+0x4E4C and radeon_rs480_zb_cache_arm for 0x4F18: each consumes its own
+exact token by cmpxchg before the hardware lock, the read refuses while
+RBBM_STATUS GUI_ACTIVE stands, and a module-instance cohort latch admits
+one cache register per load, so the two registers debut on separate
+boots by construction.  The passive rb3d candidate snapshot retires and
+0x4F18 leaves the zb snapshot list, so neither register is reachable
+without a token; the shared policy denominators advance to 24 features,
+28 parameters, 38 debugfs files; profiled-source tag object
+3bf1c5b3cc4b).  The pinned source compiles as prod, probe-dev, and
+mutate-dev against 7.1.8-1-cachyos in the source repository's
+module-build gates.  Target install, reboot, loaded-module
+verification, and the first armed 0x4E4C read under its named color
+workload control are pending.
+
+0.8.8-1 advanced the source pin to linux-radeon-gororoba 2e70498 (the
 VAP burst census radeon_rs480_vap_status_burst_census, transport
 rs482-vap-burst-census/1: back-to-back 0x2140 reads under the verified
 FORCE_VAP forced-clock lease with one anchor timestamp per 256-word
 block, own VAPB arm token, mutate-dev registration; every other node
 is byte-identical to the 0.8.7 pin, and the shared policy denominators
 advance to 23 features, 26 parameters, 37 debugfs files; profiled-
-source tag object 21cff0d5c9b8).  The pinned source compiles as prod,
-probe-dev, and mutate-dev against 7.1.8-1-cachyos in the source
-repository's module-build gates.  Target install, reboot,
-loaded-module verification, and the disarmed-floor read of the burst
-node are pending.
+source tag object 21cff0d5c9b8).  Target validation completed: the dev
+and policy packages installed in one pacman transaction, the host
+rebooted to boot 039f3528, the loaded module verified at srcversion
+F191B0B0349A3B1BA2B3DF3, and the disarmed-floor read of the burst node
+returned partial_disarmed with the arm parameter unchanged.  The
+replicated burst-grain fetch-width pair then ran eight burst-64 legs at
+16384 words per lease, every leg byte-exact.
 
 0.8.7-1 advances the source pin to linux-radeon-gororoba e2528ea (the
 VAP census force gate narrowed to FORCE_VAP, the sampled register's own
