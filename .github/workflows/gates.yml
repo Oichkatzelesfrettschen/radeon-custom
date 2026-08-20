@@ -330,8 +330,15 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" \
             "$PACKAGE_WORK/transition-matrix-logs"
 
+      # Evidence retention is not a verification step, and a step failure
+      # skips every later step that carries no condition of its own, so an
+      # upload refused by the account's artifact storage quota silently
+      # dropped the five reproduction gates below it and failed the job on
+      # a fact about storage.  continue-on-error keeps the failure visible
+      # on the step while the gates that decide the package still run.
       - name: Upload transition matrix logs
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: transition-matrix-logs-${{ github.run_id }}-${{ github.run_attempt }}
@@ -481,6 +488,7 @@ jobs:
 
       - name: Upload package and lifecycle evidence
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: radeon-unified-${{ github.sha }}-${{ github.run_id }}
