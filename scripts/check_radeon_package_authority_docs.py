@@ -27,6 +27,7 @@ HISTORICAL_IDENTITIES = (
     ("0.8.7-1", "e2528ea1a0a90f618e699fa62b4b925e06045233", "d670e3e85d162ae1a183f37deb3bae2c0d644d9d"),
     ("0.8.8-1", "2e704981b744fba5cbece0d5857c214832738326", "7996162539e0b1f314edcf77e8c01a5b54c0750c"),
     ("0.8.9-1", "164167950d0f749468474536dd76045fddedc8b7", "a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f"),
+    ("0.8.9-2", "164167950d0f749468474536dd76045fddedc8b7", "a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f"),
 )
 PATCH_SUMMARY = re.compile(
     r"patch-series gate calibration: "
