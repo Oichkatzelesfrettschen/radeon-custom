@@ -31,8 +31,8 @@ successfully deployed package row supersedes an older deployment authority
 statement. A newer recipe without installation evidence does not. Three
 version axes remain distinct. Version 0.8.11-1 is the active package recipe,
 version 0.8.11-1 carries the newest recorded target run, joined to retained
-bundle cachyos-vostro1000-rs482-radeon-unified-0.8.11-1-deployment-runtime, and version 0.6-1 carries the retained parked-device behavior
-verdict.
+bundle cachyos-vostro1000-rs482-radeon-unified-0.8.11-1-deployment-runtime,
+and version 0.6-1 carries the retained parked-device behavior verdict.
 
 <!-- markdownlint-disable MD013 -->
 
