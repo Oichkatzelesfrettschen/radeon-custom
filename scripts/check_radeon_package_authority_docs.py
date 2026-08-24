@@ -28,6 +28,15 @@ HISTORICAL_IDENTITIES = (
     ("0.8.8-1", "2e704981b744fba5cbece0d5857c214832738326", "7996162539e0b1f314edcf77e8c01a5b54c0750c"),
     ("0.8.9-1", "164167950d0f749468474536dd76045fddedc8b7", "a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f"),
     ("0.8.9-2", "164167950d0f749468474536dd76045fddedc8b7", "a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f"),
+    ("0.8.10-1", "b47a32239d299fadb0c4f835453ff381408ea479", "bcb23bff436c0b3fa21771fec7614d922473bb61"),
+)
+# The retained bundle the newest recorded target run joins to. A version
+# carrying that run without naming its bundle is the state this pair of
+# requirements exists to refuse, so the name is checked in the row rather than
+# only in the header sentence.
+NEWEST_TARGET_RUN_VERSION = "0.8.11-1"
+NEWEST_TARGET_RUN_BUNDLE = (
+    "cachyos-vostro1000-rs482-radeon-unified-0.8.11-1-deployment-runtime"
 )
 PATCH_SUMMARY = re.compile(
     r"patch-series gate calibration: "
@@ -146,9 +155,24 @@ def verify_texts(
         "root README current recipe record disagrees with PKGBUILD",
     )
     require(
-        "version 0.8.8-1 carries the newest recorded target run pending a retained bundle join"
+        f"version {NEWEST_TARGET_RUN_VERSION} carries the newest recorded "
+        f"target run, joined to retained bundle {NEWEST_TARGET_RUN_BUNDLE}"
         in normalized_header,
         "root README newest recorded target run is not bound",
+    )
+    newest_rows = [
+        line
+        for line in root_readme.splitlines()
+        if f"recipe {NEWEST_TARGET_RUN_VERSION} " in line
+        or f"package {NEWEST_TARGET_RUN_VERSION} " in line
+    ]
+    require(
+        len(newest_rows) == 1,
+        f"row for the newest recorded target run {NEWEST_TARGET_RUN_VERSION} is not unique",
+    )
+    require(
+        NEWEST_TARGET_RUN_BUNDLE in newest_rows[0],
+        "the newest recorded target run row does not name its retained bundle",
     )
     for version, source_commit, driver_tree in HISTORICAL_IDENTITIES:
         rows = [line for line in root_readme.splitlines() if f"package {version} " in line or f"recipe {version} " in line or f"candidate {version} " in line]
@@ -348,9 +372,16 @@ def run_self_test(repository: Path) -> None:
 
     def stale_newest_target(values: dict[str, object]) -> None:
         values["root_readme"] = str(values["root_readme"]).replace(
-            "version 0.8.8-1 carries the newest recorded target run",
+            f"version {NEWEST_TARGET_RUN_VERSION} carries the newest recorded target run",
             "version 0.8.3-1 carries the newest recorded target run",
             1,
+        )
+
+    def unbound_newest_target(values: dict[str, object]) -> None:
+        # The header still names the version while the row drops the bundle,
+        # which is the unpromoted state the join requirement refuses.
+        values["root_readme"] = str(values["root_readme"]).replace(
+            NEWEST_TARGET_RUN_BUNDLE, "no-such-retained-bundle", 1
         )
 
     def drift_patch_count(values: dict[str, object]) -> None:
@@ -377,6 +408,7 @@ def run_self_test(repository: Path) -> None:
         ("wrong artifact basename", wrong_artifact_basename),
         ("historical identity drift", corrupt_historical_identity),
         ("stale newest target record", stale_newest_target),
+        ("newest target record naming no retained bundle", unbound_newest_target),
         ("patch calibration count drift", drift_patch_count),
         ("target calibration count drift", drift_target_count),
     )
