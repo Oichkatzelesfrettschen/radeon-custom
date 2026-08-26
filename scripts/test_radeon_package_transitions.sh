@@ -605,7 +605,7 @@ if [[ -n $policy_package ]]; then
     # arch-chroot binds the host /sys, so the board-policy admission sees
     # the real PCI inventory: the target host admits the policy package and
     # any other machine calibrates the refusal path.
-    if find /sys/bus/pci/devices -maxdepth 2 -name device -exec cat {} + \
+    if find -L /sys/bus/pci/devices -maxdepth 2 -name device -exec cat {} + \
         2>/dev/null | grep -qx 0x5974; then
         log "row 10: target host admits the RS482 board policy"
         transaction row10 pacman -U --noconfirm \
