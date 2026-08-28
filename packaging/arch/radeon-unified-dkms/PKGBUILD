@@ -2,7 +2,7 @@
 
 pkgbase=radeon-unified-dkms
 pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev' 'radeon-rs482-policy')
-pkgver=0.8.11
+pkgver=0.8.12
 pkgrel=1
 arch=('x86_64')
 url='https://github.com/Oichkatzelesfrettschen/linux-radeon-gororoba'
@@ -24,14 +24,14 @@ _dev_optdepends=('sp5100-tco-ioapic-dkms>=0.4-4: SB600 watchdog substrate for at
                  'rs480-reset-hazard-stack: RS480 mutation preflight and recovery dependencies')
 
 _source_repository='Oichkatzelesfrettschen/linux-radeon-gororoba'
-_source_commit='3c5ccb3cfb684c975efbb30c3e312c310b741cf9'
-_source_repository_tree='cfd1801ec8accf076ba87447bb9ad666fa699bf7'
-_source_driver_tree='e3a54399a004c714402b5c9bd56e1edcfd1caa1c'
-_source_feature_policy_tree='4fc2540f9ebc45aaa2150fa4fc08593033d32b32'
+_source_commit='0104ede3f1964cc844f9f1839cb6953e2639c4e6'
+_source_repository_tree='36daeb20ffcecc631099ba0263032751cbf0b862'
+_source_driver_tree='e05ddca9ca088bada5e7e17ab59f511ef322630b'
+_source_feature_policy_tree='438fef47f782bc83edafae76af543307fc7e91ff'
 _source_feature_policy_sha256='2fd19559324c69927d7fedaf558a08b13d3609f23a039b4b59d02e13bc4df93d'
 _source_upstream_base='7d0a66e4bb9081d75c82ec4957c50034cb0ea449'
-_profiled_source_tag='radeon-unified-0.8.11-profiled-source'
-_profiled_source_tag_object='b0102041d170882928c4a795d51c1626a945f2d1'
+_profiled_source_tag='radeon-unified-0.8.12-profiled-source'
+_profiled_source_tag_object='2abab9bfe4adec1a7a88c8d5fa68d6b46a864601'
 _equivalence_tag='radeon-unified-0.3-pkgrel91-source-equivalent'
 _equivalence_tag_object='81a2510e34d1d62f5486683bcd6e240db8223b7d'
 _equivalence_commit='9079be562eebd184da9cf891fbc6a72d5ac0d9f3'
@@ -70,14 +70,14 @@ source=(
   'radeon-dkms-ccache-clang'
 )
 sha256sums=('SKIP'
-            '56a4fc0bb6421001b3c6c1b9168a778d0ca2b194534c1466de20a2023e4a887b'
+            '992d0005278b97d88716cddb4885cce597250d9958bd79a594d02a63ae169971'
             '2133f7e0926032a91d8c55211a4dad9cdf16d188e2bab24c2b70f68d464c24b0'
-            '3eda8019f27ed7e7127bb254deaf4f6e5e93c32b328a284cd886f37527d6d8db'
-            'cff6872548d2c05c958a20c30c18680cf271be32dbd8c6b33b0f5cd3b9d29d2f'
-            '6d29fa458b2ccd6b3635ffefddc540d7a5b144a3bb8c710048564d18c1e8f91e'
-            'ba83943191c7ecb86875658bfa0c19fea9d61e326adac21b87a67fe8acc78774'
-            '108525de2731f15049a0efd5b5f340ac0b9536318f6e6f4327c25aec920fb8e8'
-            'eeec639e2c0269d58a595b88f6d09efacb2a15fa18b483b05b610c2e3e65a0ea'
+            '988abf9d2b912180c3da04fcf18068fb81b2aac3fd1c502fda65d2def89285d8'
+            'e6b4bc47ed8a4ff32c21ae330fc8506836b443c34c744870b5d460798ea1a4ab'
+            'f8fcdc97a149781725ef1fe8c55f03dda5a9e639c758705c388f4fa26f5ca631'
+            '29816576d87e91bc948b3375ac6fc276a3bfd34619a9b76dbbaaacf482516396'
+            '21eefbd129641dbbea25027e814ed30ea4e054421086090213713504b43584c6'
+            '54d32a18a2c7dafcf4a63ef485976f1cb17c0d99aa4e7ab84b9536c1e4830c6c'
             'dd7dcb0c9a286c16505d22a61ce9a682919bab90785cc79a6f0cfecfb135db67'
             '0096c2fe01a114793169e120a006684b8d98403a678568f8adc967948b134743'
             'ae05c9e34c4e9d5ae473683b30936aa70c088ae7c20777676772e10d83c83a3f'
@@ -94,7 +94,7 @@ sha256sums=('SKIP'
             '9405011491bd33e960b855579af73a3ae3a2a5de4600251094774fc95dba6526'
             'ed339b0b6483e36add069f884263bea486e5d7b5c8823c3d04da0476e31be671'
             'b4638dab3ea64284f1f3f3572ea8bf782e818035e7ee946a5edff46069cacb08'
-            'fe8613b43da45656fa2a43ea599d548cabbc0c3892932201d6981170ad2c6140'
+            'f3e3df1a0cd6e12fb841742bae136781445e8db647723b04c3c78434431e570f'
             '39aaf1ddabec1ac585e14e977c8949f3ef2332fa641ea4adb301fc9dc5f6742b'
             '120fbce9390e46181f26070500fe082796802b9677b5533854ffca88cd616d8f'
             '4654ac693bd3fd00da36779ed9ec5b10a61ab84fd4fef5a6addcf85a2fe988e7'
