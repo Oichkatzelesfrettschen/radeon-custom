@@ -29,6 +29,7 @@ HISTORICAL_IDENTITIES = (
     ("0.8.9-1", "164167950d0f749468474536dd76045fddedc8b7", "a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f"),
     ("0.8.9-2", "164167950d0f749468474536dd76045fddedc8b7", "a50c8ce2bc6c7645c7fe658470f67dbe2e93c31f"),
     ("0.8.10-1", "b47a32239d299fadb0c4f835453ff381408ea479", "bcb23bff436c0b3fa21771fec7614d922473bb61"),
+    ("0.8.11-1", "3c5ccb3cfb684c975efbb30c3e312c310b741cf9", "e3a54399a004c714402b5c9bd56e1edcfd1caa1c"),
 )
 # The retained bundle the newest recorded target run joins to. A version
 # carrying that run without naming its bundle is the state this pair of
