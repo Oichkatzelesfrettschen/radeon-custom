@@ -2,22 +2,22 @@ schema = 2
 constructor = "profiled-source"
 
 source_repository = "Oichkatzelesfrettschen/linux-radeon-gororoba"
-source_commit = "3c5ccb3cfb684c975efbb30c3e312c310b741cf9"
-repository_tree = "cfd1801ec8accf076ba87447bb9ad666fa699bf7"
+source_commit = "0104ede3f1964cc844f9f1839cb6953e2639c4e6"
+repository_tree = "36daeb20ffcecc631099ba0263032751cbf0b862"
 driver_subtree = "drivers/gpu/drm/radeon"
-driver_tree = "e3a54399a004c714402b5c9bd56e1edcfd1caa1c"
+driver_tree = "e05ddca9ca088bada5e7e17ab59f511ef322630b"
 archive_entry_count = 222
 
 feature_policy_path = "policy/build-features.toml"
 feature_policy_sha256 = "2fd19559324c69927d7fedaf558a08b13d3609f23a039b4b59d02e13bc4df93d"
-feature_policy_tree = "4fc2540f9ebc45aaa2150fa4fc08593033d32b32"
+feature_policy_tree = "438fef47f782bc83edafae76af543307fc7e91ff"
 upstream_base_path = "UPSTREAM_BASE.toml"
 upstream_commit = "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"
 upstream_subtree = "06a00c78fc5be13ed90c2a2c6973f272d993b6a3"
 
-profiled_source_tag = "radeon-unified-0.8.11-profiled-source"
-profiled_source_tag_object = "b0102041d170882928c4a795d51c1626a945f2d1"
-profiled_source_commit = "3c5ccb3cfb684c975efbb30c3e312c310b741cf9"
+profiled_source_tag = "radeon-unified-0.8.12-profiled-source"
+profiled_source_tag_object = "2abab9bfe4adec1a7a88c8d5fa68d6b46a864601"
+profiled_source_commit = "0104ede3f1964cc844f9f1839cb6953e2639c4e6"
 
 equivalence_tag = "radeon-unified-0.3-pkgrel91-source-equivalent"
 equivalence_tag_object = "81a2510e34d1d62f5486683bcd6e240db8223b7d"
