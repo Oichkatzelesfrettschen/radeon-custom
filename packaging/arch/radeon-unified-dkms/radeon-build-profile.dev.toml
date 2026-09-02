@@ -1,11 +1,11 @@
 schema = 1
 package_name = "radeon-unified-dkms-dev"
-package_version = "0.8.12"
+package_version = "0.8.13"
 package_release = 1
 source_repository = "Oichkatzelesfrettschen/linux-radeon-gororoba"
-source_commit = "0104ede3f1964cc844f9f1839cb6953e2639c4e6"
-repository_tree = "36daeb20ffcecc631099ba0263032751cbf0b862"
-driver_tree = "e05ddca9ca088bada5e7e17ab59f511ef322630b"
+source_commit = "2be21eaa892723f1c9cd826b7331c7d234e2c1ce"
+repository_tree = "c2c7ad14fb76861b90f8b83b81c69a735e5e8ba9"
+driver_tree = "644b64d932603143b1abc719adf1759569f580e8"
 build_profile = "all-dev"
 compiled_ceiling = "mutate-dev"
 feature_policy_sha256 = "2fd19559324c69927d7fedaf558a08b13d3609f23a039b4b59d02e13bc4df93d"
