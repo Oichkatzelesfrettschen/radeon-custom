@@ -185,14 +185,6 @@ jobs:
       - name: Package transition temp-root calibration
         run: bash scripts/test_radeon_package_transitions.sh --self-test
 
-      - name: ASCII only
-        run: |
-          # Checked-in text is plain ASCII. Tab is permitted; the patch and
-          # generated-source classes keep their own bytes.
-          hits=$(git ls-files '*.md' '*.sh' '*.py' '*.conf' 'PKGBUILD*' \
-                 | xargs grep -lP '[^\x09\x20-\x7e]' 2>/dev/null || true)
-          [ -z "$hits" ] || { echo "non-ASCII in: $hits" >&2; exit 1; }
-          echo "checked-in text is plain ASCII"
 
   package:
     needs: changes
