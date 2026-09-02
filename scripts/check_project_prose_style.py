@@ -12,9 +12,15 @@ cannot, because several ASCII `--` runs are code rather than prose:
   * ASCII diagrams whose branches spell `|--`;
   * checked-in patch bodies, whose bytes the packaging sha256sums verify.
 
+Three rules judge a line: `emoji`, `unicode dash` for the en and em dash, and
+`dash construction` for the ASCII stand-in. Every refusal names the rule it
+tripped, because the three need different edits and share one exit status.
+
 Run without arguments to scan the tracked project-authored set. Run with
 --self-test to calibrate against known-good and known-bad fixtures, which is
-the calibration AGENTS.md requires of a verdict-producing script.
+the calibration AGENTS.md requires of a verdict-producing script. Each
+known-bad asserts the rule name it expects, so a report that refuses the right
+line under the wrong rule fails the calibration.
 
 Exit: 0 clean, 1 findings, 2 usage or environment error.
 """
@@ -22,6 +28,7 @@ Exit: 0 clean, 1 findings, 2 usage or environment error.
 from __future__ import annotations
 
 import argparse
+import collections
 import re
 import subprocess
 import sys
@@ -31,6 +38,12 @@ from pathlib import Path
 # one that ends a line. A flag (`--staged`) has no leading space before its
 # letters; the end-of-options separator is caught by the code rules below.
 DASH = re.compile(r"(?:(?<=\s)|^)--(?=\s|$)")
+
+# Each rule names itself in the refusal it produces, so a report says which
+# edit clears the line.
+DASH_RULE = "dash construction"
+UNICODE_DASH_RULE = "unicode dash"
+EMOJI_RULE = "emoji"
 
 # AGENTS.md forbids the em dash, the en dash, and the ASCII `--` stand-in alike,
 # so the gate recognizes all three. The two code points are built by ordinal so
@@ -128,7 +141,13 @@ def prose_lines(path: Path, text: str):
             yield lineno, line
 
 
-def findings(root: Path, paths: list[Path]) -> list[tuple[Path, int, str]]:
+def findings(root: Path, paths: list[Path]) -> list[tuple[Path, int, str, str]]:
+    """Report every prose violation as (path, line number, rule, line).
+
+    Each rule carries its own name so a refusal points at the edit that
+    clears it: an emoji and an em dash fail the same run and need different
+    fixes.
+    """
     out = []
     for path in paths:
         try:
@@ -137,16 +156,18 @@ def findings(root: Path, paths: list[Path]) -> list[tuple[Path, int, str]]:
             continue
         for lineno, line in prose_lines(path, text):
             if EMOJI.search(line):
-                out.append((path.relative_to(root), lineno, line.strip()))
+                out.append((path.relative_to(root), lineno, EMOJI_RULE, line.strip()))
                 continue
             if UNICODE_DASH.search(line):
-                out.append((path.relative_to(root), lineno, line.strip()))
+                out.append(
+                    (path.relative_to(root), lineno, UNICODE_DASH_RULE, line.strip())
+                )
                 continue
             if DIAGRAM.match(line):
                 continue
             masked = END_OF_OPTIONS.sub("", line)
             if DASH.search(masked):
-                out.append((path.relative_to(root), lineno, line.strip()))
+                out.append((path.relative_to(root), lineno, DASH_RULE, line.strip()))
     return out
 
 
@@ -185,18 +206,45 @@ _D = "-" * 2
 _EN = chr(0x2013)
 _EM = chr(0x2014)
 
+# Each known-bad names the rule it must trip. An emoji and an em dash both
+# refuse the run, so a fixture that only asserts refusal admits a report that
+# points the author at the wrong edit.
 BAD_FIXTURES = [
-    ("bad_emoji.md", "The gate passes " + chr(0x2705) + " on every profile.\n"),
-    ("bad_emoji_pictograph.md", "Reset storm " + chr(0x1F525) + " on the first draw.\n"),
-    ("bad_prose.md", f"The reader hard-returns {_D} it never touches MMIO.\n"),
-    ("bad_trailing.md", f"Two arming domains exist {_D}\nand the third differs.\n"),
-    ("bad_comment.sh", f"#!/bin/sh\n# a zero-context insert {_D} whose target drifts\ntrue\n"),
-    ("bad_pkgbuild", f"optdepends=('foo: SB600 substrate {_D} REQUIRED')\n"),
+    ("bad_emoji.md", "The gate passes " + chr(0x2705) + " on every profile.\n", EMOJI_RULE),
+    (
+        "bad_emoji_pictograph.md",
+        "Reset storm " + chr(0x1F525) + " on the first draw.\n",
+        EMOJI_RULE,
+    ),
+    ("bad_prose.md", f"The reader hard-returns {_D} it never touches MMIO.\n", DASH_RULE),
+    (
+        "bad_trailing.md",
+        f"Two arming domains exist {_D}\nand the third differs.\n",
+        DASH_RULE,
+    ),
+    (
+        "bad_comment.sh",
+        f"#!/bin/sh\n# a zero-context insert {_D} whose target drifts\ntrue\n",
+        DASH_RULE,
+    ),
+    ("bad_pkgbuild", f"optdepends=('foo: SB600 substrate {_D} REQUIRED')\n", DASH_RULE),
     # A table cell is prose. The diagram exemption matches branch tokens, so a
     # row opening with a pipe stays inside the gate's judgment.
-    ("bad_table.md", f"| Gate | Meaning |\n| --- | --- |\n| apply | clean {_D} no fuzz |\n"),
-    ("bad_en_dash.md", f"The GA block holds {_EN} the VAP clears first.\n"),
-    ("bad_em_dash.md", f"The GA block holds {_EM} the VAP clears first.\n"),
+    (
+        "bad_table.md",
+        f"| Gate | Meaning |\n| --- | --- |\n| apply | clean {_D} no fuzz |\n",
+        DASH_RULE,
+    ),
+    (
+        "bad_en_dash.md",
+        f"The GA block holds {_EN} the VAP clears first.\n",
+        UNICODE_DASH_RULE,
+    ),
+    (
+        "bad_em_dash.md",
+        f"The GA block holds {_EM} the VAP clears first.\n",
+        UNICODE_DASH_RULE,
+    ),
 ]
 
 # Corpus selection: (repository-relative path, admitted). The detector proves
@@ -226,12 +274,20 @@ def self_test(tmp: Path) -> int:
         if hits:
             print(f"CALIBRATION FAIL: {name} is known-good but reported {hits}")
             failures += 1
-    for name, body in BAD_FIXTURES:
+    for name, body, rule in BAD_FIXTURES:
         p = tmp / name
         p.write_text(body, encoding="utf-8")
         hits = findings(tmp, [p])
         if not hits:
             print(f"CALIBRATION FAIL: {name} is known-bad and went unreported")
+            failures += 1
+            continue
+        reported = {hit[2] for hit in hits}
+        if reported != {rule}:
+            print(
+                f"CALIBRATION FAIL: {name} trips {rule} and the report named "
+                f"{', '.join(sorted(reported))}"
+            )
             failures += 1
     for rel, admitted in CORPUS_FIXTURES:
         got = is_scannable(tmp / rel, tmp)
@@ -280,10 +336,12 @@ def main() -> int:
 
     paths = [p for p in tracked_files(root) if p.is_file() and is_scannable(p, root)]
     hits = findings(root, paths)
-    for rel, lineno, line in hits:
-        print(f"{rel}:{lineno}: dash construction: {line}")
+    for rel, lineno, rule, line in hits:
+        print(f"{rel}:{lineno}: {rule}: {line}")
     if hits:
-        print(f"project prose style: {len(hits)} dash constructions")
+        counts = collections.Counter(rule for _, _, rule, _ in hits)
+        tally = ", ".join(f"{counts[r]} {r}" for r in sorted(counts))
+        print(f"project prose style: {len(hits)} findings ({tally})")
         return 1
     print(f"project prose style: clean ({len(paths)} files)")
     return 0
