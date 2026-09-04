@@ -7,10 +7,7 @@ kernel-module rules. Codex, compatible agents, and human contributors read it
 directly. Other root agent files exist only to load it for tools that require a
 tool-specific filename.
 
-`CLAUDE.md` loads `@AGENTS.md`, spelled in that exact case because imports
-resolve literally on a case-sensitive filesystem, and adds Claude Code loading
-notes only. Doctrine lives in `AGENTS.md` alone, since copied text drifts into
-conflicting instructions.
+`CLAUDE.md` is a tracked repository-relative symbolic link to `AGENTS.md`, so Claude Code reads this same body and the rules live in one place.
 
 `README.md` owns repository content: the promotion ladder, the proves/does-not
 table, the package layout, the scripted checks, and the cross-repository
@@ -558,3 +555,46 @@ patches, scripts, packaging, or comments:
 
 When a reviewer finds a defect, fix the class, not only the instance. Add the
 rule, lint, test, or documented check that would have caught it.
+
+## Claude Code notes
+
+These notes came from the retired standalone `CLAUDE.md` loader and hold the Claude Code specifics that a tool-generic guide leaves out. A rule that applies to every agent lives in the sections above.
+
+### Loading rule
+
+When Claude Code starts inside a parent workspace, a sibling checkout, or a
+temporary worktree, load `radeon-custom/AGENTS.md` before editing kernel
+patches, packaging, or scripts here. These rules govern every edit under this
+repository regardless of launch directory.
+
+### Claude Code operating notes
+
+Inspect the real repository with Claude Code tools before editing; memory,
+prior summaries, and recalled context are leads, and `AGENTS.md` plus the patch
+series and kernel source are authority.
+
+Inspect the diff after every edit; the adversarial staged-diff read from
+`AGENTS.md` under `Regression-on-fix discipline` runs before any commit or
+completion claim.
+
+Claude Code task tracking is transient working state; durable state lands in
+patches, packaging, scripts, commit messages, documentation, or retained
+bundles in `steinmarder-r300`.
+
+Hardware-touching probes run through the gates in `AGENTS.md` under
+`Hazard gates` and `Security and hardware stop-line`. A run that reaches
+RS482 or Palm silicon is attended and preflighted; an agent session runs the
+source-side and package-side checks.
+
+Commit trailers use `Assisted-by:` naming the tools used, per `AGENTS.md` under
+`AI disclosure, authorship, and copyright`. The harness default
+`Co-Authored-By:` trailer does not apply here.
+
+### Response shape
+
+Responses report results, decisions, evidence, and remaining uncertainty in
+mechanism-first form: changed mechanism, evidence used, validation run, checks
+not run and why, risks or unresolved falsifiers. Chained reasoning appears when
+it explains the next action or a validation requirement; the rest of the
+deliberation lives in thoughtspace. Responses are emoji-free mechanism prose
+under durable names.
