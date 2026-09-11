@@ -203,9 +203,10 @@ jobs:
 
       # The shared source checkout and kernel tree carry trusted inputs. The
       # source becomes a job private detached checkout before repository code
-      # invokes package tooling. The kernel root stays shared and read-only, so
-      # a complete private identity snapshot proves that every compile leaves
-      # its files, modes, and symlink targets unchanged.
+      # invokes package tooling. The recorded upstream Radeon tree becomes a
+      # job private archive from that checkout. The kernel root stays shared
+      # and read-only, so a complete private identity snapshot proves that
+      # every compile leaves its files, modes, and symlink targets unchanged.
       - name: Prepare isolated 7.1 source and build-root inputs
         run: |
           set -euo pipefail
@@ -218,6 +219,27 @@ jobs:
             --source-repository "$SOURCE_REPOSITORY" \
             --source-commit "$source_commit" \
             --destination "$input_root/source"
+          upstream_tree=$(sed -n \
+            '/^\[/q;s/^subtree_tree[[:space:]]*=[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+            "$input_root/source/UPSTREAM_BASE.toml" | head -1)
+          case $upstream_tree in
+            *[!0-9a-f]* | '')
+              echo "UPSTREAM_BASE.toml declares no lowercase tree object" >&2
+              exit 1
+              ;;
+          esac
+          [ "${#upstream_tree}" -eq 40 ] || {
+            echo "UPSTREAM_BASE.toml tree object is not 40 hexadecimal characters" >&2
+            exit 1
+          }
+          [ "$(git -C "$input_root/source" cat-file -t "$upstream_tree")" = tree ] || {
+            echo "recorded upstream Radeon object is not a Git tree" >&2
+            exit 1
+          }
+          upstream_radeon_tree="$input_root/upstream-radeon"
+          mkdir "$upstream_radeon_tree"
+          git -C "$input_root/source" archive "$upstream_tree" |
+            tar -x -C "$upstream_radeon_tree"
           python3 scripts/check_radeon_source_pin.py \
             --identity packaging/arch/radeon-unified-dkms/source-identity.toml \
             --repository "$input_root/source" \
@@ -227,6 +249,7 @@ jobs:
             --write "$input_root/kernel-7.1.identity.tsv"
           {
             printf 'JOB_SOURCE_REPOSITORY=%s\n' "$input_root/source"
+            printf 'JOB_UPSTREAM_RADEON_TREE=%s\n' "$upstream_radeon_tree"
             printf 'KERNEL_BUILD_ROOT_71_IDENTITY=%s\n' \
               "$input_root/kernel-7.1.identity.tsv"
           } >>"$GITHUB_ENV"
@@ -466,46 +489,41 @@ jobs:
           cmp "$work/final.tsv" docs/legacy-payload-0.3-91-exact-context-manifest.tsv
           echo "transition ledger reproduces and the walked tree matches the payload manifest"
 
-      # Both normalized oracles derive from pristine upstream, so the upstream
-      # tree is content-checked before it is used. A path repointed at a
-      # different revision fails against the committed upstream manifest instead
-      # of producing oracles that silently describe another base.
+      # Both normalized oracles derive from the recorded upstream tree object.
+      # The job private archive is content-checked before it is used, so a
+      # changed object or export fails against the committed upstream manifest
+      # instead of producing oracles that silently describe another base.
       - name: Normalized source oracles reproduce
-        env:
-          UPSTREAM_RADEON_TREE: ${{ vars.RADEON_UPSTREAM_RADEON_TREE }}
         run: |
           set -euo pipefail
-          : "${UPSTREAM_RADEON_TREE:?RADEON_UPSTREAM_RADEON_TREE is unset}"
+          : "${JOB_SOURCE_REPOSITORY:?job-private source export is unset}"
+          : "${JOB_UPSTREAM_RADEON_TREE:?job-private upstream Radeon tree is unset}"
           work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/oracles.XXXXXX")
           trap 'rm -rf "$work"' EXIT
 
-          # The manifest was emitted from this path, so comparing the path back
-          # against it detects working-tree drift and a repointed variable and
-          # says nothing about which upstream revision the manifest describes.
-          # The tree object closes that: linux-radeon-gororoba's
-          # UPSTREAM_BASE.toml is the one home for the recorded subtree, and git
-          # object IDs are content addresses, so a checkout at another revision
-          # fails here rather than supplying a wrong left side to the origin map.
-          sibling=$(git -C "$UPSTREAM_RADEON_TREE" rev-parse --show-toplevel)
+          # UPSTREAM_BASE.toml supplies the content address used to create the
+          # archive. The committed manifest then proves the archive bytes before
+          # the origin map consumes them.
+          sibling=$JOB_SOURCE_REPOSITORY
           recorded=$(sed -n '/^\[/q;s/^subtree_tree[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
                        "$sibling/UPSTREAM_BASE.toml" | head -1)
           [ -n "$recorded" ] || {
             echo "UPSTREAM_BASE.toml declares no subtree_tree" >&2; exit 1; }
-          actual=$(git -C "$sibling" rev-parse HEAD:drivers/gpu/drm/radeon)
+          actual=$(git -C "$sibling" rev-parse "$recorded^{tree}")
           [ "$actual" = "$recorded" ] || {
             echo "upstream subtree is $actual, and the pin records $recorded" >&2
             exit 1
           }
           echo "upstream subtree object $actual matches the recorded pin"
 
-          sh scripts/emit_source_tree_manifest.sh --tree "$UPSTREAM_RADEON_TREE" \
+          sh scripts/emit_source_tree_manifest.sh --tree "$JOB_UPSTREAM_RADEON_TREE" \
             --out "$work/upstream.tsv"
           cmp "$work/upstream.tsv" docs/upstream-radeon-v6.18-manifest.tsv
           echo "upstream radeon subtree matches the recorded v6.18 manifest"
 
           sh scripts/with_build_slot.sh \
             sh scripts/materialize_legacy_radeon_base.sh \
-              --upstream "$UPSTREAM_RADEON_TREE" \
+              --upstream "$JOB_UPSTREAM_RADEON_TREE" \
               --out "$work/base-tree" \
               --manifest "$work/base.tsv" \
               --normalization "$work/base-norm.tsv" \
@@ -518,14 +536,14 @@ jobs:
           # exactly once, provenance per origin kind, and the mapped atom
           # union reconstructing the base byte-identically.
           python3 scripts/check_base_delta_map_closure.py \
-            --upstream "$UPSTREAM_RADEON_TREE" \
+            --upstream "$JOB_UPSTREAM_RADEON_TREE" \
             --base "$work/base-tree" \
             --map docs/base-delta-map.tsv \
             --base-manifest docs/legacy-base-source-manifest.tsv
 
           sh scripts/with_build_slot.sh \
             sh scripts/normalize_legacy_source_tree.sh \
-              --upstream "$UPSTREAM_RADEON_TREE" \
+              --upstream "$JOB_UPSTREAM_RADEON_TREE" \
               --manifest "$work/final.tsv" \
               --normalization "$work/final-norm.tsv" \
               --prove-generated

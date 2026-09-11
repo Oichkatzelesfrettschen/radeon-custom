@@ -29,7 +29,7 @@ module. It does not by itself prove those mechanisms worked on silicon.
 Each row preserves the qualification state of its package. The newest
 successfully deployed package row supersedes an older deployment authority
 statement. A newer recipe without installation evidence does not. Three
-version axes remain distinct. Version 0.8.18-1 is the active package recipe,
+version axes remain distinct. Version 0.8.19-1 is the active package recipe,
 version 0.8.11-1 carries the newest recorded target run, joined to retained
 bundle cachyos-vostro1000-rs482-radeon-unified-0.8.11-1-deployment-runtime,
 and version 0.6-1 carries the retained parked-device behavior verdict.
@@ -37,7 +37,7 @@ and version 0.6-1 carries the retained parked-device behavior verdict.
 <!-- markdownlint-disable MD013 -->
 
 Rows naming older revisions preserve their qualification records. The
-0.8.18-1 row is the current recipe record.
+0.8.19-1 row is the current recipe record.
 
 | Property | Current status |
 | --- | --- |
@@ -65,7 +65,8 @@ Rows naming older revisions preserve their qualification records. The
 | Radeon DKMS package recipe 0.8.15-1 records the package authority at source commit `20273f5782700a4a650a88ba554cc8f6baf5437d` and driver tree `8a1ffaa962b4b917fdca5d558e35e7387393d49e` with signed source tag `radeon-unified-0.8.15-profiled-source`; `packaging/arch/radeon-unified-dkms/source-identity.toml` owns its exact identities | The source preserves nonblocking page-flip reservation and delayed retained-buffer cleanup. Reservation contention records deferred cleanup, unexpected reservation and hardware-admission failures retain distinct errors, and fence diagnostics expose first-retention, release, and pending counters. Independent counter reads converge at quiescence. Production source module builds pass against 7.1.8 and 6.18.42 LTS; target runtime evidence belongs to steinmarder-r300. |
 | Radeon DKMS package recipe 0.8.16-1 pins the signed `radeon-unified-0.8.16-profiled-source` checkpoint; `packaging/arch/radeon-unified-dkms/source-identity.toml` owns its exact source, tree, and tag identities | The two source commits extend the 0.8.15 source with legacy 2D source-relocation and directional-footprint containment. Source-pin calibration, deterministic profile checks, package construction, and payload verification qualify packaging. Installation and target execution remain separate evidence gates. |
 | Radeon DKMS package recipe 0.8.17-1 pins the signed `radeon-unified-0.8.17-profiled-source` checkpoint at source commit `434d5a7259aded6bbd744fe89de37104c5da0355`, with tag object `a6ee356973a812020bab602295155d639164c77f` and driver tree `0a8c576317940720ee836107e0171005565ebdfe` | superseded by recipe 0.8.18-1; the pin carries the datatype-9 legacy 2D destination refusal. Source pin, profile, checksum, and package construction checks qualify the historical packaging record. |
-| Radeon DKMS package recipe 0.8.18-1 is the active package authority and pins the signed `radeon-unified-0.8.18-profiled-source` checkpoint at source commit `dd677ec1e24f0ae2ec572f9af6205f11f5760b43`, with tag object `9cdb60b129c62997941cea2d1c54613dc1ff8ecf` and driver tree `1fb22844bd517f7b549b22ab72e09a32d6b83c20` | the pin carries the datatype-9 legacy 2D destination refusal. Source pin, profile, checksum, and package construction checks qualify the active recipe. Installation and target execution remain separate evidence gates. |
+| Radeon DKMS package recipe 0.8.18-1 pins the signed `radeon-unified-0.8.18-profiled-source` checkpoint at source commit `dd677ec1e24f0ae2ec572f9af6205f11f5760b43`, with tag object `9cdb60b129c62997941cea2d1c54613dc1ff8ecf` and driver tree `1fb22844bd517f7b549b22ab72e09a32d6b83c20` | The pin carries the datatype-9 legacy 2D destination refusal. Version 0.8.19-1 supersedes the recipe authority while the installed target remains on 0.8.18-1. |
+| Radeon DKMS package recipe 0.8.19-1 is the active package authority and pins the signed `radeon-unified-0.8.19-profiled-source` checkpoint at source commit `d374296b7c1f569c1f235f131a02f8fc66102094`, with tag object `9368018aa99d7afb0fe880455879d8fa0a88d97b` and driver tree `12298c484490457c6167f0203ceb60f09a5b2339` | The pin advances from 0.8.18 through the RS4xx GART invalidation disposition and fault injection, bounded COMBIOS census, legacy 2D source and destination containment, packet0 safe bitmap end rejection, the machine-readable R3V Vulkan to DRM requirement map, and target-header fbdev allocation compatibility. Source pin, deterministic profile, checksum, and package construction checks qualify the recipe. Package installation and target execution remain separate evidence gates. |
 | Unified DKMS package 0.3-96 is the retained target-runtime baseline | installed and runtime-accepted on the RS482 target across a boot with matching module srcversion, `lockup_timeout=0`, and inert hazard interfaces, retained as steinmarder-r300 bundle `cachyos_vostro1000_rs482_radeon_unified_pkgrel96_runtime_20260730T233253Z`; hardware operation beyond debugfs inventory is not run |
 | Earlier package revisions install on the recorded CachyOS kernels | installed; hardware evidence remains mechanism- and bundle-specific |
 | Failed-reset host-survival containment through park and client thaw/close | hardware-pass in retained RS482 Fire 28 evidence |
