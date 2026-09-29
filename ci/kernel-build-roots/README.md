@@ -1,81 +1,65 @@
-# Retained kernel build roots
+# Kernel build roots
 
 The series carries a `LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)` split in
 `radeon_gem.c`, added by `0052-rs480-parked-gpu-close-path-pins.patch` and
 extended by `0053-rs480-parked-gpu-leak-bos-by-design.patch`. Both branches
-name a different TTM teardown call, so compiling against a running 7.x kernel
-exercises one side and leaves the other unbuilt. A retained pre-7.0 build tree
-gives the second side a compiler.
-
-Each root is identified here by its key-file hashes at repository-relative
-paths. The local absolute path is a workspace fact and lives in the Actions
-repository variable named in the table below.
+name a different TTM teardown call, so compiling against a 7.x kernel exercises
+one side and leaves the other unbuilt. A pre-7.0 build root gives the second
+side a compiler.
 
 ## Roots
 
-| Kernel release | Variable | Hash file |
-| --- | --- | --- |
-| `6.18.38-2-cachyos-lts` | `RADEON_KERNEL_BUILD_ROOT_618` | `6.18.38-2-cachyos-lts.sha256` |
+Each root is the build directory an Arch Linux headers package installs under
+`/usr/lib/modules/RELEASE/build`, resolved through the Arch Linux Archive
+snapshot that `ARCH_ARCHIVE_SNAPSHOT` in `.github/workflows/gates.yml` names.
+The job-level `env` of the job that compiles against a root pins its package,
+version, and release, so `gates.yml` is the one home for those values.
 
-## 6.18.38-2-cachyos-lts
+| Job | Package | Version | Kernel release | `LINUX_VERSION_CODE` range |
+| --- | --- | --- | --- | --- |
+| `package` | `linux-headers` | `7.2.7.arch1-1` | `7.2.7-arch1-1` | `KERNEL_VERSION(7, 0, 0)` to below `KERNEL_VERSION(8, 0, 0)` |
+| `compat-6-18` | `linux-lts-headers` | `6.18.54-1` | `6.18.54-1-lts` | `KERNEL_VERSION(6, 18, 0)` to below `KERNEL_VERSION(7, 0, 0)` |
 
-| Field | Value |
-| --- | --- |
-| kernel release | `6.18.38-2-cachyos-lts` |
-| `LINUX_VERSION_CODE` | `397862`, which is `KERNEL_VERSION(6, 18, 38)` |
-| originating package | `linux-cachyos-lts-headers-6.18.38-2-x86_64_v3.pkg.tar.zst` |
-| package SHA-256 | `057509fe27ef3d1cb096df59acc4eeac56a72ccc58065945873bd43b9fd68cb7` |
-| package signature | good, CachyOS `882DCFE48E2051D48E2562ABF3B607488DB35A47` |
-| kernel compiler | `clang version 22.1.6` |
+Both packages build their kernels with GCC (`CONFIG_CC_IS_GCC=y`), and the
+module compile runs under the GCC the same snapshot installs. The compile gates
+reject every warning other than the compiler-mismatch notice, so a GCC
+diagnostic in the pinned source fails the gate. `target-kernel.yml` compiles
+the merged package against the target host's own kernel build root, under the
+compiler that kernel names.
 
-The root is extracted from that package rather than copied from an installed
-tree, so the package SHA-256 above is the provenance root and every key-file
-hash below it is reachable from a signed artifact.
+## Identity proof
 
-The retained axis is the kernel build tree. The host toolchain floats, so a
-`clang` newer than 22.1.6 emits `the compiler differs from the one used to
-build the kernel` and compiles anyway. The lane produces object files rather
-than a loadable module, so vermagic never enters the verdict, and a future
-failure attributes to the toolchain by that version line.
+pacman verifies each package signature at install. On that base,
+`scripts/check_packaged_kernel_build_root.sh` proves the root the gate compiles
+against:
 
-`sha256sum -c` covers the six files that carry version identity and
-configuration surface. It reports on the identity of the root rather than on
-every byte of a 183 MiB header tree.
+1. `pacman -Q` reports exactly the pinned package version.
+2. `include/config/kernel.release` names the pinned release.
+3. `LINUX_VERSION_CODE` in `include/generated/uapi/linux/version.h` lies in the
+   job's half-open range, so a pin repointed at a 7.x package fails the
+   `compat-6-18` job instead of producing a green verdict against the branch
+   that job exists to build.
+4. `pacman -Qkk` matches every installed file against the size, mode, and
+   SHA-256 in the package's signed `.MTREE`.
+5. The root holds exactly the non-directory paths the package owns, so an
+   injected file fails as surely as an altered one.
 
-## Preparing a root
+`scripts/check_shared_build_root_identity.py` then records the complete root,
+every path, type, mode, size, digest, and symlink target, before the first
+compile and verifies it after each compile step. The compiles run as an account
+that cannot write the root, and the manifest comparison confirms that no step
+changed it.
 
-Extract the headers package for the target release, place the tree outside
-every repository workspace, and make it root-owned and world-readable with
-write access removed. External-module compilation writes into the temporary
-Radeon source tree, so a read-only kernel build root compiles.
+## Moving the snapshot
 
-```sh
-release=6.18.38-2-cachyos-lts
-pkg=/var/cache/pacman/pkg/linux-cachyos-lts-headers-6.18.38-2-x86_64_v3.pkg.tar.zst
-pacman-key -v "$pkg.sig"
-stage=$(mktemp -d)
-tar -xf "$pkg" -C "$stage" "usr/lib/modules/$release/build"
-sudo rsync -a --delete "$stage/usr/lib/modules/$release/build/" \
-  "/opt/gororoba/kernel-builds/$release/"
-sudo chown -R root:root /opt/gororoba
-sudo chmod -R a-w /opt/gororoba/kernel-builds
-```
-
-Record the resulting hashes with the paths this directory uses:
+Pick the new snapshot date, read the header versions it carries, and change
+`ARCH_ARCHIVE_SNAPSHOT` and both jobs' `KERNEL_HEADERS_VERSION` and
+`KERNEL_RELEASE` in one commit:
 
 ```sh
-( cd "/opt/gororoba/kernel-builds/$release" && sha256sum \
-    .config Module.symvers include/config/kernel.release \
-    include/generated/autoconf.h include/generated/compile.h \
-    include/generated/uapi/linux/version.h \
-) > "ci/kernel-build-roots/$release.sha256"
+snapshot=2026/09/28
+curl -fsS "https://archive.archlinux.org/repos/$snapshot/core/os/x86_64/core.db" |
+  tar -xzO --wildcards '*/desc' |
+  awk '/^%NAME%$/ { getline; name = $0 }
+       /^%VERSION%$/ { getline; if (name ~ /^linux(-lts)?-headers$/) print name, $0 }'
 ```
-
-## Release selection
-
-`6.18.34-1-cachyos-lts` is absent from this host: `pacman -Q` does not list it
-and `/var/cache/pacman/pkg` retains no package for it. `6.18.33-2-cachyos-lts`
-appears under `/lib/modules` with a stub build directory carrying no
-`Makefile`, `Module.symvers`, or generated headers, so it compiles nothing.
-`6.18.38-2-cachyos-lts` retains both the package and its signature, which is
-why it roots this lane.

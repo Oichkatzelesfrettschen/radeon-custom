@@ -1,0 +1,7 @@
+# The gate enforces this rule set explicitly, because ruff releases change the
+# default selection and an unpinned default moves the lint verdict with the
+# installed ruff version rather than with the repository.
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

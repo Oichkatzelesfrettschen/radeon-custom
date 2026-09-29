@@ -335,6 +335,13 @@ def verify(package_dir: Path, supplied: list[Path]) -> None:
         # ResourceWarning; this gate still rejects every Namcap diagnostic
         # emitted for the package itself.
         environment.pop("PYTHONWARNINGS", None)
+        # Namcap's shebangdepends rule resolves an interpreter with
+        # shutil.which and looks the resolved path up in installed package
+        # file lists. Arch links /usr/sbin to bin, so a PATH that lists
+        # /usr/sbin first resolves sh to usr/sbin/sh, which no package owns,
+        # and the rule reports sh as unowned and bash as unneeded. A fixed
+        # PATH makes the diagnostic set a property of the package alone.
+        environment["PATH"] = "/usr/bin"
         result = subprocess.run(
             ["namcap", "--machine-readable", *(str(archive) for archive in archives)],
             check=False,
