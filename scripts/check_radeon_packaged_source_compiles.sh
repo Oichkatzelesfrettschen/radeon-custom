@@ -23,9 +23,14 @@ die() {
     exit 2
 }
 
+# Kbuild's external-module prepare step compares CC_VERSION_TEXT and
+# PAHOLE_VERSION against the kernel's CONFIG_ values and prints one notice per
+# drift; both leave the module build unchanged. Every other warning fails.
 scan_warnings() {
     unexpected=$(grep -in warning "$1" |
-        grep -v 'the compiler differs from the one used to build the kernel' ||
+        grep -v \
+            -e 'the compiler differs from the one used to build the kernel' \
+            -e 'pahole version differs from the one used to build the kernel' ||
         true)
     if [ -n "$unexpected" ]; then
         printf 'unapproved build warning:\n%s\n' "$unexpected" >&2
@@ -130,11 +135,17 @@ if [ "$self_test" -eq 1 ]; then
     printf 'CC [M] fixture.o\nMODPOST Module.symvers\n' >"$work/good.log"
     printf 'warning: the compiler differs from the one used to build the kernel\n' \
         >"$work/allowed.log"
+    printf 'warning: pahole version differs from the one used to build the kernel\n' \
+        >>"$work/allowed.log"
     printf 'warning: unused variable\n' >"$work/bad.log"
+    printf 'warning: pahole (pahole) is not available\n' >"$work/bad-pahole.log"
     scan_warnings "$work/good.log"
     scan_warnings "$work/allowed.log"
     if scan_warnings "$work/bad.log" 2>/dev/null; then
         die "warning calibration accepts an unapproved warning"
+    fi
+    if scan_warnings "$work/bad-pahole.log" 2>/dev/null; then
+        die "warning calibration accepts an unapproved pahole warning"
     fi
     cp "$expected_profile" "$work/profile.toml"
     cmp "$expected_profile" "$work/profile.toml"
