@@ -120,12 +120,15 @@ expect_not_exit() {
 
 # The retained pre-7.0 root was compiled by its kernel package's own clang, so
 # the host compiler drifts ahead of it between package updates and Kbuild
-# reports the difference. That notice is the one explained diagnostic; every
-# other warning in a compile log is a defect until explained, so the scan
-# fails on it.
+# reports the difference. The same Kbuild prepare step reports a pahole that
+# differs from CONFIG_PAHOLE_VERSION. Those two notices are the explained
+# diagnostics; every other warning in a compile log is a defect until
+# explained, so the scan fails on it.
 scan_compile_warnings() {
   unexpected=$(grep -in 'warning' "$1" |
-    grep -iv 'the compiler differs from the one used to build the kernel' || true)
+    grep -iv \
+      -e 'the compiler differs from the one used to build the kernel' \
+      -e 'pahole version differs from the one used to build the kernel' || true)
   if [ -n "$unexpected" ]; then
     echo "COMPILE WARNINGS: the log carries warnings outside the allowlist" >&2
     printf '%s\n' "$unexpected" | sed 's/^/  /' >&2
@@ -232,12 +235,15 @@ PATCH[0]="0001-fixture.patch"' \
   # notice pass; any other warning fails.
   printf 'CC [M] radeon_gem.o\nLD [M] radeon.ko\n' > "$TMP/clean.log"
   printf 'warning: the compiler differs from the one used to build the kernel\nCC [M] radeon_gem.o\n' > "$TMP/allowed.log"
+  printf 'warning: pahole version differs from the one used to build the kernel\n' >> "$TMP/allowed.log"
+  printf 'warning: pahole (pahole) is not available\n' > "$TMP/bad-pahole.log"
   printf 'rs400.c:12:5: warning: unused variable [-Wunused-variable]\n' > "$TMP/bad.log"
   printf 'WARNING: modpost found an unresolved symbol\n' > "$TMP/bad-uppercase.log"
   if scan_compile_warnings "$TMP/clean.log" && \
      scan_compile_warnings "$TMP/allowed.log" 2>/dev/null && \
      ! scan_compile_warnings "$TMP/bad.log" 2>/dev/null && \
-     ! scan_compile_warnings "$TMP/bad-uppercase.log" 2>/dev/null; then
+     ! scan_compile_warnings "$TMP/bad-uppercase.log" 2>/dev/null && \
+     ! scan_compile_warnings "$TMP/bad-pahole.log" 2>/dev/null; then
     echo "  ok: warning scan passes clean and allowlisted logs, fails on lowercase and uppercase warnings"
     known_bad=$((known_bad + 1))
     known_good=$((known_good + 2))
