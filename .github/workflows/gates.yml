@@ -1,12 +1,16 @@
-# Packaging-repository gates, enforced on the self-hosted CachyOS workstation.
+# Packaging-repository gates on GitHub-hosted runners.
 #
-# GitHub-hosted runners cannot serve this repository: the compile verdict needs
-# a CachyOS kernel build tree, and no hosted image carries one.
+# The static and build jobs run in a digest-pinned Arch Linux container whose
+# packages resolve through one dated Arch Linux Archive snapshot, so every
+# compile verdict names an exact, signed kernel headers package:
+# linux-headers supplies the 7.x build root and linux-lts-headers the pre-7.0
+# root. The snapshot date and the pinned header versions change together in
+# one commit.
 #
 # Job placement is a security boundary rather than a convenience. These jobs
 # run on pull_request, so they execute repository-controlled code from an
-# unmerged branch, and they therefore select the workstation by an exclusive
-# label. The RS482 target host carries no label any job here requests, so
+# unmerged branch, and each one runs on an ephemeral GitHub-hosted VM. The
+# RS482 target host carries only the labels target-kernel.yml requests, so
 # unmerged code cannot reach it. Target-kernel compilation is a post-merge
 # qualification and lives in target-kernel.yml.
 name: gates
@@ -20,6 +24,9 @@ on:
 permissions:
   contents: read
 
+env:
+  ARCH_ARCHIVE_SNAPSHOT: "2026/09/28"
+
 jobs:
   # Resolve whether a pull request changes anything the kernel-build and
   # packaging jobs must recompile or reproduce. A Markdown-only change is
@@ -29,7 +36,7 @@ jobs:
   # merges. The dependent jobs read this output fail-closed: a failed or empty
   # classification builds rather than silencing the gate.
   changes:
-    runs-on: [self-hosted, linux, cachyos, workstation-host]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       build: ${{ steps.classify.outputs.build }}
@@ -39,6 +46,11 @@ jobs:
           persist-credentials: false
           clean: true
           fetch-depth: 0
+
+      # The verdict below runs under this VM's sh, so the calibration runs
+      # under the same interpreter before the verdict is trusted.
+      - name: Build-relevance classifier calibration
+        run: sh scripts/classify_build_relevance.sh --self-test
 
       - name: Classify changed paths
         id: classify
@@ -56,9 +68,23 @@ jobs:
           echo "$verdict" >>"$GITHUB_OUTPUT"
 
   static:
-    runs-on: [self-hosted, linux, cachyos, workstation-host]
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3
     timeout-minutes: 20
     steps:
+      # actions/checkout needs git inside the container to produce a
+      # repository with history, so the toolchain installs before checkout.
+      - name: Install the pinned Arch toolchain
+        run: |
+          set -eu
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_ARCHIVE_SNAPSHOT}/\$repo/os/\$arch" \
+            >/etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed \
+            git python ruff actionlint shellcheck dkms kmod openssh
+          git config --system --add safe.directory '*'
+          pacman -Q python ruff actionlint shellcheck dkms
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -90,6 +116,9 @@ jobs:
 
       - name: Shared build-root identity calibration
         run: python3 scripts/check_shared_build_root_identity.py --self-test
+
+      - name: Packaged kernel build-root identity calibration
+        run: sh scripts/check_packaged_kernel_build_root.sh --self-test
 
       - name: Packaged-source build calibration
         run: sh scripts/check_radeon_packaged_source_compiles.sh --self-test
@@ -189,34 +218,91 @@ jobs:
   package:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.build != 'false' }}
-    runs-on: [self-hosted, linux, cachyos, primary-compile-host]
+    runs-on: ubuntu-24.04
+    # The transition matrix bind-mounts its disposable root and arch-chroot
+    # mounts proc, sys, and dev inside it, which needs a privileged container.
+    container:
+      image: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3
+      options: --privileged
     timeout-minutes: 45
     env:
-      SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
-      KERNEL_BUILD_ROOT_71: ${{ vars.RADEON_KERNEL_BUILD_ROOT_71 }}
+      KERNEL_HEADERS_PACKAGE: linux-headers
+      KERNEL_HEADERS_VERSION: 7.2.7.arch1-1
+      KERNEL_RELEASE: 7.2.7-arch1-1
     steps:
+      # actions/checkout needs git inside the container to produce a
+      # repository with history, so the toolchain installs before checkout.
+      - name: Install the pinned Arch toolchain
+        run: |
+          set -eu
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_ARCHIVE_SNAPSHOT}/\$repo/os/\$arch" \
+            >/etc/pacman.d/mirrorlist
+          # The image's pacman.conf prunes documentation and etc/pacman.conf
+          # through NoExtract. The transition matrix derives its fixture
+          # configuration from this host's, and a fixture without
+          # /etc/pacman.conf cannot run pacman inside the chroot.
+          sed -i '/^NoExtract/d' /etc/pacman.conf
+          # The image ships its keyring without a local secret key. pacstrap
+          # copies this keyring into the fixture, and the archlinux-keyring
+          # scriptlet there signs the populated keys with the local key.
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syyuu --noconfirm --needed \
+            git python dkms kmod openssh arch-install-scripts pahole namcap \
+            linux-headers
+          git config --system --add safe.directory '*'
+          pacman -Q python dkms pahole namcap linux-headers
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           clean: true
           fetch-depth: 0
 
-      # The shared source checkout and kernel tree carry trusted inputs. The
-      # source becomes a job private detached checkout before repository code
-      # invokes package tooling. The recorded upstream Radeon tree becomes a
-      # job private archive from that checkout. The kernel root stays shared
-      # and read-only, so a complete private identity snapshot proves that
-      # every compile leaves its files, modes, and symlink targets unchanged.
-      - name: Prepare isolated 7.1 source and build-root inputs
+      # makepkg refuses to run as root, and a compile run by an account that
+      # cannot write the root-owned kernel build root leaves it unchanged by
+      # construction; the identity manifests then confirm it.
+      - name: Create the unprivileged build account
+        run: |
+          set -eu
+          useradd --create-home --user-group builder
+          builder_temp="${RUNNER_TEMP}/builder"
+          install -d -o builder -g builder -m 0755 "$builder_temp"
+          printf 'BUILDER_TEMP=%s\n' "$builder_temp" >>"$GITHUB_ENV"
+
+      # KERNEL_VERSION(7, 0, 0) <= code < KERNEL_VERSION(8, 0, 0)
+      - name: Verify the packaged 7.x build-root identity
         run: |
           set -euo pipefail
-          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
-          : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
+          verdict=$(sh scripts/check_packaged_kernel_build_root.sh \
+            --package "$KERNEL_HEADERS_PACKAGE" \
+            --version "$KERNEL_HEADERS_VERSION" \
+            --release "$KERNEL_RELEASE" \
+            --version-code-range 458752:524288)
+          printf 'KERNEL_BUILD_ROOT_7X=%s\n' "${verdict#kernel_build_root=}" \
+            >>"$GITHUB_ENV"
+
+      # The public source repository is cloned with full history, because the
+      # signed tags, the equivalence ancestry, and the recorded upstream tree
+      # object all live in it. The source becomes a job private detached
+      # checkout before repository code invokes package tooling, and the
+      # recorded upstream Radeon tree becomes a job private archive from that
+      # checkout. The kernel root is root-owned and read-only to the build
+      # account, and a complete identity snapshot proves that every compile
+      # leaves its files, modes, and symlink targets unchanged.
+      - name: Prepare isolated 7.x source and build-root inputs
+        run: |
+          set -euo pipefail
           input_root="${RUNNER_TEMP}/radeon-build-inputs"
+          mkdir -p "$input_root"
+          source_repository=$(python3 -c \
+            'import tomllib; print(tomllib.load(open("packaging/arch/radeon-unified-dkms/source-identity.toml", "rb"))["source_repository"])')
+          git clone --quiet "https://github.com/${source_repository}.git" \
+            "$input_root/source-origin"
           source_commit=$(python3 -c \
             'import tomllib; print(tomllib.load(open("packaging/arch/radeon-unified-dkms/source-identity.toml", "rb"))["source_commit"])')
           sh scripts/export_radeon_ci_source_snapshot.sh \
-            --source-repository "$SOURCE_REPOSITORY" \
+            --source-repository "$input_root/source-origin" \
             --source-commit "$source_commit" \
             --destination "$input_root/source"
           upstream_tree=$(sed -n \
@@ -245,13 +331,13 @@ jobs:
             --repository "$input_root/source" \
             --pkgbuild packaging/arch/radeon-unified-dkms/PKGBUILD
           python3 scripts/check_shared_build_root_identity.py \
-            --root "$KERNEL_BUILD_ROOT_71" \
-            --write "$input_root/kernel-7.1.identity.tsv"
+            --root "$KERNEL_BUILD_ROOT_7X" \
+            --write "$input_root/kernel-7.x.identity.tsv"
           {
             printf 'JOB_SOURCE_REPOSITORY=%s\n' "$input_root/source"
             printf 'JOB_UPSTREAM_RADEON_TREE=%s\n' "$upstream_radeon_tree"
-            printf 'KERNEL_BUILD_ROOT_71_IDENTITY=%s\n' \
-              "$input_root/kernel-7.1.identity.tsv"
+            printf 'KERNEL_BUILD_ROOT_7X_IDENTITY=%s\n' \
+              "$input_root/kernel-7.x.identity.tsv"
           } >>"$GITHUB_ENV"
 
       - name: PKGBUILD sha256sums
@@ -263,29 +349,27 @@ jobs:
           bash scripts/verify_radeon_unified_dkms_sources.sh \
             --source-repository "$JOB_SOURCE_REPOSITORY"
 
-      # One lock per physical host. Each repository serializes its own jobs,
-      # and two runner services share this machine, so the lock is what keeps a
-      # source build and a packaging build off the same cores and page cache.
-      - name: Pinned production and development source build against 7.1
+      # with_build_slot.sh bounds concurrent module builds on a host that
+      # several runner services share. A hosted VM carries one job, so a slot
+      # is always free, and the gate keeps exercising the wrapper that
+      # target-kernel.yml depends on.
+      - name: Pinned production and development source build against 7.x
         run: |
-          : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
-          mkdir -p "$HOME/.cache/gororoba-ci"
-          sh scripts/with_build_slot.sh \
-            timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
-              --source-repository "$JOB_SOURCE_REPOSITORY" \
-              --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
-              --profile prod
-          sh scripts/with_build_slot.sh \
-            timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
-              --source-repository "$JOB_SOURCE_REPOSITORY" \
-              --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
-              --profile all-dev
+          set -eu
+          for profile in prod all-dev; do
+            runuser -u builder -- env RUNNER_TEMP="$BUILDER_TEMP" \
+              sh scripts/with_build_slot.sh \
+              timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
+                --source-repository "$JOB_SOURCE_REPOSITORY" \
+                --kernel-build-root "$KERNEL_BUILD_ROOT_7X" \
+                --profile "$profile"
+          done
 
-      - name: Verify shared 7.1 build-root identity after pinned builds
+      - name: Verify 7.x build-root identity after pinned builds
         run: |
           python3 scripts/check_shared_build_root_identity.py \
-            --root "$KERNEL_BUILD_ROOT_71" \
-            --verify "$KERNEL_BUILD_ROOT_71_IDENTITY"
+            --root "$KERNEL_BUILD_ROOT_7X" \
+            --verify "$KERNEL_BUILD_ROOT_7X_IDENTITY"
 
       - name: Build and verify deterministic split packages
         run: |
@@ -294,9 +378,11 @@ jobs:
           printf 'PACKAGE_WORK=%s\n' "$PACKAGE_WORK" >>"$GITHUB_ENV"
           mkdir -p "$PACKAGE_WORK/package"
           cp -a packaging/arch/radeon-unified-dkms/. "$PACKAGE_WORK/package/"
+          chown -R builder:builder "$PACKAGE_WORK/package"
           (
             cd "$PACKAGE_WORK/package"
-            RADEON_UNIFIED_SOURCE_URL="git+file://${JOB_SOURCE_REPOSITORY}" \
+            runuser -u builder -- env \
+              RADEON_UNIFIED_SOURCE_URL="git+file://${JOB_SOURCE_REPOSITORY}" \
               makepkg -fC --noconfirm
           )
           # shellcheck disable=SC2034
@@ -345,35 +431,37 @@ jobs:
               bash scripts/test_radeon_dkms_package_verifier.sh "$package_path"
           done
 
-      - name: Build both verified package exports against 7.1
+      - name: Build both verified package exports against 7.x
         run: |
           set -euo pipefail
-          : "${KERNEL_BUILD_ROOT_71:?RADEON_KERNEL_BUILD_ROOT_71 is unset}"
-          mkdir -p "$HOME/.cache/gororoba-ci"
           for profile in prod all-dev; do
             if [ "$profile" = prod ]; then
               package_path=$PROD_PACKAGE_PATH
             else
               package_path=$DEV_PACKAGE_PATH
             fi
-            sh scripts/with_build_slot.sh \
+            runuser -u builder -- env RUNNER_TEMP="$BUILDER_TEMP" \
+              sh scripts/with_build_slot.sh \
               timeout 15m sh scripts/check_radeon_packaged_source_compiles.sh \
                 --package "$package_path" \
-                --kernel-build-root "$KERNEL_BUILD_ROOT_71" \
+                --kernel-build-root "$KERNEL_BUILD_ROOT_7X" \
                 --profile "$profile"
           done
 
-      - name: Verify shared 7.1 build-root identity after package export builds
+      - name: Verify 7.x build-root identity after package export builds
         run: |
           python3 scripts/check_shared_build_root_identity.py \
-            --root "$KERNEL_BUILD_ROOT_71" \
-            --verify "$KERNEL_BUILD_ROOT_71_IDENTITY"
+            --root "$KERNEL_BUILD_ROOT_7X" \
+            --verify "$KERNEL_BUILD_ROOT_7X_IDENTITY"
 
+      # The container runs as root, so the lifecycle needs no privilege
+      # change, and it targets the pinned headers release because uname -r
+      # names the VM kernel, for which the container carries no build root.
       - name: Exercise both disposable DKMS lifecycles
         run: |
           set -euo pipefail
           evidence_parent=/var/lib/gororoba-ci/radeon-dkms-lifecycle
-          sudo install -d -m 0755 -o root -g root "$evidence_parent"
+          install -d -m 0755 -o root -g root "$evidence_parent"
           for profile in prod dev; do
             if [ "$profile" = prod ]; then
               package_path=$PROD_PACKAGE_PATH
@@ -384,15 +472,13 @@ jobs:
             fi
             evidence_dir="${evidence_parent}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${profile}"
             lifecycle_status=0
-            sudo bash scripts/test_radeon_dkms_lifecycle.sh \
+            bash scripts/test_radeon_dkms_lifecycle.sh \
               --package "$package_path" \
               --expected-sha256 "$package_sha256" \
-              --kernel-release "$(uname -r)" \
+              --kernel-release "$KERNEL_RELEASE" \
               --evidence-dir "$evidence_dir" ||
               lifecycle_status=$?
-            sudo cp -a "$evidence_dir" \
-              "$PACKAGE_WORK/lifecycle-evidence-${profile}"
-            sudo chown -R "$(id -u):$(id -g)" \
+            cp -a "$evidence_dir" \
               "$PACKAGE_WORK/lifecycle-evidence-${profile}"
             [ "$lifecycle_status" -eq 0 ] || exit "$lifecycle_status"
           done
@@ -402,14 +488,12 @@ jobs:
           set -euo pipefail
           transition_temp="$PACKAGE_WORK/transition-temp"
           mkdir -p -- "$transition_temp"
-          sudo bash scripts/test_radeon_package_transitions.sh \
+          bash scripts/test_radeon_package_transitions.sh \
             --temp-root "$transition_temp" \
             --prod-package "$PROD_PACKAGE_PATH" \
             --dev-package "$DEV_PACKAGE_PATH" \
             --policy-package "$POLICY_PACKAGE_PATH" \
             --log-dir "$PACKAGE_WORK/transition-matrix-logs"
-          sudo chown -R "$(id -u):$(id -g)" \
-            "$PACKAGE_WORK/transition-matrix-logs"
 
       # Evidence retention is not a verification step, and a step failure
       # skips every later step that carries no condition of its own, so an
@@ -562,6 +646,21 @@ jobs:
           }
           echo "normalized oracles reproduce: 212 base, 213 final, reg_srcs/rs480 apart"
 
+      # The target package upload below runs on push alone and reads its path
+      # from the runner.temp expression, which the runner evaluates outside
+      # the container. This step runs on every event, so a pull request proves
+      # that the expression names the directory the container writes before a
+      # push depends on it.
+      - name: runner.temp resolves inside the job container
+        env:
+          EXPRESSION_RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -eu
+          printf 'runner.temp=%s RUNNER_TEMP=%s\n' \
+            "$EXPRESSION_RUNNER_TEMP" "$RUNNER_TEMP"
+          [ "$EXPRESSION_RUNNER_TEMP" = "$RUNNER_TEMP" ]
+          [ -d "$EXPRESSION_RUNNER_TEMP/radeon-package-artifacts" ]
+
       - name: Stage the target package artifact
         run: |
           set -euo pipefail
@@ -599,78 +698,83 @@ jobs:
           if-no-files-found: ignore
 
   # radeon_gem.c carries a LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0) split,
-  # and both runners run 7.x, so every other compile job takes the 7.x side and
-  # leaves the pre-7.0 side unbuilt. This job points the same gate at a retained
-  # 6.18 kernel build tree, which is what gives that side a compiler.
+  # and the package job builds against 7.x, so it takes the 7.x side and
+  # leaves the pre-7.0 side unbuilt. This job points the same gate at the
+  # linux-lts-headers build root, which is what gives that side a compiler.
   #
-  # The tree is root-owned and read-only. External-module compilation writes
-  # into the temporary Radeon source tree, so the job needs no write access to
-  # it and holds none.
+  # The root is root-owned, and the compile runs as the unprivileged build
+  # account. External-module compilation writes into the temporary Radeon
+  # source tree, so the build needs no write access to the kernel root and
+  # holds none.
   compat-6-18:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.build != 'false' }}
-    runs-on: [self-hosted, linux, cachyos, primary-compile-host]
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3
     timeout-minutes: 45
     env:
-      KERNEL_BUILD_ROOT: ${{ vars.RADEON_KERNEL_BUILD_ROOT_618 }}
-      SOURCE_REPOSITORY: ${{ vars.RADEON_UNIFIED_SOURCE_REPOSITORY }}
+      KERNEL_HEADERS_PACKAGE: linux-lts-headers
+      KERNEL_HEADERS_VERSION: 6.18.54-1
+      KERNEL_RELEASE: 6.18.54-1-lts
     steps:
+      # actions/checkout needs git inside the container to produce a
+      # repository with history, so the toolchain installs before checkout.
+      - name: Install the pinned Arch toolchain
+        run: |
+          set -eu
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_ARCHIVE_SNAPSHOT}/\$repo/os/\$arch" \
+            >/etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed \
+            git python kmod openssh pahole linux-lts-headers
+          git config --system --add safe.directory '*'
+          pacman -Q python pahole linux-lts-headers
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           clean: true
 
-      # The retained tree is a workspace-local path, so its identity is asserted
-      # from the repository rather than assumed from the variable. A variable
-      # repointed at a 7.x tree fails the range check instead of producing a
-      # green compatibility verdict against the branch this job exists to build.
-      - name: Verify retained 6.18 build-tree identity
+      # makepkg is absent from this job, and the compile still runs as an
+      # account that cannot write the root-owned kernel build root.
+      - name: Create the unprivileged build account
+        run: |
+          set -eu
+          useradd --create-home --user-group builder
+          builder_temp="${RUNNER_TEMP}/builder"
+          install -d -o builder -g builder -m 0755 "$builder_temp"
+          printf 'BUILDER_TEMP=%s\n' "$builder_temp" >>"$GITHUB_ENV"
+
+      # The root is asserted from the installed package rather than assumed
+      # from the package name. A pin repointed at a 7.x package fails the
+      # range check instead of producing a green compatibility verdict against
+      # the branch this job exists to build.
+      #
+      # KERNEL_VERSION(6, 18, 0) <= code < KERNEL_VERSION(7, 0, 0)
+      - name: Verify the packaged 6.18 build-root identity
         run: |
           set -euo pipefail
-          : "${KERNEL_BUILD_ROOT:?RADEON_KERNEL_BUILD_ROOT_618 is unset}"
-
-          release=$(cat "$KERNEL_BUILD_ROOT/include/config/kernel.release")
-          code=$(awk '$1 == "#define" && $2 == "LINUX_VERSION_CODE" { print $3 }' \
-                   "$KERNEL_BUILD_ROOT/include/generated/uapi/linux/version.h")
-
-          [ "$release" = "6.18.38-2-cachyos-lts" ] || {
-            echo "unexpected retained kernel release: $release" >&2
-            exit 1
-          }
-
-          # KERNEL_VERSION(6,18,0) <= code < KERNEL_VERSION(7,0,0)
-          [ "$code" -ge 397824 ] && [ "$code" -lt 458752 ] || {
-            echo "version code $code does not exercise the pre-7.0 branch" >&2
-            exit 1
-          }
-
-          ( cd "$KERNEL_BUILD_ROOT" && sha256sum -c \
-              "$GITHUB_WORKSPACE/ci/kernel-build-roots/6.18.38-2-cachyos-lts.sha256" )
-
-          # Byte completeness: every file in the retained tree hashes against
-          # the full manifest, and the count equality rejects files the
-          # manifest never listed, so a root with injected or replaced content
-          # fails rather than passing on its six identity files alone.
-          ( cd "$KERNEL_BUILD_ROOT" && sha256sum -c --quiet \
-              "$GITHUB_WORKSPACE/ci/kernel-build-roots/6.18.38-2-cachyos-lts.full.sha256" )
-          tree_files=$(find "$KERNEL_BUILD_ROOT" -type f | wc -l)
-          manifest_files=$(wc -l < ci/kernel-build-roots/6.18.38-2-cachyos-lts.full.sha256)
-          [ "$tree_files" -eq "$manifest_files" ] || {
-            echo "retained tree carries $tree_files files, manifest lists $manifest_files" >&2
-            exit 1
-          }
-
-          echo "retained compatibility tree: $release, LINUX_VERSION_CODE=$code, $tree_files files byte-verified"
+          verdict=$(sh scripts/check_packaged_kernel_build_root.sh \
+            --package "$KERNEL_HEADERS_PACKAGE" \
+            --version "$KERNEL_HEADERS_VERSION" \
+            --release "$KERNEL_RELEASE" \
+            --version-code-range 397824:458752)
+          printf 'KERNEL_BUILD_ROOT=%s\n' "${verdict#kernel_build_root=}" \
+            >>"$GITHUB_ENV"
 
       - name: Prepare isolated 6.18 source and build-root inputs
         run: |
           set -euo pipefail
-          : "${SOURCE_REPOSITORY:?RADEON_UNIFIED_SOURCE_REPOSITORY is unset}"
           input_root="${RUNNER_TEMP}/radeon-compat-inputs"
+          mkdir -p "$input_root"
+          source_repository=$(python3 -c \
+            'import tomllib; print(tomllib.load(open("packaging/arch/radeon-unified-dkms/source-identity.toml", "rb"))["source_repository"])')
+          git clone --quiet "https://github.com/${source_repository}.git" \
+            "$input_root/source-origin"
           source_commit=$(python3 -c \
             'import tomllib; print(tomllib.load(open("packaging/arch/radeon-unified-dkms/source-identity.toml", "rb"))["source_commit"])')
           sh scripts/export_radeon_ci_source_snapshot.sh \
-            --source-repository "$SOURCE_REPOSITORY" \
+            --source-repository "$input_root/source-origin" \
             --source-commit "$source_commit" \
             --destination "$input_root/source"
           python3 scripts/check_radeon_source_pin.py \
@@ -698,8 +802,8 @@ jobs:
           work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/compat618.XXXXXX")
           trap 'rm -rf "$work"' EXIT
 
-          mkdir -p "$HOME/.cache/gororoba-ci"
-          sh scripts/with_build_slot.sh \
+          runuser -u builder -- env RUNNER_TEMP="$BUILDER_TEMP" \
+            sh scripts/with_build_slot.sh \
             timeout 15m sh scripts/check_radeon_pinned_source_compiles.sh \
               --source-repository "$JOB_SOURCE_REPOSITORY" \
               --kernel-build-root "$KERNEL_BUILD_ROOT" \
@@ -712,7 +816,7 @@ jobs:
 
           echo "pre-7.0 branch of radeon_gem.c compiled from the pinned source"
 
-      - name: Verify retained 6.18 build-root identity after compile
+      - name: Verify 6.18 build-root identity after compile
         run: |
           python3 scripts/check_shared_build_root_identity.py \
             --root "$KERNEL_BUILD_ROOT" \

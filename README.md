@@ -159,10 +159,10 @@ recovery.
   manifest under `docs/` uses the
   `gororoba-source-tree-v1` schema that `scripts/emit_source_tree_manifest.sh`
   emits and that `linux-radeon-gororoba` shares.
-- `ci/kernel-build-roots/` identifies each retained kernel build tree by its
-  key-file hashes and records the release, originating package, and compiler
-  each root carries. The local path of a root is a workspace fact and lives in
-  an Actions repository variable.
+- `ci/kernel-build-roots/` names the Arch Linux headers package behind each
+  CI kernel build root, the release and version-code range it carries, and the
+  proof that the installed root matches the signed package. `ci/README.md`
+  describes the hosted job environment.
 
 ## Build and validation
 
