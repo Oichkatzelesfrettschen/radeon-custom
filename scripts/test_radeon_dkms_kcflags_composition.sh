@@ -362,9 +362,15 @@ run_actual_make_case() {
     local incoming_makeoverrides=$4
     shift 4
 
+    # GNU Make 4.4.1 evaluates a command-line != assignment with an empty
+    # shell program when the environment carries no SHELL ("make: -c: No such
+    # file or directory"), so the shell-assignment mutant's probe runs only
+    # under a pinned SHELL. The canonical helper unsets SHELL, so the pinned
+    # value reaches make only through a mutant that keeps it.
     (
         cd "$actual_make_dir"
         PATH=/usr/bin:/bin \
+            SHELL=/bin/sh \
             KCFLAGS='-DRADEON_CALLER_SENTINEL=1' \
             MAKEOVERRIDES="$incoming_makeoverrides" \
             "$source_helper" "$@"
