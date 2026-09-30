@@ -275,6 +275,17 @@ def good_members() -> list[tuple[str | zipfile.ZipInfo, bytes]]:
             regular_member("package/radeon-unified-dkms-0.8.1-1-x86_64.pkg.tar.zst"),
             b"production package fixture\n",
         ),
+        (
+            regular_member(
+                "package/radeon-unified-dkms-dev-0.8.1-1-x86_64.pkg.tar.zst"
+            ),
+            b"development package fixture\n",
+        ),
+        (
+            regular_member("package/radeon-rs482-policy-0.8.1-1-x86_64.pkg.tar.zst"),
+            b"policy package fixture\n",
+        ),
+        (regular_member("package/SHA256SUMS"), b"digest list fixture\n"),
         (regular_member("lifecycle-evidence-prod/compile.log"), b"PASS\n"),
     ]
 

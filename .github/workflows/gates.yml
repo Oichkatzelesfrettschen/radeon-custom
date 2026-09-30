@@ -660,14 +660,40 @@ jobs:
           target_transport="$PACKAGE_WORK/target-transport"
           [ ! -e "$target_transport" ]
           mkdir -p "$target_transport"
-          install -m 0644 "$PROD_PACKAGE_PATH" "$target_transport/"
+          # The split set comes from the one makepkg run above: the policy
+          # package depends on radeon-unified=<exact version>, so the target
+          # installs all three from one build.
+          for package_path in "$PROD_PACKAGE_PATH" "$DEV_PACKAGE_PATH" \
+              "$POLICY_PACKAGE_PATH"; do
+            install -m 0644 "$package_path" "$target_transport/"
+          done
+          (
+            cd "$target_transport"
+            LC_ALL=C sha256sum -- ./*.pkg.tar.zst | sed 's| \./| |' >SHA256SUMS
+            chmod 0644 SHA256SUMS
+          )
+          expected_entries=$(
+            {
+              basename "$PROD_PACKAGE_PATH"
+              basename "$DEV_PACKAGE_PATH"
+              basename "$POLICY_PACKAGE_PATH"
+              echo SHA256SUMS
+            } | LC_ALL=C sort
+          )
           target_entries=$(find "$target_transport" -mindepth 1 -maxdepth 1 \
-            -type f -printf '%f\n')
-          [ "$target_entries" = "$(basename "$PROD_PACKAGE_PATH")" ] || {
-            echo "target transport does not contain exactly the production package" >&2
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          [ "$target_entries" = "$expected_entries" ] || {
+            echo "target transport does not contain exactly the split packages and SHA256SUMS" >&2
             printf '%s\n' "$target_entries" >&2
             exit 1
           }
+          [ "$(find "$target_transport" -mindepth 1 -maxdepth 1 \
+            -name 'radeon-unified-dkms-[0-9]*.pkg.tar.zst' | wc -l)" -eq 1 ] || {
+            echo "target transport does not resolve one production package" >&2
+            exit 1
+          }
+          [ "$(wc -l <"$target_transport/SHA256SUMS")" -eq 3 ]
+          (cd "$target_transport" && sha256sum -c SHA256SUMS)
 
       - name: Upload target package artifact
         if: always() && github.event_name == 'push'

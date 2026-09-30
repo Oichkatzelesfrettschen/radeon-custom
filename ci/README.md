@@ -70,9 +70,12 @@ loads no module, arms no hazard gate, and performs no register access.
 Hardware operation stays an attended run with a recorded preflight, and its
 verdicts live in steinmarder-r300.
 
-A push to `main` uploads the gate-verified production package as the
-`radeon-unified-<sha>-<run_id>` artifact of the `gates` run. On the target,
-from a checkout of the same commit:
+A push to `main` uploads the three split packages of one `makepkg` run and a
+`SHA256SUMS` file listing them as the `radeon-unified-<sha>-<run_id>` artifact
+of the `gates` run. `admit_target_gate_artifact.py` extracts the production
+package alone; the development and policy packages stay in the archive for the
+target install, and `sha256sum -c SHA256SUMS` checks them from the archive's
+own copy. On the target, from a checkout of the same commit:
 
 ```sh
 sha=$(git rev-parse HEAD)
