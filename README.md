@@ -259,9 +259,6 @@ python3 scripts/admit_target_gate_artifact.py --self-test
 # The target artifact identity resolves across every workflow artifact page
 python3 scripts/resolve_workflow_artifact_digest.py --self-test
 
-# The target workflow binds the API digest through raw artifact admission
-python3 scripts/check_target_artifact_workflow.py
-
 # Historical patches and register tables have one canonical repository home
 python3 scripts/check_package_historical_input_ownership.py
 ```
@@ -299,7 +296,7 @@ sh scripts/emit_source_tree_manifest.sh --self-test
 # 6 decomposition properties, 2 closing maps, 24 failure classes
 python3 scripts/check_base_delta_map_closure.py --self-test
 
-# Exact action identities and required inputs pass, and 40 mutations fail
+# Exact action identities pass, and 35 mutations fail
 python3 scripts/check_github_action_pins.py --self-test
 
 # One production package passes, and 21 archive admission classes fail
@@ -307,9 +304,6 @@ python3 scripts/admit_target_gate_artifact.py --self-test
 
 # One paginated digest lookup passes, and 12 metadata classes fail
 python3 scripts/resolve_workflow_artifact_digest.py --self-test
-
-# One target workflow passes, and 25 producer, digest, transport, and retention mutations fail
-python3 scripts/check_target_artifact_workflow.py --self-test
 
 # One canonical ownership fixture passes, and 7 mirror and reference mutations fail
 python3 scripts/check_package_historical_input_ownership.py --self-test

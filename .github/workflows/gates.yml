@@ -7,12 +7,11 @@
 # root. The snapshot date and the pinned header versions change together in
 # one commit.
 #
-# Job placement is a security boundary rather than a convenience. These jobs
-# run on pull_request, so they execute repository-controlled code from an
-# unmerged branch, and each one runs on an ephemeral GitHub-hosted VM. The
-# RS482 target host carries only the labels target-kernel.yml requests, so
-# unmerged code cannot reach it. Target-kernel compilation is a post-merge
-# qualification and lives in target-kernel.yml.
+# Every job runs on an ephemeral GitHub-hosted VM. The jobs run on
+# pull_request, so they execute repository-controlled code from an unmerged
+# branch, and a hosted VM is the isolation that makes that safe. Compilation
+# against the RS482 target kernel is an attended manual run documented in
+# ci/README.md.
 name: gates
 
 on:
@@ -140,12 +139,6 @@ jobs:
 
       - name: Workflow artifact digest calibration
         run: python3 scripts/resolve_workflow_artifact_digest.py --self-test
-
-      - name: Target artifact workflow calibration
-        run: python3 scripts/check_target_artifact_workflow.py --self-test
-
-      - name: Target artifact workflow binding
-        run: python3 scripts/check_target_artifact_workflow.py
 
       - name: Hazardous runner ownership calibration
         run: python3 scripts/check_hazardous_runner_ownership.py --self-test
@@ -351,8 +344,8 @@ jobs:
 
       # with_build_slot.sh bounds concurrent module builds on a host that
       # several runner services share. A hosted VM carries one job, so a slot
-      # is always free, and the gate keeps exercising the wrapper that
-      # target-kernel.yml depends on.
+      # is always free, and the gate keeps exercising the wrapper that the
+      # attended target-kernel compile also uses.
       - name: Pinned production and development source build against 7.x
         run: |
           set -eu
@@ -646,7 +639,7 @@ jobs:
           }
           echo "normalized oracles reproduce: 212 base, 213 final, reg_srcs/rs480 apart"
 
-      # The target package upload below runs on push alone and reads its path
+      # The package upload below runs on push alone and reads its path
       # from the runner.temp expression, which the runner evaluates outside
       # the container. This step runs on every event, so a pull request proves
       # that the expression names the directory the container writes before a
@@ -678,7 +671,8 @@ jobs:
 
       - name: Upload target package artifact
         if: always() && github.event_name == 'push'
-        # The package archive is the target workflow's immutable input.
+        # The package archive is the immutable input of the attended target
+        # compile in ci/README.md.
         # Protected-main pushes own transport; pull requests retain no archive.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

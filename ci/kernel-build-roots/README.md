@@ -23,9 +23,9 @@ version, and release, so `gates.yml` is the one home for those values.
 Both packages build their kernels with GCC (`CONFIG_CC_IS_GCC=y`), and the
 module compile runs under the GCC the same snapshot installs. The compile gates
 reject every warning other than the compiler-mismatch notice, so a GCC
-diagnostic in the pinned source fails the gate. `target-kernel.yml` compiles
-the merged package against the target host's own kernel build root, under the
-compiler that kernel names.
+diagnostic in the pinned source fails the gate. The attended target compile in
+`ci/README.md` compiles the merged package against the target host's own
+kernel build root, under the compiler that kernel names.
 
 ## Identity proof
 
