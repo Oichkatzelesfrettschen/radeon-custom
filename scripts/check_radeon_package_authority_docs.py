@@ -43,10 +43,6 @@ PATCH_SUMMARY = re.compile(
     r"patch-series gate calibration: "
     r"(?P<bad>\d+) known-bad rejected, (?P<good>\d+) known-good cleared"
 )
-TARGET_SUMMARY = re.compile(
-    r"Target artifact workflow calibration: "
-    r"(?P<good>\d+) known-good and (?P<bad>\d+) known-bad fixtures"
-)
 
 
 class AuthorityError(Exception):
@@ -115,7 +111,6 @@ def verify_texts(
     root_readme: str,
     package_readme: str,
     patch_counts: tuple[int, int],
-    target_counts: tuple[int, int],
 ) -> None:
     identity = parse_pkgbuild(pkgbuild)
     pkgver = identity.version.rsplit("-", 1)[0]
@@ -205,13 +200,6 @@ def verify_texts(
         in root_readme,
         "root README patch calibration count disagrees with the self-test",
     )
-    target_good, target_bad = target_counts
-    require(
-        f"# One target workflow passes, and {target_bad} producer, digest, transport, and retention mutations fail"
-        in root_readme
-        and target_good == 1,
-        "root README target workflow count disagrees with the self-test",
-    )
 
 
 def run_command(repository: Path, command: list[str]) -> str:
@@ -238,17 +226,11 @@ def repository_inputs(repository: Path) -> tuple[str, tuple[str, str], str, str]
     )
 
 
-def current_counts(repository: Path) -> tuple[tuple[int, int], tuple[int, int]]:
+def current_counts(repository: Path) -> tuple[int, int]:
     patch_output = run_command(
         repository, ["sh", "scripts/check_radeon_patch_series_compiles.sh", "--self-test"]
     )
-    target_output = run_command(
-        repository, ["python3", "scripts/check_target_artifact_workflow.py", "--self-test"]
-    )
-    return (
-        parse_calibration_summary(patch_output, PATCH_SUMMARY, "patch calibration"),
-        parse_calibration_summary(target_output, TARGET_SUMMARY, "target calibration"),
-    )
+    return parse_calibration_summary(patch_output, PATCH_SUMMARY, "patch calibration")
 
 
 Mutation = Callable[[dict[str, object]], None]
@@ -261,14 +243,13 @@ def replace_once(text: str, old: str, new: str) -> str:
 
 def run_self_test(repository: Path) -> None:
     pkgbuild, dkms_texts, root_readme, package_readme = repository_inputs(repository)
-    patch_counts, target_counts = current_counts(repository)
+    patch_counts = current_counts(repository)
     fixture: dict[str, object] = {
         "pkgbuild": pkgbuild,
         "dkms_texts": dkms_texts,
         "root_readme": root_readme,
         "package_readme": package_readme,
         "patch_counts": patch_counts,
-        "target_counts": target_counts,
     }
 
     def verify_fixture(values: dict[str, object]) -> None:
@@ -278,7 +259,6 @@ def run_self_test(repository: Path) -> None:
             str(values["root_readme"]),
             str(values["package_readme"]),
             values["patch_counts"],  # type: ignore[arg-type]
-            values["target_counts"],  # type: ignore[arg-type]
         )
 
     verify_fixture(fixture)
@@ -389,10 +369,6 @@ def run_self_test(repository: Path) -> None:
         good, bad = values["patch_counts"]  # type: ignore[misc]
         values["patch_counts"] = (good, bad + 1)
 
-    def drift_target_count(values: dict[str, object]) -> None:
-        good, bad = values["target_counts"]  # type: ignore[misc]
-        values["target_counts"] = (good, bad + 1)
-
     mutations: tuple[tuple[str, Mutation], ...] = (
         ("production DKMS version drift", mutate_dkms_prod),
         ("development DKMS version drift", mutate_dkms_dev),
@@ -411,7 +387,6 @@ def run_self_test(repository: Path) -> None:
         ("stale newest target record", stale_newest_target),
         ("newest target record naming no retained bundle", unbound_newest_target),
         ("patch calibration count drift", drift_patch_count),
-        ("target calibration count drift", drift_target_count),
     )
     rejected = 0
     for name, mutation in mutations:
@@ -442,14 +417,13 @@ def main() -> int:
             pkgbuild, dkms_texts, root_readme, package_readme = repository_inputs(
                 repository
             )
-            patch_counts, target_counts = current_counts(repository)
+            patch_counts = current_counts(repository)
             verify_texts(
                 pkgbuild,
                 dkms_texts,
                 root_readme,
                 package_readme,
                 patch_counts,
-                target_counts,
             )
             print("package authority documentation matches executable inputs")
     except (AuthorityError, OSError, UnicodeError) as error:

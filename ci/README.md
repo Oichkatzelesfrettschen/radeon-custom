@@ -1,21 +1,13 @@
 # Continuous integration
 
-`gates.yml` runs every pull-request and push job on GitHub-hosted runners, and
-`target-kernel.yml` runs the post-merge qualification on the RS482 target host.
-
-## Job placement is a security boundary
-
-| Machine | Labels | Runs |
-| --- | --- | --- |
-| GitHub-hosted VM | `ubuntu-24.04` | pull-request and push jobs in `gates.yml` |
-| RS482 target | `cachyos-target`, `target-host`, `rs482` | `target-kernel.yml`, on merged `main` alone |
+`gates.yml` is the only workflow, and every job in it runs on a GitHub-hosted
+`ubuntu-24.04` runner. No job targets a self-hosted or custom label, and the
+jobs read no repository variable.
 
 `gates.yml` triggers on `pull_request`, so its jobs execute repository-controlled
-code from an unmerged branch. Each of those jobs runs on an ephemeral hosted VM,
-and the target host carries only labels that `target-kernel.yml` requests, which
-is what keeps unmerged code off the one piece of hardware this project cannot
-replace. Verify the property by observing a pull-request run: `target-kernel` is
-absent from its job list.
+code from an unmerged branch on an ephemeral hosted VM. The RS482 machine is
+outside CI: compilation against its kernel build root is an attended manual run
+described under "Target kernel compile".
 
 ## Build environment
 
@@ -69,31 +61,40 @@ git clone --bare https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.
 A bare mirror over a blobless clone, because every query is then local: a
 blobless clone fetches blobs per `-S` query, and the origin map runs dozens.
 
-## Target runner maintenance
+## Target kernel compile
 
-API configuration success and runner availability are separate properties, and
-a service that stops leaves jobs queued rather than failed, so a queue drains
-into a green history once the runner returns and nothing records the gap. Run
-this on the target host after every label edit, service edit, runner upgrade,
-and host reboot.
+Compiling the merged production package against the RS482 target's own kernel
+build root needs the physical machine (PCI `1002:5974`, subsystem `1028:022a`,
+host bridge `1002:5950`), so the run is manual. It compiles and verifies; it
+loads no module, arms no hazard gate, and performs no register access.
+Hardware operation stays an attended run with a recorded preflight, and its
+verdicts live in steinmarder-r300.
+
+A push to `main` uploads the gate-verified production package as the
+`radeon-unified-<sha>-<run_id>` artifact of the `gates` run. On the target,
+from a checkout of the same commit:
 
 ```sh
-# 1. The unit is enabled as well as running. An enabled unit returns after a
-#    reboot; a running unit that is disabled does not.
-unit=$(cat ~/actions-runner-radeon-custom/.service)
-systemctl is-enabled "$unit"
-systemctl is-active "$unit"
-
-# 2. The forge agrees the runner is online, and carries the labels the
-#    workflows request and none they must never match.
-gh api repos/OWNER/REPO/actions/runners \
-  --jq '.runners[] | "\(.name) \(.status) \([.labels[].name]|join(","))"'
+sha=$(git rev-parse HEAD)
+run_id=$(gh run list --workflow gates --branch main --commit "$sha" \
+  --status success --json databaseId --jq '.[0].databaseId')
+name="radeon-unified-${sha}-${run_id}"
+work=$(mktemp -d)
+expected=$(python3 scripts/resolve_workflow_artifact_digest.py \
+  --repository OWNER/REPO --run-id "$run_id" --artifact-name "$name")
+gh run download "$run_id" --name "$name" --dir "$work/download"
+python3 scripts/admit_target_gate_artifact.py \
+  --download-directory "$work/download" --output-directory "$work/package" \
+  --expected-sha256 "$expected"
+for id in vendor:0x1002 device:0x5974 subsystem_vendor:0x1028 subsystem_device:0x022a; do
+  [ "$(cat "/sys/bus/pci/devices/0000:01:05.0/${id%%:*}")" = "${id#*:}" ]
+done
+package=$(find "$work/package" -type f -name 'radeon-unified-dkms-*.pkg.tar.zst' \
+  ! -name 'radeon-unified-dkms-dev-*')
+sh scripts/with_build_slot.sh sh scripts/check_radeon_packaged_source_compiles.sh \
+  --package "$package" --kernel-build-root "/lib/modules/$(uname -r)/build"
 ```
 
-A runner installed with `svc.sh install` and started with `svc.sh start` runs
-until the next reboot and stays down after it, because `start` is not `enable`.
-Step 1 is the check that catches it, and `systemctl enable --now "$unit"` is the
-fix.
-
-Queued rather than failed is the signature of a runner problem. A job that fails
-inside a step is a repository problem.
+`gh run download` reads the artifact ZIP unmodified, and
+`admit_target_gate_artifact.py` binds it to the API digest before extraction.
+The identity loop fails closed on a machine other than the RS482 target.

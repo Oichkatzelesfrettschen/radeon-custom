@@ -27,14 +27,6 @@ APPROVED_ACTIONS = {
         "3d3c42e5aac5ba805825da76410c181273ba90b1",
         "v7.0.1",
     ),
-    "actions/download-artifact": ApprovedAction(
-        "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-        "v8.0.1",
-        (
-            ("skip-decompress", "true"),
-            ("digest-mismatch", "error"),
-        ),
-    ),
     "actions/upload-artifact": ApprovedAction(
         "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
         "v7.0.1",
@@ -50,11 +42,6 @@ EXPECTED_WORKFLOW_ACTIONS = {
         "actions/upload-artifact",
         "actions/upload-artifact",
         "actions/checkout",
-    ),
-    ".github/workflows/target-kernel.yml": (
-        "actions/checkout",
-        "actions/download-artifact",
-        "actions/upload-artifact",
     ),
 }
 
@@ -848,9 +835,13 @@ def run_self_test() -> None:
         )
 
     def stale_label(repository: Path) -> None:
-        path = repository / ".github/workflows/target-kernel.yml"
-        content = path.read_text(encoding="utf-8")
-        path.write_text(content.replace("# v8.0.1", "# v4", 1), encoding="utf-8")
+        path = repository / ".github/workflows/gates.yml"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for line_index, line in enumerate(lines):
+            if line.startswith("      - uses: actions/upload-artifact@"):
+                lines[line_index] = line.replace("# v7.0.1", "# v4", 1)
+                break
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def missing_use(repository: Path) -> None:
         rewrite_first_step_action(repository, None)
@@ -858,54 +849,6 @@ def run_self_test() -> None:
     def unexpected_workflow(repository: Path) -> None:
         path = repository / ".github/workflows/unreviewed.yml"
         path.write_text("name: unreviewed\n", encoding="utf-8")
-
-    def rewrite_download_input(
-        repository: Path,
-        input_name: str,
-        replacement: str | None,
-        *,
-        duplicate: bool = False,
-    ) -> None:
-        path = repository / ".github/workflows/target-kernel.yml"
-        lines = path.read_text(encoding="utf-8").splitlines()
-        prefix = f"          {input_name}:"
-        matching = [
-            line_index
-            for line_index, line in enumerate(lines)
-            if line.startswith(prefix)
-        ]
-        if len(matching) != 1:
-            raise ActionPinError(
-                f"self-test fixture has {len(matching)} {input_name} inputs"
-            )
-        line_index = matching[0]
-        if duplicate:
-            lines.insert(line_index + 1, lines[line_index])
-        elif replacement is None:
-            del lines[line_index]
-        else:
-            lines[line_index] = f"          {input_name}: {replacement}"
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-    def missing_raw_download(repository: Path) -> None:
-        rewrite_download_input(repository, "skip-decompress", None)
-
-    def disabled_raw_download(repository: Path) -> None:
-        rewrite_download_input(repository, "skip-decompress", "false")
-
-    def quoted_raw_download(repository: Path) -> None:
-        rewrite_download_input(repository, "skip-decompress", '"true"')
-
-    def warning_digest_mismatch(repository: Path) -> None:
-        rewrite_download_input(repository, "digest-mismatch", "warn")
-
-    def duplicate_raw_download(repository: Path) -> None:
-        rewrite_download_input(
-            repository,
-            "skip-decompress",
-            None,
-            duplicate=True,
-        )
 
     def anchored_flow_alias(repository: Path) -> None:
         path = repository / ".github/workflows/gates.yml"
@@ -1182,11 +1125,6 @@ def run_self_test() -> None:
     expect_rejection("stale action version label", stale_label)
     expect_rejection("missing action use", missing_use)
     expect_rejection("unexpected workflow", unexpected_workflow)
-    expect_rejection("missing raw artifact input", missing_raw_download)
-    expect_rejection("disabled raw artifact input", disabled_raw_download)
-    expect_rejection("quoted raw artifact input", quoted_raw_download)
-    expect_rejection("nonfatal digest mismatch", warning_digest_mismatch)
-    expect_rejection("duplicate raw artifact input", duplicate_raw_download)
     expect_rejection("anchored flow action alias", anchored_flow_alias)
     expect_rejection("flow-style action mapping", flow_mapping)
     expect_rejection("quoted uses key", quoted_uses_key)
@@ -1238,7 +1176,7 @@ def run_self_test() -> None:
         "sequence block-scalar sibling action",
         sequence_block_scalar_sibling_action,
     )
-    print("GitHub action pin calibration: 1 known-good and 40 known-bad fixtures")
+    print("GitHub action pin calibration: 1 known-good and 35 known-bad fixtures")
 
 
 def parse_arguments() -> argparse.Namespace:
