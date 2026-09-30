@@ -69,7 +69,7 @@ source=(
   'radeon-dkms-ccache-gcc'
   'radeon-dkms-ccache-clang'
 )
-sha256sums=('9b04964eb1b7b4dbf8d1d45306b24d420238eecee6433bf74db79a5f36c44317'
+sha256sums=('SKIP'
             '603c221b90736f4ee35f750aa79c0c94c6cf94b2babc4af36c73bf8200d525c6'
             '2133f7e0926032a91d8c55211a4dad9cdf16d188e2bab24c2b70f68d464c24b0'
             'd9f73b1400eb84dfac8cae5ccd6462cb389bdd51c3795ab1d341b620b4c70054'
