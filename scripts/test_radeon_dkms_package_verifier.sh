@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Terascale Functionalists
 # Verify the packaged Radeon DKMS source and module metadata.
 set -euo pipefail
 

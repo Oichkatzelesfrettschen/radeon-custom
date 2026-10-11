@@ -1,6 +1,5 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Terascale Functionalists
 # Classify pull-request paths as build-relevant or documentation-only.
 # Kernel-build and packaging CI jobs run only when a changed path can alter a
 # compiled object, a packaged input, or a reproduction

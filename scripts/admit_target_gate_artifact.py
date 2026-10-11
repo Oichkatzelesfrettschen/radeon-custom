@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Terascale Functionalists
 """Admit one production package from a raw GitHub artifact archive."""
 
 from __future__ import annotations

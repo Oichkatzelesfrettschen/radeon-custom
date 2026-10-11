@@ -1,4 +1,4 @@
-# Maintainer: Terascale Functionalists
+# Maintainer: First Principalists
 
 pkgbase=radeon-unified-dkms
 pkgname=('radeon-unified-dkms' 'radeon-unified-dkms-dev' 'radeon-rs482-policy')
