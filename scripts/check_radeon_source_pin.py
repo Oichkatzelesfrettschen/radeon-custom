@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Terascale Functionalists
 """Verify the Radeon packaging pin against a source repository."""
 
 from __future__ import annotations

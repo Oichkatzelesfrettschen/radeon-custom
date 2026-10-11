@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: MIT
- * Copyright (c) 2026 Terascale Functionalists
  *
  * Read-only GUI_DEBUG read-diff: detect whether GUI_DEBUG0..4 are dynamic
  * (free-running counters / activity status) or static (candidate config/control).

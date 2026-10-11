@@ -1,6 +1,5 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Terascale Functionalists
 # Export an immutable, job-private Git checkout from a shared Radeon source root.
 
 set -eu

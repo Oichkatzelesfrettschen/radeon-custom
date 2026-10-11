@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 Terascale Functionalists
 """Capture and verify a complete immutable identity for a shared build root."""
 
 from __future__ import annotations
