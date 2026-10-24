@@ -53,7 +53,7 @@ nearest principle.
 
 - `linux-radeon-gororoba` owns active kernel code. `radeon-custom` owns the
   signed source pin, package contents, historical patch order, dependencies,
-  and safe defaults. `steinmarder-r300` owns RS482 probes,
+  and safe defaults. `steinmarder-r300` owns RS485M probes,
   evidence bundles, falsifiers, and hardware verdicts. `mesa-26-gororoba` owns
   r300g/r3v userspace behavior. Every file keeps its home repository; a
   kernel fix may cite sibling evidence, and the code lands here.
@@ -69,8 +69,8 @@ nearest principle.
 - A behavior change names the exact chip, register, kernel function, patch, and
   module parameter first.
 - PCI IDs, register sources, and measurements identify silicon; RS480 / RS482 /
-  RS485 name one RS4xx-class IGP, and Palm/Wrestler names a separate hardware
-  generation. Palm evidence does not validate RS482, and RS482 evidence does not
+  RS485M name one RS4xx-class IGP, and Palm/Wrestler names a separate hardware
+  generation. Palm evidence does not validate RS485M, and RS485M evidence does not
   validate Palm.
 - Root cause comes from primary sources before opinion: register document,
   kernel function, AMD ISA section, retained capture.
@@ -132,7 +132,7 @@ nearest principle.
     baseline mask, named nonzero values select experimental masks, and an
     out-of-range value collapses to baseline. Zero selects here.
 - `options radeon lockup_timeout=0` is the safe default and stays until an
-  attended RS482 run demonstrates GPU recovery rather than host survival.
+  attended RS485M run demonstrates GPU recovery rather than host survival.
 - `radeon-re.conf` is package-owned policy.
   `radeon-re-experiment-allowlist.conf` is owner-managed experiment state; an
   entry there is retained while the experiment runs, removed with its file when
@@ -200,7 +200,7 @@ nearest principle.
 ## Project scope and priorities
 
 `linux-radeon-gororoba` is the active out-of-tree Radeon DRM source.
-`radeon-custom` is the package and deployment authority for the RS480/RS482/RS485
+`radeon-custom` is the package and deployment authority for the RS480/RS482/RS485M
 and Palm/Wrestler safety and reverse-engineering lanes.
 `README.md` carries the package layout, build commands, and status table.
 
@@ -456,7 +456,7 @@ Right shape:
 ```text
 /* TODO: rs400_debugfs_gart_page_table_show decodes each entry to a DMA
  *       address, so a non-dummy row reports backing rather than BO ownership.
- *       Closing that join needs a retained target capture from the RS482
+ *       Closing that join needs a retained target capture from the RS485M
  *       host.  Tracking: rs400_debugfs_gart_page_table_show.
  */
 ```
@@ -583,7 +583,7 @@ bundles in `steinmarder-r300`.
 
 Hardware-touching probes run through the gates in `AGENTS.md` under
 `Hazard gates` and `Security and hardware stop-line`. A run that reaches
-RS482 or Palm silicon is attended and preflighted; an agent session runs the
+RS485M or Palm silicon is attended and preflighted; an agent session runs the
 source-side and package-side checks.
 
 Commit trailers use `Assisted-by:` naming the tools used, per `AGENTS.md` under
