@@ -1,6 +1,6 @@
 # radeon-custom
 
-Dedicated out-of-tree Radeon DRM/DKMS source for the RS480/RS482/RS485 and
+Dedicated out-of-tree Radeon DRM/DKMS source for the RS480/RS482/RS485M and
 Palm/Wrestler safety and reverse-engineering lanes.
 
 The canonical registry of which kernel modules the Vostro 1000 runs (radeon,
@@ -16,7 +16,7 @@ deployment and package authority. It owns the signed source pin, Arch and
 CachyOS package, DKMS glue, compiler policy, initramfs and modprobe policy,
 hazard preflight, and package verification.
 
-Mesa userspace lives in `mesa-26-gororoba`. Retained RS482 probes, logs, result
+Mesa userspace lives in `mesa-26-gororoba`. Retained RS485M probes, logs, result
 bundles, falsifiers, and hardware verdicts live in `steinmarder-r300`.
 Historical patch files and source snapshots in this repository remain
 provenance. The active package does not consume them.
@@ -85,7 +85,7 @@ Rows naming older revisions preserve their qualification records. The
 
 Therefore `radeon.lockup_timeout=0` remains the safe default. Do not describe the
 package as an automatic reset-recovery driver and do not enable a nonzero timeout
-until an attended RS482 run demonstrates GPU recovery, not merely host survival.
+until an attended RS485M run demonstrates GPU recovery, not merely host survival.
 
 The authoritative per-patch hardware verdict is
 `steinmarder-r300:src/re/r300/findings/rs480-reset-recovery-patch-status-table.md`.
@@ -109,8 +109,8 @@ The primary package is `packaging/arch/radeon-unified-dkms/`.
   schema. Decoded backing remains a DMA address, and non-dummy backing does not
   imply BO ownership, until independent target evidence closes those joins.
 - Palm/Wrestler safety gates are carried in the same module package but remain a
-  separate hardware-generation lane; Palm evidence does not validate RS482 and
-  RS482 evidence does not validate Palm.
+  separate hardware-generation lane; Palm evidence does not validate RS485M and
+  RS485M evidence does not validate Palm.
 
 The older `radeon-rs480-safe-regs-dkms` and `radeon-palm-gate-dkms` package
 identities were folded into the unified package. The PKGBUILD provides/replaces
@@ -364,7 +364,7 @@ or `installed`; promotion to `hardware-run`, `partial`, `hardware-pass`, or
   source history, and source-equivalence attestations.
 - `radeon-custom` owns package contents, source pins, dependencies, DKMS glue,
   deployment policy, and safe defaults.
-- `steinmarder-r300` owns RS482 probes, evidence bundles, falsifiers, and hardware
+- `steinmarder-r300` owns RS485M probes, evidence bundles, falsifiers, and hardware
   verdicts.
 - `mesa-26-gororoba` owns r300g/r3v userspace behavior and the cross-repository
   integration index at `docs/hardware/rs482-source-authority.md`.
