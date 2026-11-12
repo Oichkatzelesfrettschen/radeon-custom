@@ -28,6 +28,37 @@ contract. This file owns the rules and points at `README.md` for those facts.
 
 ## Hard rules
 
+### Generating principles
+
+Seven principles generate every rule here. A case no rule names resolves by the
+nearest principle.
+
+1. Durable mechanism identity: every durable artifact carries mechanism or
+   content identity, whether it is a name, a comment, a claim, or a citation;
+   chronology, actors, and process ride in commits, PR descriptions, and
+   registry metadata.
+2. Indicative voice: rules, comments, and reports state what an artifact is and
+   does, present tense, artifact as subject. A boundary takes its positive dual:
+   the restriction (`root-only read-only debugfs`), the named home (`hardware
+   verdicts live in steinmarder-r300`), or the mechanism itself (`the parked
+   reader hard-returns before any MMIO access`). The positive form entails the
+   absence a negation would state. A hard-stop safety boundary keeps its
+   prohibition, where that is the whole content.
+3. Authority by name and rank: a load-bearing claim binds to a named source at
+   the highest available evidence rank; provenance detail rides in the commit
+   message and the finding.
+4. Evidence-class separation: known, hypothesized, and speculative stay marked;
+   compile-verified, installed, hardware-run, hardware-pass, and refuted stay
+   distinct; prediction precedes observation, and deviation is the finding.
+5. Single home per fact: each fact keeps one canonical location and other sites
+   point to it.
+6. Smallest complete mechanism: a patch, comment, or script carries exactly its
+   distinct load-bearing facts, free of stubs, decoration, and repetition.
+7. Fail-closed gates: a hazardous path opens on the exact token its own
+   declaration names as armed, and the closed state is whatever that
+   declaration makes inert rather than zero by assumption; a verdict-producing
+   script earns trust by calibration on known-good and known-bad inputs first.
+
 ### Boundary and ownership
 
 - `linux-radeon-gororoba` owns active kernel code. `radeon-custom` owns the
@@ -159,6 +190,12 @@ higher-ranked source is annotated or removed, citing that source.
 
 A hardware-RCA fix records the validation command or retained bundle path and
 the expected host or GPU state movement before the change.
+
+Stop implementation and report when a hypothesis survives three independent
+falsification attempts, a hypothesis fails in an unexpected way, the fix
+requires a non-obvious architecture choice, or a measurement contradicts a
+rank-1 or rank-2 source. Report the evidence chain, alternatives, tradeoffs, and
+the next evidence needed. Treat surprise as a finding; a silent pivot buries it.
 
 ## Patch names
 
