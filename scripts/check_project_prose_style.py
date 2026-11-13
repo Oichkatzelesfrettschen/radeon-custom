@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Check project-authored prose for dash constructions and emoji.
+"""Check project-authored prose for em dash, en dash, and emoji.
 
-AGENTS.md states that a dash marks a clause the sentence structure states more
-precisely on its own, so the construct leaves project-authored Markdown,
-comments, and package metadata. This gate enforces that rule where raw grep
-cannot, because several ASCII `--` runs are code rather than prose:
+AGENTS.md states that the em dash and the en dash leave project-authored
+Markdown, comments, and package metadata, and that checked-in text is
+emoji-free. The ASCII double hyphen set off by whitespace (` -- `) is an
+accepted dash and passes, as does every `--` run in code: command flags such as
+`git diff --staged`, the POSIX end-of-options separator in `cd -- "$dir"`, and
+fenced code blocks. Checked-in patch bodies stay out of the corpus, since the
+packaging sha256sums verify their bytes.
 
-  * command flags such as `git diff --staged` and `mkregtable --help`;
-  * the POSIX end-of-options separator in `cd -- "$dir"` and `set -- LLVM=1`;
-  * fenced code blocks and indented code inside Markdown;
-  * ASCII diagrams whose branches spell `|--`;
-  * checked-in patch bodies, whose bytes the packaging sha256sums verify.
-
-Three rules judge a line: `emoji`, `unicode dash` for the en and em dash, and
-`dash construction` for the ASCII stand-in. Every refusal names the rule it
-tripped, because the three need different edits and share one exit status.
+Two rules judge a line: `emoji`, and `unicode dash` for the en and em dash.
+Every refusal names the rule it tripped, because the two need different edits
+and share one exit status.
 
 Run without arguments to scan the tracked project-authored set. Run with
 --self-test to calibrate against known-good and known-bad fixtures, which is
@@ -34,20 +31,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-# A dash construction is a standalone `--` run with whitespace on both sides, or
-# one that ends a line. A flag (`--staged`) has no leading space before its
-# letters; the end-of-options separator is caught by the code rules below.
-DASH = re.compile(r"(?:(?<=\s)|^)--(?=\s|$)")
-
 # Each rule names itself in the refusal it produces, so a report says which
 # edit clears the line.
-DASH_RULE = "dash construction"
 UNICODE_DASH_RULE = "unicode dash"
 EMOJI_RULE = "emoji"
 
-# AGENTS.md forbids the em dash, the en dash, and the ASCII `--` stand-in alike,
-# so the gate recognizes all three. The two code points are built by ordinal so
-# the gate stays clean against its own scan.
+# AGENTS.md forbids the em dash and the en dash; the ASCII ` -- ` is accepted.
+# The two code points are built by ordinal so the gate stays clean against its
+# own scan.
 UNICODE_DASH = re.compile(f"[{chr(0x2013)}{chr(0x2014)}]")
 
 # AGENTS.md states that checked-in text is emoji-free, so an emoji is a finding
@@ -64,20 +55,6 @@ EMOJI = re.compile(
     f"{chr(0x1F000)}-{chr(0x1FAFF)}"
     "]"
 )
-
-# POSIX end-of-options separator: the token that stops option parsing. These are
-# code, and they appear in every careful shell script in this tree.
-END_OF_OPTIONS = re.compile(
-    r"\b(?:cd|set|basename|dirname|rm|cp|mv|grep|printf|echo|git|install|"
-    r"mkdir|touch|chmod|chown|ln|sed|awk|read|export|unset|xargs|find)\s+"
-    r"(?:-[A-Za-z]+\s+)*--(?=\s|$)"
-)
-
-# ASCII diagram branches: a run of drawing characters followed by a branch token
-# such as `|--`, `+--`, `\--`, or a backtick corner. Matching the branch token
-# rather than the first character keeps Markdown table rows, `+` list items, and
-# prose opening with inline code inside the gate's judgment.
-DIAGRAM = re.compile(r"^[\s|+\\`]*[|+\\`]--")
 
 # Shell and Python comment openers, so script scanning reads comments only.
 SHELL_COMMENT = re.compile(r"(?:^|\s)#")
@@ -121,7 +98,7 @@ def prose_lines(path: Path, text: str):
 
     Markdown yields every line outside a fenced block. A script yields comment
     lines and package metadata strings, since its executable statements are
-    code and their `--` runs are options.
+    code.
     """
     fenced = False
     markdown = path.suffix == ".md"
@@ -146,7 +123,7 @@ def findings(root: Path, paths: list[Path]) -> list[tuple[Path, int, str, str]]:
 
     Each rule carries its own name so a refusal points at the edit that
     clears it: an emoji and an em dash fail the same run and need different
-    fixes.
+    fixes. A line holding both reports the emoji first.
     """
     out = []
     for path in paths:
@@ -162,12 +139,6 @@ def findings(root: Path, paths: list[Path]) -> list[tuple[Path, int, str, str]]:
                 out.append(
                     (path.relative_to(root), lineno, UNICODE_DASH_RULE, line.strip())
                 )
-                continue
-            if DIAGRAM.match(line):
-                continue
-            masked = END_OF_OPTIONS.sub("", line)
-            if DASH.search(masked):
-                out.append((path.relative_to(root), lineno, DASH_RULE, line.strip()))
     return out
 
 
@@ -200,14 +171,34 @@ GOOD_FIXTURES = [
     ("good_accented_name.md", "Reviewed by Bj" + chr(0x00F6) + "rn.\n"),
 ]
 
-# The dash tokens are composed rather than written, so this gate stays clean
+# The ASCII double hyphen set off by whitespace is an accepted dash. These
+# samples are composed from _D below and join the known-good set, so the gate
+# proves it stays silent on the construct in prose, a trailing position, a
+# comment, package metadata, and a table cell, while the en and em dash samples
+# in the known-bad set still fail.
+
+# The en and em dash are composed rather than written, so this gate stays clean
 # against its own scan while the fixtures still carry real dashes at runtime.
 _D = "-" * 2
 _EN = chr(0x2013)
 _EM = chr(0x2014)
 
-# Each known-bad names the rule it must trip. An emoji and an em dash both
-# refuse the run, so a fixture that only asserts refusal admits a report that
+GOOD_FIXTURES += [
+    ("good_ascii_dash.md", f"The reader hard-returns {_D} it never touches MMIO.\n"),
+    ("good_ascii_dash_trailing.md", f"Two arming domains exist {_D}\nand the third differs.\n"),
+    (
+        "good_ascii_dash_comment.sh",
+        f"#!/bin/sh\n# a zero-context insert {_D} whose target drifts\ntrue\n",
+    ),
+    ("good_ascii_dash_pkgbuild", f"optdepends=('foo: SB600 substrate {_D} REQUIRED')\n"),
+    (
+        "good_ascii_dash_table.md",
+        f"| Gate | Meaning |\n| --- | --- |\n| apply | clean {_D} no fuzz |\n",
+    ),
+]
+
+# Each known-bad names the rule it must trip. An emoji, an en dash, and an em
+# dash all refuse the run, so a fixture that only asserts refusal admits a report that
 # points the author at the wrong edit.
 BAD_FIXTURES = [
     ("bad_emoji.md", "The gate passes " + chr(0x2705) + " on every profile.\n", EMOJI_RULE),
@@ -215,25 +206,6 @@ BAD_FIXTURES = [
         "bad_emoji_pictograph.md",
         "Reset storm " + chr(0x1F525) + " on the first draw.\n",
         EMOJI_RULE,
-    ),
-    ("bad_prose.md", f"The reader hard-returns {_D} it never touches MMIO.\n", DASH_RULE),
-    (
-        "bad_trailing.md",
-        f"Two arming domains exist {_D}\nand the third differs.\n",
-        DASH_RULE,
-    ),
-    (
-        "bad_comment.sh",
-        f"#!/bin/sh\n# a zero-context insert {_D} whose target drifts\ntrue\n",
-        DASH_RULE,
-    ),
-    ("bad_pkgbuild", f"optdepends=('foo: SB600 substrate {_D} REQUIRED')\n", DASH_RULE),
-    # A table cell is prose. The diagram exemption matches branch tokens, so a
-    # row opening with a pipe stays inside the gate's judgment.
-    (
-        "bad_table.md",
-        f"| Gate | Meaning |\n| --- | --- |\n| apply | clean {_D} no fuzz |\n",
-        DASH_RULE,
     ),
     (
         "bad_en_dash.md",

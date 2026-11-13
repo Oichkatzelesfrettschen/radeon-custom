@@ -249,7 +249,7 @@ sudo bash scripts/test_radeon_dkms_lifecycle.sh --package /path/to/package \
   --kernel-release "$(uname -r)" \
   --evidence-dir /var/lib/radeon-dkms-lifecycle-evidence/new-run
 
-# Project-authored prose carries no dash construction
+# Project-authored prose carries no em dash, en dash, or emoji; ` -- ` passes
 python3 scripts/check_project_prose_style.py
 
 # The complete workflow surface uses exact approved action revisions
@@ -289,7 +289,8 @@ sh scripts/check_radeon_pinned_source_compiles.sh --self-test
 sh scripts/check_radeon_packaged_source_compiles.sh --self-test
 sh scripts/check_radeon_packaged_source_compiles.sh --self-test --profile all-dev
 
-# known-good prose silent, known-bad prose reported, corpus selection correct
+# known-good prose (including ` -- `) silent, em dash, en dash, and emoji reported,
+# corpus selection correct
 python3 scripts/check_project_prose_style.py --self-test
 
 # 4 mode encodings correct, 6 manifest drift classes detected
