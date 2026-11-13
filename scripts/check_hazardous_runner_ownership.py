@@ -80,6 +80,13 @@ HAZARDOUS_INTERFACE_MARKERS = (
     "radeon_" + "gpu_reset",
     "radeon_rs480_" + "frontier_probe",
     "rs480_" + "frontier_index",
+    "rs480_" + "force_clock_index",
+    "rs480_" + "force_clock_3d_index",
+    "rs480_" + "gated_read_index",
+    "rs480_" + "pll_write_probe",
+    "rs480_" + "vertex_index",
+    "rs480_" + "hazard_index",
+    "rs480_" + "index_selectors_armed",
     "radeon_rs480_" + "cp_me_ram_inject",
     "radeon_rs480_" + "cp_me_oracle",
     "radeon_rs480_" + "force_clock_read",
@@ -367,6 +374,9 @@ def run_self_test() -> None:
         "reset.sh": "cat /sys/kernel/debug/dri/0/" + "radeon_gpu_reset\n",
         "frontier.sh": "cat /sys/kernel/debug/dri/0/" + "radeon_rs480_frontier_probe\n",
         "selector.sh": "echo 0 > /sys/module/radeon/parameters/" + "rs480_frontier_index\n",
+        "selector_arm.sh": "echo 1 > /sys/module/radeon/parameters/" + "rs480_index_selectors_armed\n",
+        "pll_write_selector.sh": "echo 0 > /sys/module/radeon/parameters/" + "rs480_pll_write_probe_index\n",
+        "force_clock_selector.sh": "echo 0 > /sys/module/radeon/parameters/" + "rs480_force_clock_index\n",
         "submit.sh": 'sh -c "$SUBMIT_CMD"\n',
     }
     rejected = 2
