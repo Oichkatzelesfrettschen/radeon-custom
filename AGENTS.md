@@ -110,13 +110,20 @@ nearest principle.
   the three arming domains in this series close differently. Read the
   declaration before assuming a value is inert; parameter presence alone is not
   consent.
-  - Boolean gates open at exactly `1`: `radeon_rs480_r400_us_cs` and
-    `rs480_hazard_readers_armed`. Zero closes these.
+  - Boolean gates open at exactly `1`: `radeon_rs480_r400_us_cs`,
+    `rs480_hazard_readers_armed`, and `rs480_index_selectors_armed`. Zero
+    closes these.
   - Index selectors use `-1` as the no-selection sentinel, and the guard reads
-    `idx < 0 || idx >= ARRAY_SIZE(...)`. Every in-range nonnegative value
-    selects an entry and performs the read, so
-    `radeon_rs480_force_clock_index=0` selects the first entry and drives a
-    force-clocked MMIO read. Zero arms these.
+    `idx < 0 || idx >= ARRAY_SIZE(...)`. An in-range nonnegative value selects
+    an entry, and index zero selects the first. Seven selectors exist:
+    `rs480_force_clock_index`, `rs480_force_clock_3d_index`,
+    `rs480_gated_read_index`, `rs480_pll_write_probe_index`,
+    `rs480_frontier_index`, `rs480_vertex_index`, and `rs480_hazard_index`.
+    Each performs its access only with `rs480_index_selectors_armed=1` plus an
+    in-range index, so `rs480_force_clock_index=0` drives a force-clocked MMIO
+    read only while the token holds exactly `1`. Unset, `0`, `2`, and `-1` keep
+    all seven closed before the register access, and index zero never arms a
+    selector on its own.
   - The reset-mask selector resolves to a mask rather than to nothing.
     `RS480_RESET_MASK_BASELINE = 0`, so `rs480_reset_mask=0` selects the
     baseline mask, named nonzero values select experimental masks, and an

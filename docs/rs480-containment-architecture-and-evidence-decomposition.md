@@ -206,14 +206,32 @@ evidence surface from the arming surface.
 expose read-only debugfs snapshots whose rows carry the evidence classification
 above, so the open default costs a read of already-classified registers.
 
-Every selector that arms a one-at-a-time hazardous read defaults to `-1`, a
+Every selector that arms a one-at-a-time hazardous access defaults to `-1`, a
 no-selection sentinel: `radeon_rs480_force_clock_index`,
 `radeon_rs480_force_clock_3d_index`, `radeon_rs480_frontier_index`,
-`radeon_rs480_gated_read_index`, `radeon_rs480_hazard_index`, and
-`radeon_rs480_vertex_index`. The guard reads
-`idx < 0 || idx >= ARRAY_SIZE(...)`, so an index of `0` selects the first entry
-and performs the read. Every in-range nonnegative value selects an entry;
-negative and out-of-range values return before the register access.
+`radeon_rs480_gated_read_index`, `radeon_rs480_hazard_index`,
+`radeon_rs480_pll_write_probe_index`, and `radeon_rs480_vertex_index`. The guard
+reads `idx < 0 || idx >= ARRAY_SIZE(...)`, so an index of `0` selects the first
+entry. Every in-range nonnegative value selects an entry; negative and
+out-of-range values return before the register access.
+
+The pinned source releases from 0.8.24 add a second condition in front of all
+seven selector paths: each one returns before its register access or control
+write unless `radeon_rs480_index_selectors_armed` equals exactly `1`. The token
+is a boolean gate that defaults to `0`, and unset, `0`, `2`, and `-1` keep every
+selector closed. Index zero is a valid selection, so the selector alone cannot
+carry consent, and a selected index performs the access only while the token is
+armed. The `radeon_rs480_pll_write_probe_index` selector, which clears one PLL
+bit, reads it back, and restores it, is the seventh member and carries the same
+token.
+
+Source: the `rs480_index_selectors_armed` parameter in `radeon_dev.c` and the
+`!= 1` check that opens each selector's show function in
+`radeon_rs4xx_dev.c`, both at the pinned source commit. Evidence class:
+source-verified, with the source repository's
+`scripts/test_rs480_index_selector_arming.py` as the calibration; no silicon run
+is claimed. Falsifier: a hardware capture in which a selector performs its
+access with the token unset or not equal to `1`.
 
 The reset-mask selector resolves to a mask rather than to nothing.
 `RS480_RESET_MASK_BASELINE` is `0`, so `rs480_reset_mask=0` selects the baseline
